@@ -1,6 +1,6 @@
 # UniMemory
 
-AI memory management for your applications.
+Memory Layer for AI Agents.
 
 ## Structure
 
