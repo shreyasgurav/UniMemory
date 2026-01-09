@@ -29,7 +29,7 @@ pip install unimemory
 
 ### 2. Get API Key
 
-1. Go to [dashboard.unimemory.ai](https://dashboard.unimemory.ai)
+1. Go to Dashboard
 2. Sign in with Google
 3. Create a project
 4. Generate an API key
