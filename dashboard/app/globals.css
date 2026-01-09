@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --foreground: #111;
+  --background: #fff;
+  --muted: #666;
+  --border: #e5e5e5;
+  --accent: #000;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+.code {
+  font-family: 'JetBrains Mono', monospace;
+}
+
