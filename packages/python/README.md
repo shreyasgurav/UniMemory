@@ -1,6 +1,6 @@
 # UniMemory
 
-AI memory management for your applications.
+The memory layer for your AI apps.
 
 ## Installation
 
