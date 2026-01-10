@@ -1,4 +1,4 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://unimemory.up.railway.app/api/v1";
 
 export interface Project {
   id: string;
@@ -12,9 +12,10 @@ export interface APIKey {
   id: string;
   key?: string;
   key_prefix: string;
-  name?: string;
-  environment: string;
+  name: string;
+  project_id: string;
   is_active: boolean;
+  expires_at?: string;
   last_used_at?: string;
   usage_count: number;
   created_at: string;
@@ -49,20 +50,13 @@ async function request<T>(
 }
 
 // Auth
-export const verifyToken = async (token: string) => {
-  return request<{ id: string; email: string; display_name: string }>("/auth/verify", {
-    method: "POST",
-    body: JSON.stringify({ token }),
-  });
-};
-
 export const getMe = async (token: string) => {
-  return request<{ id: string; email: string; display_name: string; plan: string }>("/auth/me", { token });
+  return request<{ id: string; email: string; display_name: string; plan: string; avatar_url?: string }>("/auth/me", { token });
 };
 
 // Projects
 export const listProjects = async (token: string) => {
-  return request<{ projects: Project[]; total: number }>("/projects", { token });
+  return request<Project[]>("/projects", { token });
 };
 
 export const createProject = async (token: string, name: string, description?: string) => {
@@ -81,20 +75,20 @@ export const deleteProject = async (token: string, projectId: string) => {
 };
 
 // API Keys
-export const listAPIKeys = async (token: string, projectId: string) => {
-  return request<{ keys: APIKey[]; total: number }>(`/projects/${projectId}/keys`, { token });
+export const listAPIKeys = async (token: string, projectId?: string) => {
+  const url = projectId ? `/keys?project_id=${projectId}` : "/keys";
+  return request<APIKey[]>(url, { token });
 };
 
 export const createAPIKey = async (
   token: string,
   projectId: string,
-  name?: string,
-  environment: string = "live"
+  name: string
 ) => {
-  return request<APIKey & { key: string }>(`/projects/${projectId}/keys`, {
+  return request<APIKey & { key: string }>("/keys", {
     method: "POST",
     token,
-    body: JSON.stringify({ name, environment }),
+    body: JSON.stringify({ name, project_id: projectId }),
   });
 };
 

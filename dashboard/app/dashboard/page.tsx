@@ -33,7 +33,7 @@ export default function Dashboard() {
       const token = await getIdToken();
       if (!token) return;
       const data = await listProjects(token);
-      setProjects(data.projects);
+      setProjects(data);
     } catch (error) {
       console.error("Failed to load projects:", error);
     }
