@@ -18,8 +18,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code from api folder
 COPY api/app/ ./app/
 
-# Copy Firebase service account if it exists
-COPY api/firebase-service-account.json* ./firebase-service-account.json* 2>/dev/null || true
+# Firebase service account will be provided via environment variable in Railway
 
 # Expose port (Railway will set PORT env var)
 EXPOSE 8000
