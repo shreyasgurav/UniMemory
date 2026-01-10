@@ -14,7 +14,7 @@ export default function Home() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
-        router.push("/dashboard");
+        router.push("/projects");
       } else {
         setLoading(false);
       }
@@ -26,7 +26,7 @@ export default function Home() {
     setSigningIn(true);
     try {
       await signInWithGoogle();
-      router.push("/dashboard");
+      router.push("/projects");
     } catch (error) {
       console.error("Sign in error:", error);
       setSigningIn(false);
@@ -35,7 +35,7 @@ export default function Home() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: 'linear-gradient(90deg, #a6a6a6 0%, #ffffff 100%)' }}>
+      <div className="bg-gray-50 min-h-screen flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 border-2 border-neutral-900 border-t-transparent rounded-full animate-spin" />
           <p className="text-neutral-500 text-sm">Loading...</p>
@@ -45,7 +45,7 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: 'linear-gradient(90deg, #a6a6a6 0%, #ffffff 100%)' }}>
+    <div className="bg-gray-50 min-h-screen flex flex-col">
       {/* Header - Liquid Glass Effect */}
       <header className="px-6 py-4 sticky top-0 z-50 glass-nav">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
@@ -59,7 +59,8 @@ export default function Home() {
           <button
             onClick={handleSignIn}
             disabled={signingIn}
-            className="px-4 py-2 bg-neutral-900 text-white text-sm font-medium rounded-lg hover:bg-neutral-800 disabled:opacity-50 transition-all flex items-center gap-2"
+            className="px-4 py-2 text-white text-sm font-medium rounded-full disabled:opacity-50 transition-all flex items-center gap-2 hover:opacity-90"
+            style={{ background: 'linear-gradient(135deg, #000000, #5b5b5b)' }}
           >
             {signingIn ? (
               <>
@@ -92,7 +93,8 @@ export default function Home() {
             <button
               onClick={handleSignIn}
               disabled={signingIn}
-              className="px-6 py-3 bg-neutral-900 text-white font-medium rounded-xl hover:bg-neutral-800 disabled:opacity-50 transition-all flex items-center gap-2 text-base"
+              className="px-6 py-3 text-white font-medium rounded-xl disabled:opacity-50 transition-all flex items-center gap-2 text-base hover:opacity-90"
+              style={{ background: 'linear-gradient(135deg, #000000, #5b5b5b)' }}
             >
               {signingIn ? (
                 <>
@@ -196,7 +198,7 @@ export default function Home() {
                   <span className="text-neutral-400">)</span>{'\n'}
                   <span className="text-neutral-500"># "User usually flies Frontier, prefers</span>{'\n'}
                   <span className="text-neutral-500"># morning departures, ~$100 budget"</span>
-                </code>
+              </code>
               )}
             </pre>
           </div>

@@ -145,7 +145,7 @@ UniMemory/
 │   │   ├── core/       # Core logic (embeddings, search, extraction)
 │   │   └── db/         # Database models and migrations
 │   └── Dockerfile      # Production deployment
-├── dashboard/          # Web dashboard (Next.js 14)
+├── webapp/            # Web application (Next.js 14)
 │   └── app/           # Next.js App Router pages
 ├── packages/
 │   ├── js/            # JavaScript/TypeScript SDK
@@ -176,7 +176,7 @@ UniMemory/
 
 ### Prerequisites
 
-- Node.js 18+ (for dashboard and JS SDK)
+- Node.js 18+ (for webapp and JS SDK)
 - Python 3.8+ (for API and Python SDK)
 - PostgreSQL 14+ with pgvector extension
 - OpenAI API key
@@ -197,9 +197,9 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-3. **Setup Dashboard:**
+3. **Setup Webapp:**
 ```bash
-cd dashboard
+cd webapp
 npm install
 # Configure .env.local with Firebase and API settings
 npm run dev
@@ -231,7 +231,7 @@ SECRET_KEY=your-secret-key
 FIREBASE_SERVICE_ACCOUNT_PATH=./firebase-service-account.json
 ```
 
-**Dashboard (.env.local):**
+**Webapp (.env.local):**
 ```env
 NEXT_PUBLIC_FIREBASE_API_KEY=...
 NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=...
@@ -252,7 +252,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
 - Environment: Set all required env vars
 - Domain: Railway provides HTTPS domain automatically
 
-### Dashboard Deployment (Vercel)
+### Webapp Deployment (Vercel)
 
 1. Connect repository to Vercel
 2. Configure environment variables

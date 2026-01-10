@@ -1,11 +1,11 @@
 {
-  "name": "unimemory-dashboard",
+  "name": "unimemory-webapp",
   "version": "1.0.0",
   "private": true,
   "repository": {
     "type": "git",
     "url": "https://github.com/shreyasgurav/UniMemory.git",
-    "directory": "dashboard"
+    "directory": "webapp"
   },
   "scripts": {
     "dev": "next dev",
