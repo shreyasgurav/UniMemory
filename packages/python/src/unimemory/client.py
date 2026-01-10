@@ -44,7 +44,7 @@ class UniMemory:
         
         Args:
             api_key: Your UniMemory API key. If not provided, uses UNIMEMORY_API_KEY env var.
-            base_url: API base URL. Defaults to https://api.unimemory.ai/api/v1
+            base_url: API base URL. Defaults to https://unimemory.up.railway.app/api/v1
         """
         self.api_key = api_key or os.environ.get("UNIMEMORY_API_KEY")
         if not self.api_key:
@@ -52,7 +52,7 @@ class UniMemory:
         
         self.base_url = base_url or os.environ.get(
             "UNIMEMORY_BASE_URL", 
-            "https://api.unimemory.ai/api/v1"
+            "https://unimemory.up.railway.app/api/v1"
         )
         
         self._client = httpx.Client(

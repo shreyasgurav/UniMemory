@@ -37,7 +37,7 @@ Create a new UniMemory client.
 ```typescript
 const client = new UniMemory({
   apiKey: 'um_live_xxx...',
-  baseUrl: 'https://api.unimemory.ai/api/v1' // optional
+  baseUrl: 'https://unimemory.up.railway.app/api/v1' // optional, defaults to production API
 });
 ```
 

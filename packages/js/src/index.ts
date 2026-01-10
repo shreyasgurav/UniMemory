@@ -85,7 +85,7 @@ export class UniMemory {
       throw new UniMemoryError('API key is required');
     }
     this.apiKey = config.apiKey;
-    this.baseUrl = config.baseUrl || 'https://api.unimemory.ai/api/v1';
+    this.baseUrl = config.baseUrl || 'https://unimemory.up.railway.app/api/v1';
   }
 
   private async request<T>(

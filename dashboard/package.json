@@ -2,6 +2,11 @@
   "name": "unimemory-dashboard",
   "version": "1.0.0",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/shreyasgurav/UniMemory.git",
+    "directory": "dashboard"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",

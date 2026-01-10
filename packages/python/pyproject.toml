@@ -9,7 +9,7 @@ description = "UniMemory SDK - The memory layer for your AI apps."
 readme = "README.md"
 license = "MIT"
 authors = [
-    {name = "UniMemory", email = "hello@unimemory.ai"}
+    {name = "UniMemory"}
 ]
 keywords = ["memory", "ai", "embeddings", "search", "vector", "llm"]
 classifiers = [
@@ -29,7 +29,6 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://unimemory.ai"
 Repository = "https://github.com/shreyasgurav/UniMemory"
 
 [tool.setuptools.packages.find]
