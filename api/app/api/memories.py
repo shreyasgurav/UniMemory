@@ -48,6 +48,30 @@ class MemoryListResponse(BaseModel):
     total: int
 
 
+class MemoryDetailResponse(BaseModel):
+    """Detailed memory response with all fields"""
+    id: str
+    content: str
+    sector: Optional[str]
+    salience: float
+    tags: List[str]
+    source_app: Optional[str]
+    user_id: str
+    created_at: datetime
+    updated_at: datetime
+    last_seen_at: Optional[datetime]
+    
+    class Config:
+        from_attributes = True
+
+
+class UpdateMemoryRequest(BaseModel):
+    """Request to update a memory"""
+    salience: Optional[float] = None  # Boost or set salience (0.0-1.0)
+    tags: Optional[List[str]] = None  # Update tags
+    metadata: Optional[Dict[str, Any]] = None  # Update metadata
+
+
 @router.post("/memories/add", response_model=Dict[str, Any])
 async def add_memory(
     request: AddMemoryRequest,
@@ -115,7 +139,7 @@ async def add_memory(
         if isinstance(mem_data, str):
             mem_content = mem_data.strip()
         elif isinstance(mem_data, dict):
-            mem_content = mem_data.get("content", "").strip()
+        mem_content = mem_data.get("content", "").strip()
         else:
             continue
             
@@ -291,6 +315,117 @@ async def list_memories(
             created_at=m.created_at
         ) for m in memories],
         total=total
+    )
+
+
+@router.get("/memories/{memory_id}", response_model=MemoryDetailResponse)
+async def get_memory(
+    memory_id: str,
+    user_info: tuple = Depends(validate_api_key),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Get a single memory by ID.
+    
+    Requires X-API-Key header for authentication.
+    Can only get memories owned by the authenticated user.
+    """
+    user, api_key = user_info
+    owner_id = str(user.id)
+    
+    from sqlalchemy import select
+    
+    stmt = select(Memory).where(
+        Memory.id == memory_id,
+        Memory.owner_id == owner_id,
+        Memory.is_active == True
+    )
+    result = await session.execute(stmt)
+    memory = result.scalar_one_or_none()
+    
+    if not memory:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    
+    # Update last_seen_at
+    memory.last_seen_at = datetime.utcnow()
+    await session.commit()
+    
+    return MemoryDetailResponse(
+        id=str(memory.id),
+        content=memory.content,
+        sector=memory.sector,
+        salience=memory.salience,
+        tags=memory.tags or [],
+        source_app=memory.source_app,
+        user_id=memory.user_id,
+        created_at=memory.created_at,
+        updated_at=memory.updated_at,
+        last_seen_at=memory.last_seen_at
+    )
+
+
+@router.patch("/memories/{memory_id}", response_model=MemoryDetailResponse)
+async def update_memory(
+    memory_id: str,
+    request: UpdateMemoryRequest,
+    user_info: tuple = Depends(validate_api_key),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Update a memory (salience, tags, metadata).
+    
+    Requires X-API-Key header for authentication.
+    Can only update memories owned by the authenticated user.
+    
+    Use cases:
+    - Boost salience when memory is reinforced
+    - Update tags for better organization
+    - Add metadata for context
+    """
+    user, api_key = user_info
+    owner_id = str(user.id)
+    
+    from sqlalchemy import select
+    
+    stmt = select(Memory).where(
+        Memory.id == memory_id,
+        Memory.owner_id == owner_id,
+        Memory.is_active == True
+    )
+    result = await session.execute(stmt)
+    memory = result.scalar_one_or_none()
+    
+    if not memory:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    
+    # Update fields if provided
+    if request.salience is not None:
+        # Clamp salience to 0.0-1.0
+        memory.salience = max(0.0, min(1.0, request.salience))
+    
+    if request.tags is not None:
+        memory.tags = request.tags
+    
+    if request.metadata is not None:
+        # Merge with existing metadata
+        existing_meta = memory.extra_metadata or {}
+        existing_meta.update(request.metadata)
+        memory.extra_metadata = existing_meta
+    
+    memory.updated_at = datetime.utcnow()
+    await session.commit()
+    
+    return MemoryDetailResponse(
+        id=str(memory.id),
+        content=memory.content,
+        sector=memory.sector,
+        salience=memory.salience,
+        tags=memory.tags or [],
+        source_app=memory.source_app,
+        user_id=memory.user_id,
+        created_at=memory.created_at,
+        updated_at=memory.updated_at,
+        last_seen_at=memory.last_seen_at
     )
 
 

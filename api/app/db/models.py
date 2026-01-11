@@ -13,7 +13,7 @@ from app.db.database import Base
 
 
 class Memory(Base):
-    """Extracted memory with OpenMemory-style fields"""
+    """Extracted memory"""
     __tablename__ = "memories"
     
     id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
