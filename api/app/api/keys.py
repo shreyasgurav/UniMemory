@@ -12,13 +12,14 @@ from app.db.database import get_db
 from app.db.models import User, Project, APIKey
 from app.core.auth import get_current_user
 from app.core.security import generate_api_key
+from app.api.projects import get_or_create_default_project
 
 router = APIRouter(prefix="/keys", tags=["api-keys"])
 
 
 class KeyCreate(BaseModel):
     name: str
-    project_id: str
+    project_id: Optional[str] = None  # Optional - uses default project if not provided
     expires_at: Optional[datetime] = None
 
 
@@ -48,20 +49,25 @@ async def create_api_key(
     session: AsyncSession = Depends(get_db)
 ):
     """Create a new API key for a project"""
-    # Verify project ownership
-    stmt = select(Project).where(
-        Project.id == data.project_id,
-        Project.owner_id == user.id,
-        Project.is_active == True
-    )
-    result = await session.execute(stmt)
-    project = result.scalar_one_or_none()
-    
-    if not project:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Project not found"
+    # If no project_id provided, use default project
+    if data.project_id:
+        # Verify project ownership
+        stmt = select(Project).where(
+            Project.id == data.project_id,
+            Project.owner_id == user.id,
+            Project.is_active == True
         )
+        result = await session.execute(stmt)
+        project = result.scalar_one_or_none()
+        
+        if not project:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Project not found"
+            )
+    else:
+        # Get or create default project
+        project = await get_or_create_default_project(user, session)
     
     # Generate key
     plaintext_key, hashed_key = generate_api_key()
@@ -71,7 +77,7 @@ async def create_api_key(
         name=data.name,
         key_hash=hashed_key,
         key_prefix=key_prefix,
-        project_id=data.project_id,
+        project_id=project.id,
         expires_at=data.expires_at
     )
     session.add(api_key)

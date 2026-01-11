@@ -20,7 +20,8 @@ export default function Header({ user, showProfileDropdown, setShowProfileDropdo
           <img 
             src="/Unimemory Name Logo NoBG.png" 
             alt="UniMemory" 
-            className="h-8 w-auto"
+            className="h-8 w-auto cursor-pointer"
+            onClick={() => router.push(user ? "/dashboard" : "/")}
           />
         </div>
         {user ? (
@@ -89,7 +90,7 @@ export default function Header({ user, showProfileDropdown, setShowProfileDropdo
         ) : (
           <button
             onClick={() => router.push("/")}
-            className="px-4 py-2 text-white text-sm font-medium rounded-full transition-all flex items-center gap-2 hover:opacity-90"
+            className="px-4 py-2 text-white text-sm font-medium rounded-lg transition-all flex items-center gap-2 hover:opacity-90"
             style={{ background: 'linear-gradient(135deg, #000000, #5b5b5b)' }}
           >
             Sign in

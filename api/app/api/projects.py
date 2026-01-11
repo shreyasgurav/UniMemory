@@ -36,6 +36,51 @@ class ProjectResponse(BaseModel):
         from_attributes = True
 
 
+async def get_or_create_default_project(user: User, session: AsyncSession) -> Project:
+    """Get or create the default project for a user"""
+    # Check if user has any project
+    stmt = select(Project).where(
+        Project.owner_id == user.id,
+        Project.is_active == True
+    ).order_by(Project.created_at.asc())
+    
+    result = await session.execute(stmt)
+    project = result.scalar_one_or_none()
+    
+    if project:
+        return project
+    
+    # Create default project
+    project = Project(
+        name="Default Project",
+        description="Your default UniMemory project",
+        owner_id=user.id
+    )
+    session.add(project)
+    await session.commit()
+    await session.refresh(project)
+    
+    return project
+
+
+@router.get("/default", response_model=ProjectResponse)
+async def get_default_project(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db)
+):
+    """Get or create the user's default project"""
+    project = await get_or_create_default_project(user, session)
+    
+    return ProjectResponse(
+        id=str(project.id),
+        name=project.name,
+        description=project.description,
+        is_active=project.is_active,
+        created_at=project.created_at.isoformat(),
+        updated_at=project.updated_at.isoformat()
+    )
+
+
 @router.post("", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
 async def create_project(
     data: ProjectCreate,

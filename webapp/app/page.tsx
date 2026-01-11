@@ -14,7 +14,7 @@ export default function Home() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
-        router.push("/projects");
+        router.push("/dashboard");
       } else {
         setLoading(false);
       }
@@ -26,7 +26,7 @@ export default function Home() {
     setSigningIn(true);
     try {
       await signInWithGoogle();
-      router.push("/projects");
+      router.push("/dashboard");
     } catch (error) {
       console.error("Sign in error:", error);
       setSigningIn(false);
@@ -59,7 +59,7 @@ export default function Home() {
           <button
             onClick={handleSignIn}
             disabled={signingIn}
-            className="px-4 py-2 text-white text-sm font-medium rounded-full disabled:opacity-50 transition-all flex items-center gap-2 hover:opacity-90"
+            className="px-4 py-2 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-all flex items-center gap-2 hover:opacity-90"
             style={{ background: 'linear-gradient(135deg, #000000, #5b5b5b)' }}
           >
             {signingIn ? (
