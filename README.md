@@ -18,7 +18,7 @@
 
 UniMemory provides intelligent memory management for AI applications. Store, search, and retrieve memories with semantic understanding, automatic deduplication, and intelligent extraction.
 
-## ✨ Features
+##  Features
 
 - 🧠 **Semantic Memory Storage** - Store memories with vector embeddings for intelligent retrieval
 - 🔍 **Semantic Search** - Find memories by meaning, not just keywords
@@ -30,7 +30,7 @@ UniMemory provides intelligent memory management for AI applications. Store, sea
 - 🎨 **Modern Dashboard** - Beautiful web interface for managing projects and API keys
 - ⚡ **Production Ready** - Deployed API and scalable infrastructure
 
-## 🚀 Quick Start
+##  Quick Start
 
 ### Installation
 
@@ -92,7 +92,7 @@ for memory in results.results:
     print(f"{memory.content} (score: {memory.score})")
 ```
 
-## 📖 Documentation
+##  Documentation
 
 ### JavaScript/TypeScript SDK
 
@@ -135,7 +135,7 @@ The UniMemory API provides RESTful endpoints for memory management:
 - `POST /keys` - Create API key
 - `GET /keys` - List API keys
 
-## 🏗️ Architecture
+##  Architecture
 
 ```
 UniMemory/
@@ -239,7 +239,7 @@ NEXT_PUBLIC_FIREBASE_PROJECT_ID=...
 NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
 ```
 
-## 🚢 Deployment
+##  Deployment
 
 ### API Deployment (Railway)
 
@@ -282,7 +282,7 @@ python -m build
 twine upload dist/*
 ```
 
-## 📊 Production Status
+##  Production Status
 
 - ✅ **API**: Deployed at [https://unimemory.up.railway.app](https://unimemory.up.railway.app)
 - ✅ **Dashboard**: [https://app.unimemory.ai](https://app.unimemory.ai)
@@ -290,7 +290,7 @@ twine upload dist/*
 - ✅ **PyPI Package**: [unimemory@1.0.2](https://pypi.org/project/unimemory/)
 - ✅ **Database**: Supabase PostgreSQL with pgvector
 
-## 🤝 Contributing
+##  Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
@@ -307,11 +307,11 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 - Update documentation as needed
 - Ensure all checks pass before submitting PR
 
-## 📝 License
+##  License
 
 This project is licensed under the MIT License - see the [LICENSE](./api/LICENSE) file for details.
 
-## 🔗 Links
+##  Links
 
 - **Dashboard**: [https://app.unimemory.ai](https://app.unimemory.ai)
 - **API**: [https://unimemory.up.railway.app](https://unimemory.up.railway.app)
@@ -320,14 +320,14 @@ This project is licensed under the MIT License - see the [LICENSE](./api/LICENSE
 - **GitHub Repository**: [https://github.com/shreyasgurav/UniMemory](https://github.com/shreyasgurav/UniMemory)
 - **Issues**: [https://github.com/shreyasgurav/UniMemory/issues](https://github.com/shreyasgurav/UniMemory/issues)
 
-## 🙏 Acknowledgments
+##  Acknowledgments
 
 - Built with [FastAPI](https://fastapi.tiangolo.com/)
 - Powered by [OpenAI](https://openai.com/) embeddings
 - Vector search with [pgvector](https://github.com/pgvector/pgvector)
 - UI built with [Next.js](https://nextjs.org/) and [Tailwind CSS](https://tailwindcss.com/)
 
-## 📧 Contact
+##  Contact
 
 - **Email**: hello@unimemory.ai
 - **GitHub**: [@shreyasgurav](https://github.com/shreyasgurav)
