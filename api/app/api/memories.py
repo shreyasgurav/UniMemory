@@ -398,6 +398,7 @@ async def get_memory(
     # Update last_seen_at
     memory.last_seen_at = datetime.utcnow()
     await session.commit()
+    await session.refresh(memory)  # Refresh to get updated values after commit
     
     return MemoryDetailResponse(
         id=str(memory.id),
@@ -406,7 +407,7 @@ async def get_memory(
         salience=memory.salience,
         tags=memory.tags or [],
         source_app=memory.source_app,
-        user_id=memory.user_id,
+        user_id=memory.user_id or "anonymous",
         created_at=memory.created_at,
         updated_at=memory.updated_at,
         last_seen_at=memory.last_seen_at
@@ -454,6 +455,7 @@ async def update_memory(
     
     memory.updated_at = datetime.utcnow()
     await session.commit()
+    await session.refresh(memory)  # Refresh to get updated values after commit
     
     return MemoryDetailResponse(
         id=str(memory.id),
@@ -462,7 +464,7 @@ async def update_memory(
         salience=memory.salience,
         tags=memory.tags or [],
         source_app=memory.source_app,
-        user_id=memory.user_id,
+        user_id=memory.user_id or "anonymous",
         created_at=memory.created_at,
         updated_at=memory.updated_at,
         last_seen_at=memory.last_seen_at
