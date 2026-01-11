@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 
 from app.config import settings
 from app.db.database import init_db, close_db, get_db
-from app.api import memories, search, health, auth, projects, keys
+from app.api import memories, search, health, auth, keys
 
 
 @asynccontextmanager
@@ -49,7 +49,6 @@ app.add_middleware(
 # Include routers
 app.include_router(health.router, prefix=settings.API_PREFIX, tags=["health"])
 app.include_router(auth.router, prefix=settings.API_PREFIX, tags=["auth"])
-app.include_router(projects.router, prefix=settings.API_PREFIX, tags=["projects"])
 app.include_router(keys.router, prefix=settings.API_PREFIX, tags=["api-keys"])
 app.include_router(memories.router, prefix=settings.API_PREFIX, tags=["memories"])
 app.include_router(search.router, prefix=settings.API_PREFIX, tags=["search"])

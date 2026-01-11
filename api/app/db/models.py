@@ -39,9 +39,6 @@ class Memory(Base):
     source_app = Column(String(100))
     user_id = Column(String(100), index=True, default="anonymous")
     
-    # Project association
-    project_id = Column(UUID(as_uuid=False), ForeignKey("projects.id", ondelete="CASCADE"))
-    
     # Embeddings (pgvector)
     embedding = Column(Vector(1536))  # text-embedding-3-small = 1536 dims
     embedding_model = Column(String(50))
@@ -53,7 +50,6 @@ class Memory(Base):
     # Relationships
     waypoints_from = relationship("Waypoint", foreign_keys="Waypoint.src_id", back_populates="source")
     waypoints_to = relationship("Waypoint", foreign_keys="Waypoint.dst_id", back_populates="target")
-    project = relationship("Project", back_populates="memories")
     
     # Indexes
     __table_args__ = (
@@ -119,44 +115,14 @@ class User(Base):
     settings = Column(JSONB, default=dict)
     
     # Relationships
-    projects = relationship("Project", back_populates="owner", cascade="all, delete-orphan")
+    api_keys = relationship("APIKey", back_populates="user", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<User(id={self.id}, email={self.email})>"
 
 
-class Project(Base):
-    """Projects for organizing memories"""
-    __tablename__ = "projects"
-    
-    id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
-    name = Column(String(100), nullable=False)
-    description = Column(Text)
-    
-    # Owner
-    owner_id = Column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    
-    # Status
-    is_active = Column(Boolean, default=True)
-    
-    # Timestamps
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
-    
-    # Settings
-    settings = Column(JSONB, default=dict)
-    
-    # Relationships
-    owner = relationship("User", back_populates="projects")
-    api_keys = relationship("APIKey", back_populates="project", cascade="all, delete-orphan")
-    memories = relationship("Memory", back_populates="project", cascade="all, delete-orphan")
-    
-    def __repr__(self):
-        return f"<Project(id={self.id}, name={self.name})>"
-
-
 class APIKey(Base):
-    """API keys for project authentication"""
+    """API keys for user authentication"""
     __tablename__ = "api_keys"
     
     id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -164,8 +130,8 @@ class APIKey(Base):
     key_hash = Column(String(255), nullable=False)  # Hashed API key
     key_prefix = Column(String(20))  # First few chars for identification
     
-    # Project association
-    project_id = Column(UUID(as_uuid=False), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    # User association
+    user_id = Column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     
     # Status
     is_active = Column(Boolean, default=True)
@@ -179,7 +145,7 @@ class APIKey(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     
     # Relationships
-    project = relationship("Project", back_populates="api_keys")
+    user = relationship("User", back_populates="api_keys")
     
     def __repr__(self):
         return f"<APIKey(id={self.id}, name={self.name})>"

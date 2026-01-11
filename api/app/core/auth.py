@@ -13,7 +13,7 @@ import json
 import os
 
 from app.db.database import get_db
-from app.db.models import User, Project, APIKey
+from app.db.models import User, APIKey
 from app.core.security import verify_api_key
 from app.config import settings
 
@@ -153,13 +153,13 @@ async def get_current_user(
 async def validate_api_key(
     x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
     session: AsyncSession = Depends(get_db)
-) -> tuple[Project, APIKey]:
+) -> tuple[User, APIKey]:
     """
-    Validate API key and return associated project.
+    Validate API key and return associated user.
     
     Usage: @router.post("/endpoint")
-           async def endpoint(project_info: tuple = Depends(validate_api_key)):
-               project, api_key = project_info
+           async def endpoint(user_info: tuple = Depends(validate_api_key)):
+               user, api_key = user_info
     """
     if not x_api_key:
         raise HTTPException(
@@ -196,32 +196,32 @@ async def validate_api_key(
     matched_key.last_used_at = datetime.utcnow()
     matched_key.usage_count = (matched_key.usage_count or 0) + 1
     
-    # Get project
-    stmt = select(Project).where(Project.id == matched_key.project_id)
+    # Get user
+    stmt = select(User).where(User.id == matched_key.user_id)
     result = await session.execute(stmt)
-    project = result.scalar_one_or_none()
+    user = result.scalar_one_or_none()
     
-    if not project or not project.is_active:
+    if not user or not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Project not found or inactive"
+            detail="User not found or inactive"
         )
     
     await session.commit()
     
-    return project, matched_key
+    return user, matched_key
 
 
-async def get_project_from_api_key(
+async def get_user_from_api_key(
     x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
     session: AsyncSession = Depends(get_db)
-) -> Project:
+) -> User:
     """
-    Simplified dependency that just returns the project.
+    Simplified dependency that just returns the user.
     
     Usage: @router.post("/endpoint")
-           async def endpoint(project: Project = Depends(get_project_from_api_key)):
+           async def endpoint(user: User = Depends(get_user_from_api_key)):
     """
-    project, _ = await validate_api_key(x_api_key, session)
-    return project
+    user, _ = await validate_api_key(x_api_key, session)
+    return user
 

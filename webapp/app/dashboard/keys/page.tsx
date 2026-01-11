@@ -10,9 +10,12 @@ export default function APIKeysPage() {
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showKeyModal, setShowKeyModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [keyToDelete, setKeyToDelete] = useState<APIKey | null>(null);
   const [newKeyName, setNewKeyName] = useState("");
   const [newKey, setNewKey] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const loadKeys = useCallback(async () => {
     setLoading(true);
@@ -61,18 +64,28 @@ export default function APIKeysPage() {
     }
   };
 
-  const handleRevokeKey = async (keyId: string) => {
-    if (!confirm("Are you sure you want to revoke this API key? This action cannot be undone.")) {
-      return;
-    }
+  const handleRevokeKey = (key: APIKey) => {
+    setKeyToDelete(key);
+    setShowDeleteModal(true);
+  };
+
+  const confirmDeleteKey = async () => {
+    if (!keyToDelete) return;
+    setDeleting(true);
     try {
       const token = await getIdToken();
       if (!token) return;
       
-      await revokeAPIKey(token, keyId);
+      await revokeAPIKey(token, keyToDelete.id);
+      setShowDeleteModal(false);
+      setKeyToDelete(null);
       await loadKeys();
     } catch (error) {
       console.error("Failed to revoke API key:", error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      alert(`Failed to revoke API key: ${errorMessage}`);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -171,7 +184,7 @@ export default function APIKeysPage() {
                   <td className="px-6 py-4 text-right">
                     {key.is_active && (
                       <button
-                        onClick={() => handleRevokeKey(key.id)}
+                        onClick={() => handleRevokeKey(key)}
                         className="text-neutral-400 hover:text-red-500 transition-colors"
                         title="Revoke key"
                       >
@@ -275,6 +288,49 @@ export default function APIKeysPage() {
             >
               Done
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && keyToDelete && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md animate-fade-in">
+            <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mb-4 mx-auto">
+              <svg className="w-6 h-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-semibold text-neutral-900 mb-2 text-center">Revoke API Key?</h2>
+            <p className="text-sm text-neutral-500 mb-4 text-center">
+              Are you sure you want to revoke <span className="font-medium text-neutral-900">"{keyToDelete.name}"</span>? This action cannot be undone and any applications using this key will stop working immediately.
+            </p>
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setKeyToDelete(null);
+                }}
+                disabled={deleting}
+                className="flex-1 px-4 py-2.5 text-neutral-700 bg-neutral-100 text-sm font-medium rounded-lg hover:bg-neutral-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteKey}
+                disabled={deleting}
+                className="flex-1 px-4 py-2.5 text-white text-sm font-medium rounded-lg bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+              >
+                {deleting ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Revoking...
+                  </>
+                ) : (
+                  "Revoke Key"
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -1,19 +1,11 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://unimemory.up.railway.app/api/v1";
 
-export interface Project {
-  id: string;
-  name: string;
-  description?: string;
-  is_active: boolean;
-  created_at: string;
-}
-
 export interface APIKey {
   id: string;
   key?: string;
   key_prefix: string;
   name: string;
-  project_id: string;
+  user_id: string;
   is_active: boolean;
   expires_at?: string;
   last_used_at?: string;
@@ -102,43 +94,7 @@ export const getMe = async (token: string) => {
   return request<UserSettings>("/auth/me", { token });
 };
 
-// Projects - mostly internal, users don't see projects
-export const getDefaultProject = async (token: string) => {
-  return request<Project>("/projects/default", { token });
-};
-
-export const listProjects = async (token: string) => {
-  return request<Project[]>("/projects", { token });
-};
-
-export const createProject = async (token: string, name: string, description?: string) => {
-  return request<Project>("/projects", {
-    method: "POST",
-    token,
-    body: JSON.stringify({ name, description }),
-  });
-};
-
-export const getProject = async (token: string, projectId: string) => {
-  return request<Project>(`/projects/${projectId}`, { token });
-};
-
-export const updateProject = async (token: string, projectId: string, name: string, description?: string) => {
-  return request<Project>(`/projects/${projectId}`, {
-    method: "PATCH",
-    token,
-    body: JSON.stringify({ name, description }),
-  });
-};
-
-export const deleteProject = async (token: string, projectId: string) => {
-  return request<{ success: boolean }>(`/projects/${projectId}`, {
-    method: "DELETE",
-    token,
-  });
-};
-
-// API Keys - now work without requiring project_id (uses default project)
+// API Keys - now work directly with users (no projects)
 export const listAPIKeys = async (token: string) => {
   return request<APIKey[]>("/keys", { token });
 };
@@ -157,4 +113,3 @@ export const revokeAPIKey = async (token: string, keyId: string) => {
     token,
   });
 };
-
