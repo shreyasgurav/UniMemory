@@ -300,7 +300,7 @@ async def hybrid_search(
                     embedding_list = list(mem.embedding)
                 else:
                     embedding_list = mem.embedding
-            similarity = cosine_similarity(query_embedding, embedding_list)
+                similarity = cosine_similarity(query_embedding, embedding_list)
             except Exception:
                 similarity = 0.0
         
