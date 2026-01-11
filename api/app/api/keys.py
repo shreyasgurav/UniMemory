@@ -131,5 +131,6 @@ async def revoke_api_key(
             detail="Not authorized to revoke this key"
         )
     
-    api_key.is_active = False
+    # Delete the key from the database
+    session.delete(api_key)
     await session.commit()

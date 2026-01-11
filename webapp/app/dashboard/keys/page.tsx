@@ -16,6 +16,7 @@ export default function APIKeysPage() {
   const [newKey, setNewKey] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const loadKeys = useCallback(async () => {
     setLoading(true);
@@ -91,6 +92,8 @@ export default function APIKeysPage() {
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
@@ -253,16 +256,11 @@ export default function APIKeysPage() {
       {showKeyModal && newKey && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-lg animate-fade-in">
-            <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mb-4">
-              <svg className="w-6 h-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-            <h2 className="text-xl font-semibold text-neutral-900 mb-2">API Key Created</h2>
+            <h2 className="text-lg font-semibold text-neutral-900 mb-2">API Key Created</h2>
             <p className="text-sm text-neutral-500 mb-4">
               Make sure to copy your API key now. You won't be able to see it again!
             </p>
-            <div className="bg-neutral-50 border border-neutral-200 rounded-xl p-4 mb-6">
+            <div className="bg-neutral-50 border border-neutral-200 rounded-xl p-4 mb-4">
               <div className="flex items-center justify-between gap-4">
                 <code className="text-sm font-mono text-neutral-900 break-all flex-1">
                   {newKey}
@@ -270,24 +268,33 @@ export default function APIKeysPage() {
                 <button
                   onClick={() => copyToClipboard(newKey)}
                   className="shrink-0 p-2 text-neutral-500 hover:text-neutral-700 hover:bg-neutral-200 rounded-lg transition-colors"
-                  title="Copy to clipboard"
+                  title={copied ? "Copied!" : "Copy to clipboard"}
                 >
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                  </svg>
+                  {copied ? (
+                    <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  ) : (
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                  )}
                 </button>
               </div>
             </div>
-            <button
+            <div className="flex justify-end">
+              <button
               onClick={() => {
                 setShowKeyModal(false);
                 setNewKey(null);
+                setCopied(false);
               }}
-              className="w-full px-4 py-2.5 text-white text-sm font-medium rounded-lg transition-all hover:opacity-90"
-              style={{ background: 'linear-gradient(135deg, #000000, #5b5b5b)' }}
-            >
-              Done
-            </button>
+                className="px-4 py-2 text-white text-sm font-medium rounded-lg transition-all hover:opacity-90"
+                style={{ background: 'linear-gradient(135deg, #000000, #5b5b5b)' }}
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -296,30 +303,25 @@ export default function APIKeysPage() {
       {showDeleteModal && keyToDelete && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md animate-fade-in">
-            <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mb-4 mx-auto">
-              <svg className="w-6 h-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-            </div>
-            <h2 className="text-xl font-semibold text-neutral-900 mb-2 text-center">Revoke API Key?</h2>
-            <p className="text-sm text-neutral-500 mb-4 text-center">
+            <h2 className="text-lg font-semibold text-neutral-900 mb-2">Revoke API Key?</h2>
+            <p className="text-sm text-neutral-500 mb-4">
               Are you sure you want to revoke <span className="font-medium text-neutral-900">"{keyToDelete.name}"</span>? This action cannot be undone and any applications using this key will stop working immediately.
             </p>
-            <div className="flex gap-3 mt-6">
+            <div className="flex gap-3 justify-end">
               <button
                 onClick={() => {
                   setShowDeleteModal(false);
                   setKeyToDelete(null);
                 }}
                 disabled={deleting}
-                className="flex-1 px-4 py-2.5 text-neutral-700 bg-neutral-100 text-sm font-medium rounded-lg hover:bg-neutral-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4 py-2 text-neutral-700 bg-neutral-100 text-sm font-medium rounded-lg hover:bg-neutral-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>
               <button
                 onClick={confirmDeleteKey}
                 disabled={deleting}
-                className="flex-1 px-4 py-2.5 text-white text-sm font-medium rounded-lg bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+                className="px-4 py-2 text-white text-sm font-medium rounded-lg bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2"
               >
                 {deleting ? (
                   <>
