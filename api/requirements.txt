@@ -11,7 +11,7 @@ psycopg2-binary==2.9.9
 pgvector==0.2.4
 
 # OpenAI for embeddings and LLM
-openai==1.12.0
+openai>=1.40.0
 
 # Auth
 firebase-admin==6.4.0
