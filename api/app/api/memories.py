@@ -68,7 +68,7 @@ class MemoryDetailResponse(BaseModel):
     source_app: Optional[str]
     user_id: str
     created_at: datetime
-    updated_at: datetime
+    updated_at: Optional[datetime]  # Can be None for older records
     last_seen_at: Optional[datetime]
     
     class Config:
