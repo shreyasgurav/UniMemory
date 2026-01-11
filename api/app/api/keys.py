@@ -132,5 +132,5 @@ async def revoke_api_key(
         )
     
     # Delete the key from the database
-    session.delete(api_key)
+    await session.delete(api_key)
     await session.commit()

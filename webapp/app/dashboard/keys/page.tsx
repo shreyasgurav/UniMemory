@@ -82,9 +82,9 @@ export default function APIKeysPage() {
       setKeyToDelete(null);
       await loadKeys();
     } catch (error) {
-      console.error("Failed to revoke API key:", error);
+      console.error("Failed to delete API key:", error);
       const errorMessage = error instanceof Error ? error.message : String(error);
-      alert(`Failed to revoke API key: ${errorMessage}`);
+      alert(`Failed to delete API key: ${errorMessage}`);
     } finally {
       setDeleting(false);
     }
@@ -181,7 +181,7 @@ export default function APIKeysPage() {
                         ? 'bg-green-100 text-green-700' 
                         : 'bg-neutral-100 text-neutral-500'
                     }`}>
-                      {key.is_active ? 'Active' : 'Revoked'}
+                      {key.is_active ? 'Active' : 'Deleted'}
                     </span>
                   </td>
                   <td className="px-6 py-4 text-right">
@@ -189,7 +189,7 @@ export default function APIKeysPage() {
                       <button
                         onClick={() => handleRevokeKey(key)}
                         className="text-neutral-400 hover:text-red-500 transition-colors"
-                        title="Revoke key"
+                        title="Delete key"
                       >
                         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -303,9 +303,9 @@ export default function APIKeysPage() {
       {showDeleteModal && keyToDelete && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md animate-fade-in">
-            <h2 className="text-lg font-semibold text-neutral-900 mb-2">Revoke API Key?</h2>
+            <h2 className="text-lg font-semibold text-neutral-900 mb-2">Delete API Key?</h2>
             <p className="text-sm text-neutral-500 mb-4">
-              Are you sure you want to revoke <span className="font-medium text-neutral-900">"{keyToDelete.name}"</span>? This action cannot be undone and any applications using this key will stop working immediately.
+              Are you sure you want to delete <span className="font-medium text-neutral-900">"{keyToDelete.name}"</span>? This action cannot be undone and any applications using this key will stop working immediately.
             </p>
             <div className="flex gap-3 justify-end">
               <button
@@ -326,10 +326,10 @@ export default function APIKeysPage() {
                 {deleting ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Revoking...
+                    Deleting...
                   </>
                 ) : (
-                  "Revoke Key"
+                  "Delete Key"
                 )}
               </button>
             </div>

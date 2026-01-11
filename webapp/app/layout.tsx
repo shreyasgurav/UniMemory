@@ -4,6 +4,18 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "UniMemory",
   description: "AI memory management for your applications",
+  icons: {
+    icon: [
+      {
+        url: "/Unimemory Logo NoBG.png",
+        media: "(prefers-color-scheme: light)",
+      },
+      {
+        url: "/UniMemory White NoBG.png",
+        media: "(prefers-color-scheme: dark)",
+      },
+    ],
+  },
 };
 
 export default function RootLayout({
