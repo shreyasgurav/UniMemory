@@ -225,6 +225,11 @@ async def hybrid_search(
         Memory.is_active == True
     )
     
+    # Filter by owner_id for multi-tenant isolation (required)
+    owner_id = filters.get("owner_id") if filters else None
+    if owner_id:
+        stmt = stmt.where(Memory.owner_id == owner_id)
+    
     if user_id:
         stmt = stmt.where(Memory.user_id == user_id)
     

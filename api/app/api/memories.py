@@ -9,12 +9,13 @@ from pydantic import BaseModel
 import uuid
 
 from app.db.database import get_db
-from app.db.models import Memory, Waypoint, ProcessingLog
+from app.db.models import Memory, Waypoint, ProcessingLog, User
 from app.core.extractor import get_extractor
 from app.core.embeddings import get_embedding_service
 from app.core.simhash import compute_simhash, hamming_distance
 from app.core.sector import classify_sector, get_sector_decay_lambda, calculate_initial_salience
 from app.core.waypoints import create_waypoint_for_memory
+from app.core.auth import validate_api_key
 from app.config import settings
 
 router = APIRouter()
@@ -50,10 +51,13 @@ class MemoryListResponse(BaseModel):
 @router.post("/memories/add", response_model=Dict[str, Any])
 async def add_memory(
     request: AddMemoryRequest,
+    user_info: tuple = Depends(validate_api_key),
     session: AsyncSession = Depends(get_db)
 ):
     """
     Add a new memory (extracts and stores)
+    
+    Requires X-API-Key header for authentication.
     
     Flow:
     1. Check if worth remembering (LLM)
@@ -63,6 +67,9 @@ async def add_memory(
     5. Store in database
     6. Create waypoint links
     """
+    user, api_key = user_info  # Get authenticated user from API key
+    owner_id = str(user.id)  # The UniMemory user who owns these memories
+    
     content = request.content.strip()
     if not content:
         raise HTTPException(status_code=400, detail="Content cannot be empty")
@@ -111,11 +118,12 @@ async def add_memory(
         # Generate SimHash for deduplication
         simhash = compute_simhash(mem_content)
         
-        # Check for existing similar memory
+        # Check for existing similar memory (scoped to owner and end-user)
         from sqlalchemy import select
         stmt = select(Memory).where(
             Memory.simhash.isnot(None),
             Memory.is_active == True,
+            Memory.owner_id == owner_id,
             Memory.user_id == request.user_id
         ).order_by(Memory.salience.desc()).limit(100)
         
@@ -166,6 +174,7 @@ async def add_memory(
             extra_metadata=request.metadata or {},
             source_app=request.source_app,
             user_id=request.user_id,
+            owner_id=owner_id,  # UniMemory user who owns this memory
             embedding=embedding,
             embedding_model=settings.EMBEDDING_MODEL,
             is_active=True,
@@ -219,12 +228,25 @@ async def list_memories(
     limit: int = 50,
     offset: int = 0,
     sector: Optional[str] = None,
+    user_info: tuple = Depends(validate_api_key),
     session: AsyncSession = Depends(get_db)
 ):
-    """List memories with optional filters"""
+    """
+    List memories with optional filters.
+    
+    Requires X-API-Key header for authentication.
+    Only returns memories owned by the authenticated user.
+    """
+    user, api_key = user_info
+    owner_id = str(user.id)
+    
     from sqlalchemy import select, func
     
-    stmt = select(Memory).where(Memory.is_active == True)
+    # Always filter by owner_id (multi-tenant isolation)
+    stmt = select(Memory).where(
+        Memory.is_active == True,
+        Memory.owner_id == owner_id
+    )
     
     if user_id:
         stmt = stmt.where(Memory.user_id == user_id)
@@ -237,8 +259,11 @@ async def list_memories(
     result = await session.execute(stmt)
     memories = result.scalars().all()
     
-    # Get total count
-    count_stmt = select(func.count(Memory.id)).where(Memory.is_active == True)
+    # Get total count (also filtered by owner_id)
+    count_stmt = select(func.count(Memory.id)).where(
+        Memory.is_active == True,
+        Memory.owner_id == owner_id
+    )
     if user_id:
         count_stmt = count_stmt.where(Memory.user_id == user_id)
     if sector:
@@ -263,17 +288,30 @@ async def list_memories(
 @router.delete("/memories/{memory_id}")
 async def delete_memory(
     memory_id: str,
+    user_info: tuple = Depends(validate_api_key),
     session: AsyncSession = Depends(get_db)
 ):
-    """Delete (deactivate) a memory"""
+    """
+    Delete (deactivate) a memory.
+    
+    Requires X-API-Key header for authentication.
+    Can only delete memories owned by the authenticated user.
+    """
+    user, api_key = user_info
+    owner_id = str(user.id)
+    
     from sqlalchemy import select
     
-    stmt = select(Memory).where(Memory.id == memory_id)
+    # Only allow deleting memories owned by this user
+    stmt = select(Memory).where(
+        Memory.id == memory_id,
+        Memory.owner_id == owner_id
+    )
     result = await session.execute(stmt)
     memory = result.scalar_one_or_none()
     
     if not memory:
-        raise HTTPException(status_code=404, detail="Memory not found")
+        raise HTTPException(status_code=404, detail="Memory not found or not authorized")
     
     memory.is_active = False
     memory.updated_at = datetime.utcnow()

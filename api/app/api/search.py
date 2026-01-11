@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from app.db.database import get_db
 from app.core.search import hybrid_search
 from app.db.models import Memory
+from app.core.auth import validate_api_key
 
 router = APIRouter()
 
@@ -44,10 +45,14 @@ class SearchResponse(BaseModel):
 @router.post("/search", response_model=SearchResponse)
 async def search_memories(
     request: SearchRequest,
+    user_info: tuple = Depends(validate_api_key),
     session: AsyncSession = Depends(get_db)
 ):
     """
     Search for relevant memories using hybrid search (OpenMemory HSG-style)
+    
+    Requires X-API-Key header for authentication.
+    Only searches memories owned by the authenticated user.
     
     Combines:
     - Vector similarity (embeddings)
@@ -56,11 +61,15 @@ async def search_memories(
     - Recency scoring
     - Tag matching
     """
+    user, api_key = user_info
+    owner_id = str(user.id)
+    
     if not request.query or not request.query.strip():
         raise HTTPException(status_code=400, detail="Query cannot be empty")
     
     filters = {
-        "debug": request.debug
+        "debug": request.debug,
+        "owner_id": owner_id  # Add owner_id filter for multi-tenant isolation
     }
     
     try:

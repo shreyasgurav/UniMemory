@@ -37,7 +37,8 @@ class Memory(Base):
     
     # Source info
     source_app = Column(String(100))
-    user_id = Column(String(100), index=True, default="anonymous")
+    user_id = Column(String(100), index=True, default="anonymous")  # End-user ID (chatbot customer)
+    owner_id = Column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)  # UniMemory user who owns this memory
     
     # Embeddings (pgvector)
     embedding = Column(Vector(1536))  # text-embedding-3-small = 1536 dims
@@ -56,6 +57,7 @@ class Memory(Base):
         Index("idx_memories_salience", "salience", postgresql_ops={"salience": "DESC"}),
         Index("idx_memories_sector", "sector"),
         Index("idx_memories_user_id", "user_id"),
+        Index("idx_memories_owner_id", "owner_id"),
         Index("idx_memories_created_at", "created_at", postgresql_ops={"created_at": "DESC"}),
         Index("idx_memories_embedding", "embedding", postgresql_using="ivfflat", postgresql_with={"lists": 100}),
     )
