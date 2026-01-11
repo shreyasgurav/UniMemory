@@ -10,7 +10,7 @@ asyncpg==0.29.0
 psycopg2-binary==2.9.9
 pgvector==0.2.4
 
-# OpenAI for embeddings and LLM
+# OpenAI for embeddings and LLM (async support)
 openai>=1.40.0
 
 # Auth
@@ -19,11 +19,15 @@ python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 python-multipart==0.0.6
 
+# Caching and Rate Limiting
+redis>=5.0.0
+
 # Utilities
 python-dotenv==1.0.0
 numpy==1.26.3
-scikit-learn==1.4.0  # For cosine similarity if needed
 
 # Logging
 structlog==24.1.0
 
+# Production server
+gunicorn==21.2.0

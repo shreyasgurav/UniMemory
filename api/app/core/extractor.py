@@ -1,10 +1,16 @@
 """
 LLM-based memory extraction
+Production-ready with async calls and timeout handling
 """
 from typing import List, Dict, Any, Optional
-import openai
+from openai import AsyncOpenAI
 import json
+import asyncio
+import logging
+
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class MemoryExtractor:
@@ -13,7 +19,11 @@ class MemoryExtractor:
     def __init__(self):
         if not settings.OPENAI_API_KEY:
             raise ValueError("OPENAI_API_KEY not set in config")
-        self.client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
+        self.client = AsyncOpenAI(
+            api_key=settings.OPENAI_API_KEY,
+            timeout=settings.OPENAI_TIMEOUT,
+            max_retries=settings.OPENAI_MAX_RETRIES,
+        )
     
     async def check_worthiness(self, text: str) -> Dict[str, Any]:
         """
@@ -52,21 +62,32 @@ Return JSON:
 }"""
         
         try:
-            response = self.client.chat.completions.create(
-                model=settings.OPENAI_MODEL,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Input: {text}"}
-                ],
-                temperature=0.3,
-                response_format={"type": "json_object"}
+            response = await asyncio.wait_for(
+                self.client.chat.completions.create(
+                    model=settings.OPENAI_MODEL,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": f"Input: {text[:2000]}"}  # Limit input
+                    ],
+                    temperature=0.3,
+                    response_format={"type": "json_object"},
+                    max_tokens=200,
+                ),
+                timeout=settings.OPENAI_TIMEOUT
             )
             
             result = json.loads(response.choices[0].message.content)
             return result
             
+        except asyncio.TimeoutError:
+            logger.warning(f"Worthiness check timed out for text: {text[:50]}...")
+            return {
+                "is_worth_remembering": True,
+                "reason": "Timeout - defaulting to worth remembering",
+                "suggested_types": ["insight"]
+            }
         except Exception as e:
-            # Default to worth remembering if LLM fails
+            logger.error(f"Worthiness check failed: {e}")
             return {
                 "is_worth_remembering": True,
                 "reason": f"LLM check failed: {e}",
@@ -102,26 +123,37 @@ Memory types:
 - belief: Beliefs or values
 - instruction: How user wants things done
 
-Return JSON array:
-[
-  {
-    "content": "Extracted fact/insight",
-    "type": "fact",
-    "confidence": 0.9,
-    "tags": ["tag1", "tag2"],
-    "expires_at": null  // ISO date string or null
-  }
-]"""
+Return JSON object with memories array:
+{
+  "memories": [
+    {
+      "content": "Extracted fact/insight",
+      "type": "fact",
+      "confidence": 0.9,
+      "tags": ["tag1", "tag2"],
+      "expires_at": null
+    }
+  ]
+}
+
+Extract at most 5 memories. Focus on the most important facts."""
         
         try:
-            response = self.client.chat.completions.create(
-                model=settings.OPENAI_MODEL,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Extract memories from: {text}"}
-                ],
-                temperature=0.3,
-                response_format={"type": "json_object"}
+            # Truncate input to prevent token overflow
+            truncated_text = text[:settings.MAX_CONTENT_LENGTH]
+            
+            response = await asyncio.wait_for(
+                self.client.chat.completions.create(
+                    model=settings.OPENAI_MODEL,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": f"Extract memories from: {truncated_text}"}
+                    ],
+                    temperature=0.3,
+                    response_format={"type": "json_object"},
+                    max_tokens=1000,
+                ),
+                timeout=settings.OPENAI_TIMEOUT
             )
             
             result = json.loads(response.choices[0].message.content)
@@ -143,10 +175,16 @@ Return JSON array:
             if not isinstance(memories, list):
                 memories = []
             
+            # Limit number of memories
+            memories = memories[:settings.MAX_MEMORIES_PER_REQUEST]
+            
             return memories
             
+        except asyncio.TimeoutError:
+            logger.warning(f"Memory extraction timed out for text: {text[:50]}...")
+            return []
         except Exception as e:
-            print(f"[Extractor] Failed to extract memories: {e}")
+            logger.error(f"Memory extraction failed: {e}")
             return []
 
 
@@ -160,4 +198,3 @@ def get_extractor() -> MemoryExtractor:
     if _extractor is None:
         _extractor = MemoryExtractor()
     return _extractor
-

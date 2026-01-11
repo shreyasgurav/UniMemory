@@ -1,21 +1,30 @@
 """
 Authentication utilities for Firebase and API key validation
+Production-ready with caching and optimized lookups
 """
-from fastapi import Depends, HTTPException, Header, status
+from fastapi import Depends, HTTPException, Header, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from typing import Optional
+from typing import Optional, Tuple
 from datetime import datetime
 import firebase_admin
 from firebase_admin import credentials, auth as firebase_auth
 import json
 import os
+import logging
+import hashlib
 
 from app.db.database import get_db
 from app.db.models import User, APIKey
 from app.core.security import verify_api_key
+from app.core.cache import (
+    get_cached_api_key, set_cached_api_key, invalidate_api_key_cache,
+    check_rate_limit
+)
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 # Firebase initialization (lazy)
 _firebase_app = None
@@ -150,34 +159,82 @@ async def get_current_user(
     return user
 
 
-async def validate_api_key(
-    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
-    session: AsyncSession = Depends(get_db)
-) -> tuple[User, APIKey]:
+def extract_key_prefix(api_key: str) -> str:
+    """Extract prefix from API key for lookup optimization"""
+    # Format: um_live_<64chars>
+    # We use first 20 chars as lookup prefix
+    return api_key[:20] if len(api_key) >= 20 else api_key
+
+
+async def validate_api_key_optimized(
+    x_api_key: str,
+    session: AsyncSession
+) -> Tuple[User, APIKey]:
     """
-    Validate API key and return associated user.
+    Optimized API key validation with caching.
     
-    Usage: @router.post("/endpoint")
-           async def endpoint(user_info: tuple = Depends(validate_api_key)):
-               user, api_key = user_info
+    Strategy:
+    1. Extract key prefix
+    2. Check cache for key data
+    3. If not cached, do prefix-based DB lookup (much fewer bcrypt checks)
+    4. Verify with bcrypt
+    5. Cache result
     """
-    if not x_api_key:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="X-API-Key header required"
-        )
+    key_prefix = extract_key_prefix(x_api_key)
     
-    # Get all active API keys and check against provided key
-    # Note: We iterate because bcrypt hashes can't be looked up directly
-    stmt = select(APIKey).where(APIKey.is_active == True)
+    # Step 1: Check cache first
+    cached = await get_cached_api_key(key_prefix)
+    if cached:
+        # Verify the full key against cached hash
+        if verify_api_key(x_api_key, cached["key_hash"]):
+            # Get fresh user and key from DB (for up-to-date data)
+            stmt = select(APIKey).where(
+                APIKey.id == cached["key_id"],
+                APIKey.is_active == True
+            )
+            result = await session.execute(stmt)
+            api_key = result.scalar_one_or_none()
+            
+            if api_key:
+                # Get user
+                stmt = select(User).where(User.id == api_key.user_id)
+                result = await session.execute(stmt)
+                user = result.scalar_one_or_none()
+                
+                if user and user.is_active:
+                    # Update usage (non-blocking in production)
+                    api_key.last_used_at = datetime.utcnow()
+                    api_key.usage_count = (api_key.usage_count or 0) + 1
+                    await session.commit()
+                    return user, api_key
+    
+    # Step 2: Not in cache or cache miss - query by prefix
+    # Only get keys that match the prefix (much smaller set to check)
+    stored_prefix = key_prefix[:15] + "..."  # Match stored format
+    stmt = select(APIKey).where(
+        APIKey.is_active == True,
+        APIKey.key_prefix == stored_prefix
+    )
     result = await session.execute(stmt)
-    api_keys = result.scalars().all()
+    candidate_keys = result.scalars().all()
     
     matched_key = None
-    for key in api_keys:
+    for key in candidate_keys:
         if verify_api_key(x_api_key, key.key_hash):
             matched_key = key
             break
+    
+    if not matched_key:
+        # Fallback: Check all keys (for keys with different prefix format)
+        # This is the slow path, but ensures backwards compatibility
+        stmt = select(APIKey).where(APIKey.is_active == True)
+        result = await session.execute(stmt)
+        all_keys = result.scalars().all()
+        
+        for key in all_keys:
+            if verify_api_key(x_api_key, key.key_hash):
+                matched_key = key
+                break
     
     if not matched_key:
         raise HTTPException(
@@ -192,10 +249,6 @@ async def validate_api_key(
             detail="API key expired"
         )
     
-    # Update usage tracking
-    matched_key.last_used_at = datetime.utcnow()
-    matched_key.usage_count = (matched_key.usage_count or 0) + 1
-    
     # Get user
     stmt = select(User).where(User.id == matched_key.user_id)
     result = await session.execute(stmt)
@@ -207,9 +260,57 @@ async def validate_api_key(
             detail="User not found or inactive"
         )
     
+    # Step 3: Cache the key data for future lookups
+    await set_cached_api_key(key_prefix, {
+        "key_id": str(matched_key.id),
+        "key_hash": matched_key.key_hash,
+        "user_id": str(user.id),
+    }, ttl=300)  # 5 minute cache
+    
+    # Update usage tracking
+    matched_key.last_used_at = datetime.utcnow()
+    matched_key.usage_count = (matched_key.usage_count or 0) + 1
     await session.commit()
     
     return user, matched_key
+
+
+async def validate_api_key(
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    session: AsyncSession = Depends(get_db)
+) -> Tuple[User, APIKey]:
+    """
+    Validate API key and return associated user.
+    Production-ready with caching and rate limiting.
+    
+    Usage: @router.post("/endpoint")
+           async def endpoint(user_info: tuple = Depends(validate_api_key)):
+               user, api_key = user_info
+    """
+    if not x_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="X-API-Key header required"
+        )
+    
+    # Validate the key (with caching optimization)
+    user, api_key = await validate_api_key_optimized(x_api_key, session)
+    
+    # Check rate limit
+    allowed, remaining, reset = await check_rate_limit(str(api_key.id))
+    
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit exceeded",
+            headers={
+                "X-RateLimit-Remaining": str(remaining),
+                "X-RateLimit-Reset": str(reset),
+                "Retry-After": str(reset)
+            }
+        )
+    
+    return user, api_key
 
 
 async def get_user_from_api_key(
@@ -224,4 +325,3 @@ async def get_user_from_api_key(
     """
     user, _ = await validate_api_key(x_api_key, session)
     return user
-

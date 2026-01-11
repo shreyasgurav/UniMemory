@@ -1,12 +1,15 @@
 """
 Memory management endpoints
+Production-ready with batch operations and proper validation
 """
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException, Body, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
 from typing import List, Optional, Dict, Any
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, validator
 import uuid
+import logging
 
 from app.db.database import get_db
 from app.db.models import Memory, Waypoint, ProcessingLog, User
@@ -18,15 +21,22 @@ from app.core.waypoints import create_waypoint_for_memory
 from app.core.auth import validate_api_key
 from app.config import settings
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-# Request/Response models
+# Request/Response models with validation
 class AddMemoryRequest(BaseModel):
-    content: str
-    source_app: Optional[str] = None
-    user_id: Optional[str] = "anonymous"
+    content: str = Field(..., min_length=1, max_length=50000)
+    source_app: Optional[str] = Field(None, max_length=100)
+    user_id: Optional[str] = Field("anonymous", max_length=100)
     metadata: Optional[Dict[str, Any]] = None
+    
+    @validator('content')
+    def validate_content(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Content cannot be empty')
+        return v.strip()
 
 
 class MemoryResponse(BaseModel):
@@ -67,14 +77,36 @@ class MemoryDetailResponse(BaseModel):
 
 class UpdateMemoryRequest(BaseModel):
     """Request to update a memory"""
-    salience: Optional[float] = None  # Boost or set salience (0.0-1.0)
-    tags: Optional[List[str]] = None  # Update tags
-    metadata: Optional[Dict[str, Any]] = None  # Update metadata
+    salience: Optional[float] = Field(None, ge=0.0, le=1.0)
+    tags: Optional[List[str]] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
+async def create_waypoints_background(
+    session_factory,
+    memory_ids: List[str],
+    embeddings: List[List[float]],
+    user_id: str
+):
+    """Background task to create waypoints (non-blocking)"""
+    try:
+        async with session_factory() as session:
+            for memory_id, embedding in zip(memory_ids, embeddings):
+                await create_waypoint_for_memory(
+                    session=session,
+                    new_memory_id=memory_id,
+                    new_embedding=embedding,
+                    user_id=user_id
+                )
+            await session.commit()
+    except Exception as e:
+        logger.error(f"Background waypoint creation failed: {e}")
 
 
 @router.post("/memories/add", response_model=Dict[str, Any])
 async def add_memory(
     request: AddMemoryRequest,
+    background_tasks: BackgroundTasks,
     user_info: tuple = Depends(validate_api_key),
     session: AsyncSession = Depends(get_db)
 ):
@@ -88,15 +120,13 @@ async def add_memory(
     2. Extract structured memories (LLM)
     3. Generate embeddings
     4. Check for duplicates (SimHash)
-    5. Store in database
-    6. Create waypoint links
+    5. Store in database (batched)
+    6. Create waypoint links (background)
     """
-    user, api_key = user_info  # Get authenticated user from API key
-    owner_id = str(user.id)  # The UniMemory user who owns these memories
+    user, api_key = user_info
+    owner_id = str(user.id)
     
-    content = request.content.strip()
-    if not content:
-        raise HTTPException(status_code=400, detail="Content cannot be empty")
+    content = request.content
     
     extractor = get_extractor()
     embedding_service = get_embedding_service()
@@ -131,15 +161,33 @@ async def add_memory(
             "extracted_count": 0
         }
     
-    # Step 3: Process each extracted memory
+    # Step 3: Batch process extracted memories
     saved_memories = []
+    new_memories_for_waypoints = []  # (memory_id, embedding)
+    
+    # Pre-fetch existing memories for deduplication (single query)
+    stmt = select(Memory).where(
+        Memory.simhash.isnot(None),
+        Memory.is_active == True,
+        Memory.owner_id == owner_id,
+        Memory.user_id == request.user_id
+    ).order_by(Memory.salience.desc()).limit(500)
+    
+    result = await session.execute(stmt)
+    existing_memories = result.scalars().all()
+    
+    # Build simhash lookup for fast dedup
+    simhash_to_memory = {}
+    for em in existing_memories:
+        if em.simhash:
+            simhash_to_memory[em.simhash] = em
     
     for mem_data in extracted:
         # Handle both dict format {"content": "..."} and plain string format
         if isinstance(mem_data, str):
             mem_content = mem_data.strip()
         elif isinstance(mem_data, dict):
-        mem_content = mem_data.get("content", "").strip()
+            mem_content = mem_data.get("content", "").strip()
         else:
             continue
             
@@ -149,31 +197,19 @@ async def add_memory(
         # Generate SimHash for deduplication
         simhash = compute_simhash(mem_content)
         
-        # Check for existing similar memory (scoped to owner and end-user)
-        from sqlalchemy import select
-        stmt = select(Memory).where(
-            Memory.simhash.isnot(None),
-            Memory.is_active == True,
-            Memory.owner_id == owner_id,
-            Memory.user_id == request.user_id
-        ).order_by(Memory.salience.desc()).limit(100)
-        
-        result = await session.execute(stmt)
-        existing_memories = result.scalars().all()
-        
+        # Check for existing similar memory (optimized)
         existing = None
-        for em in existing_memories:
-            if em.simhash and hamming_distance(simhash, em.simhash) <= 3:
-                existing = em
+        for existing_hash, existing_mem in simhash_to_memory.items():
+            if hamming_distance(simhash, existing_hash) <= 3:
+                existing = existing_mem
                 break
         
         if existing:
-            # Boost salience on duplicate (same as Mac app's reinforceOnDuplicate)
-            DUPLICATE_BOOST = 0.15  # Same as Mac app
+            # Boost salience on duplicate
+            DUPLICATE_BOOST = 0.15
             existing.salience = min(1.0, (existing.salience or 0.5) + DUPLICATE_BOOST)
             existing.last_seen_at = datetime.utcnow()
             existing.updated_at = datetime.utcnow()
-            await session.commit()
             
             saved_memories.append({
                 "id": str(existing.id),
@@ -185,16 +221,20 @@ async def add_memory(
         sector, additional_sectors, confidence = classify_sector(mem_content)
         decay_lambda = get_sector_decay_lambda(sector)
         
-        # Step 5: Calculate initial salience (same as Mac app: 0.4 + 0.1 per additional)
+        # Step 5: Calculate initial salience
         initial_salience = calculate_initial_salience(sector, additional_sectors)
         
         # Step 6: Generate embedding
-        embedding, dim = await embedding_service.embed(mem_content)
+        try:
+            embedding, dim = await embedding_service.embed(mem_content)
+        except Exception as e:
+            logger.error(f"Failed to generate embedding: {e}")
+            continue
         
-        # Step 7: Create memory
+        # Step 7: Create memory object
         memory_id = str(uuid.uuid4())
-        # Get tags from mem_data if it's a dict, otherwise empty list
         tags = mem_data.get("tags", []) if isinstance(mem_data, dict) else []
+        
         memory = Memory(
             id=memory_id,
             content=mem_content,
@@ -202,12 +242,12 @@ async def add_memory(
             sector=sector,
             salience=initial_salience,
             decay_lambda=decay_lambda,
-            segment=0,  # TODO: Implement segment rotation
+            segment=0,
             tags=tags,
             extra_metadata=request.metadata or {},
             source_app=request.source_app,
             user_id=request.user_id,
-            owner_id=owner_id,  # UniMemory user who owns this memory
+            owner_id=owner_id,
             embedding=embedding,
             embedding_model=settings.EMBEDDING_MODEL,
             is_active=True,
@@ -217,25 +257,35 @@ async def add_memory(
         )
         
         session.add(memory)
-        await session.flush()  # Get memory ID
         
-        # Step 8: Create waypoint link (find most similar existing memory)
-        await create_waypoint_for_memory(
-            session=session,
-            new_memory_id=memory_id,
-            new_embedding=embedding,
-            user_id=request.user_id
-        )
+        # Track for waypoint creation (background)
+        new_memories_for_waypoints.append((memory_id, embedding))
+        
+        # Add to simhash lookup to prevent duplicates within same batch
+        simhash_to_memory[simhash] = memory
         
         saved_memories.append({
             "id": memory_id,
             "was_deduplicated": False
         })
     
-    # Commit all changes
+    # Step 8: Single commit for all changes
     await session.commit()
     
-    # Log processing
+    # Step 9: Create waypoints in background (non-blocking)
+    if new_memories_for_waypoints:
+        from app.db.database import AsyncSessionLocal
+        memory_ids = [m[0] for m in new_memories_for_waypoints]
+        embeddings = [m[1] for m in new_memories_for_waypoints]
+        background_tasks.add_task(
+            create_waypoints_background,
+            AsyncSessionLocal,
+            memory_ids,
+            embeddings,
+            request.user_id
+        )
+    
+    # Step 10: Log processing
     log = ProcessingLog(
         id=str(uuid.uuid4()),
         raw_content_hash=compute_simhash(content),
@@ -273,7 +323,8 @@ async def list_memories(
     user, api_key = user_info
     owner_id = str(user.id)
     
-    from sqlalchemy import select, func
+    # Enforce limits
+    limit = min(limit, settings.MAX_SEARCH_LIMIT)
     
     # Always filter by owner_id (multi-tenant isolation)
     stmt = select(Memory).where(
@@ -333,8 +384,6 @@ async def get_memory(
     user, api_key = user_info
     owner_id = str(user.id)
     
-    from sqlalchemy import select
-    
     stmt = select(Memory).where(
         Memory.id == memory_id,
         Memory.owner_id == owner_id,
@@ -376,16 +425,9 @@ async def update_memory(
     
     Requires X-API-Key header for authentication.
     Can only update memories owned by the authenticated user.
-    
-    Use cases:
-    - Boost salience when memory is reinforced
-    - Update tags for better organization
-    - Add metadata for context
     """
     user, api_key = user_info
     owner_id = str(user.id)
-    
-    from sqlalchemy import select
     
     stmt = select(Memory).where(
         Memory.id == memory_id,
@@ -400,14 +442,12 @@ async def update_memory(
     
     # Update fields if provided
     if request.salience is not None:
-        # Clamp salience to 0.0-1.0
-        memory.salience = max(0.0, min(1.0, request.salience))
+        memory.salience = request.salience
     
     if request.tags is not None:
         memory.tags = request.tags
     
     if request.metadata is not None:
-        # Merge with existing metadata
         existing_meta = memory.extra_metadata or {}
         existing_meta.update(request.metadata)
         memory.extra_metadata = existing_meta
@@ -444,9 +484,6 @@ async def delete_memory(
     user, api_key = user_info
     owner_id = str(user.id)
     
-    from sqlalchemy import select
-    
-    # Only allow deleting memories owned by this user
     stmt = select(Memory).where(
         Memory.id == memory_id,
         Memory.owner_id == owner_id
@@ -463,4 +500,3 @@ async def delete_memory(
     await session.commit()
     
     return {"success": True, "id": memory_id}
-

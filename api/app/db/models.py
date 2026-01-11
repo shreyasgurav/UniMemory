@@ -52,13 +52,22 @@ class Memory(Base):
     waypoints_from = relationship("Waypoint", foreign_keys="Waypoint.src_id", back_populates="source")
     waypoints_to = relationship("Waypoint", foreign_keys="Waypoint.dst_id", back_populates="target")
     
-    # Indexes
+    # Indexes - optimized for production queries
     __table_args__ = (
+        # Single column indexes
         Index("idx_memories_salience", "salience", postgresql_ops={"salience": "DESC"}),
         Index("idx_memories_sector", "sector"),
         Index("idx_memories_user_id", "user_id"),
         Index("idx_memories_owner_id", "owner_id"),
         Index("idx_memories_created_at", "created_at", postgresql_ops={"created_at": "DESC"}),
+        Index("idx_memories_simhash", "simhash"),
+        
+        # Compound indexes for common query patterns
+        Index("idx_memories_owner_user_active", "owner_id", "user_id", "is_active"),  # List memories
+        Index("idx_memories_owner_active_created", "owner_id", "is_active", "created_at"),  # Sorted list
+        Index("idx_memories_owner_simhash", "owner_id", "simhash"),  # Deduplication
+        
+        # Vector index for similarity search
         Index("idx_memories_embedding", "embedding", postgresql_using="ivfflat", postgresql_with={"lists": 100}),
     )
     
@@ -130,13 +139,13 @@ class APIKey(Base):
     id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String(100), nullable=False)
     key_hash = Column(String(255), nullable=False)  # Hashed API key
-    key_prefix = Column(String(20))  # First few chars for identification
+    key_prefix = Column(String(20), index=True)  # First few chars for identification (indexed for fast lookup)
     
     # User association
     user_id = Column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     
     # Status
-    is_active = Column(Boolean, default=True)
+    is_active = Column(Boolean, default=True, index=True)
     expires_at = Column(DateTime(timezone=True))
     
     # Usage tracking
