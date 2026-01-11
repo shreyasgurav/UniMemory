@@ -111,7 +111,14 @@ async def add_memory(
     saved_memories = []
     
     for mem_data in extracted:
-        mem_content = mem_data.get("content", "").strip()
+        # Handle both dict format {"content": "..."} and plain string format
+        if isinstance(mem_data, str):
+            mem_content = mem_data.strip()
+        elif isinstance(mem_data, dict):
+            mem_content = mem_data.get("content", "").strip()
+        else:
+            continue
+            
         if not mem_content:
             continue
         
@@ -162,6 +169,8 @@ async def add_memory(
         
         # Step 7: Create memory
         memory_id = str(uuid.uuid4())
+        # Get tags from mem_data if it's a dict, otherwise empty list
+        tags = mem_data.get("tags", []) if isinstance(mem_data, dict) else []
         memory = Memory(
             id=memory_id,
             content=mem_content,
@@ -170,7 +179,7 @@ async def add_memory(
             salience=initial_salience,
             decay_lambda=decay_lambda,
             segment=0,  # TODO: Implement segment rotation
-            tags=mem_data.get("tags", []),
+            tags=tags,
             extra_metadata=request.metadata or {},
             source_app=request.source_app,
             user_id=request.user_id,

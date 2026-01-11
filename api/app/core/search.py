@@ -247,11 +247,19 @@ async def hybrid_search(
     candidate_ids = []
     for mem in vector_results:
         if mem.embedding is not None:
-            # Convert pgvector Vector to list if needed
-            embedding_list = list(mem.embedding) if hasattr(mem.embedding, '__iter__') and not isinstance(mem.embedding, str) else mem.embedding
-            sim = cosine_similarity(query_embedding, embedding_list)
-            similarities.append(sim)
-            candidate_ids.append(mem.id)
+            # Convert pgvector Vector to list if needed (handle numpy arrays)
+            try:
+                if hasattr(mem.embedding, 'tolist'):
+                    embedding_list = mem.embedding.tolist()
+                elif hasattr(mem.embedding, '__iter__') and not isinstance(mem.embedding, str):
+                    embedding_list = list(mem.embedding)
+                else:
+                    embedding_list = mem.embedding
+                sim = cosine_similarity(query_embedding, embedding_list)
+                similarities.append(sim)
+                candidate_ids.append(mem.id)
+            except Exception:
+                candidate_ids.append(mem.id)  # Still add to candidates even if similarity fails
     
     avg_similarity = sum(similarities) / len(similarities) if similarities else 0.0
     high_confidence = avg_similarity >= 0.55
@@ -284,9 +292,17 @@ async def hybrid_search(
         # Calculate similarity
         similarity = 0.0
         if mem.embedding is not None:
-            # Convert pgvector Vector to list if needed
-            embedding_list = list(mem.embedding) if hasattr(mem.embedding, '__iter__') and not isinstance(mem.embedding, str) else mem.embedding
-            similarity = cosine_similarity(query_embedding, embedding_list)
+            # Convert pgvector Vector to list if needed (handle numpy arrays)
+            try:
+                if hasattr(mem.embedding, 'tolist'):
+                    embedding_list = mem.embedding.tolist()
+                elif hasattr(mem.embedding, '__iter__') and not isinstance(mem.embedding, str):
+                    embedding_list = list(mem.embedding)
+                else:
+                    embedding_list = mem.embedding
+                similarity = cosine_similarity(query_embedding, embedding_list)
+            except Exception:
+                similarity = 0.0
         
         # Sector relationship weight (same as Mac app - full matrix)
         if mem.sector and query_sector:

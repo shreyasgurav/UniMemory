@@ -69,11 +69,20 @@ async def create_waypoint_for_memory(
         best_similarity = -1.0
         
         for mem in existing_memories:
-            if not mem.embedding or mem.id == new_memory_id:
+            if mem.embedding is None or mem.id == new_memory_id:
+                continue
+            
+            # Convert embedding to list (handle numpy arrays from pgvector)
+            try:
+                if hasattr(mem.embedding, 'tolist'):
+                    mem_embedding = mem.embedding.tolist()
+                else:
+                    mem_embedding = list(mem.embedding)
+            except Exception:
                 continue
             
             # Calculate cosine similarity
-            similarity = cosine_similarity(new_embedding, list(mem.embedding))
+            similarity = cosine_similarity(new_embedding, mem_embedding)
             
             if similarity > best_similarity:
                 best_similarity = similarity
