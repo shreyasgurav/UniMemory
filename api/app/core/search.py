@@ -255,9 +255,10 @@ async def hybrid_search(
                     embedding_list = list(mem.embedding)
                 else:
                     embedding_list = mem.embedding
-            sim = cosine_similarity(query_embedding, embedding_list)
-            similarities.append(sim)
-            candidate_ids.append(mem.id)
+                
+                sim = cosine_similarity(query_embedding, embedding_list)
+                similarities.append(sim)
+                candidate_ids.append(mem.id)
             except Exception:
                 candidate_ids.append(mem.id)  # Still add to candidates even if similarity fails
     
@@ -300,7 +301,7 @@ async def hybrid_search(
                     embedding_list = list(mem.embedding)
                 else:
                     embedding_list = mem.embedding
-            similarity = cosine_similarity(query_embedding, embedding_list)
+                similarity = cosine_similarity(query_embedding, embedding_list)
             except Exception:
                 similarity = 0.0
         

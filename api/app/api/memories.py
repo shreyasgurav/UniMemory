@@ -226,7 +226,7 @@ async def add_memory(
         
         # Step 6: Generate embedding
         try:
-        embedding, dim = await embedding_service.embed(mem_content)
+            embedding, dim = await embedding_service.embed(mem_content)
         except Exception as e:
             logger.error(f"Failed to generate embedding: {e}")
             continue
