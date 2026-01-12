@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { History, ClipboardList } from "lucide-react";
 import { useRouter, usePathname } from "next/navigation";
 import { User } from "firebase/auth";
 
@@ -17,12 +18,12 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
   // Determine active view from pathname
   const activeView = pathname?.includes("/keys")
     ? "keys"
-    : pathname?.includes("/settings")
-      ? "settings"
-      : pathname?.includes("/docs")
-        ? "docs"
-        : pathname?.includes("/memories")
-          ? "memories"
+    : pathname?.includes("/requests")
+      ? "requests"
+      : pathname?.includes("/memories")
+        ? "memories"
+        : pathname?.includes("/settings")
+          ? "settings"
           : "dashboard";
 
   const navItems = [
@@ -50,21 +51,17 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
       id: "memories",
       path: "/dashboard/memories",
       icon: (
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.274A11.003 11.003 0 0112 21a11.003 11.003 0 01-4.817-1.191l-.548-.274z" />
-        </svg>
+        <History className="w-4 h-4" strokeWidth={1.5} />
       ),
       label: "Memories"
     },
     {
-      id: "docs",
-      path: "/dashboard/docs",
+      id: "requests",
+      path: "/dashboard/requests",
       icon: (
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-        </svg>
+        <ClipboardList className="w-4 h-4" strokeWidth={1.5} />
       ),
-      label: "Documentation"
+      label: "Requests"
     },
     {
       id: "settings",

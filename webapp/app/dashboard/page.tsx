@@ -61,58 +61,6 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Quick Start Guide */}
-      <div className="mt-8 bg-white border border-gray-100 rounded-2xl p-6">
-        <h2 className="text-lg font-semibold text-neutral-900 mb-4">Getting Started</h2>
-        <div className="space-y-4">
-          <div className="flex items-start gap-3">
-            <div className="w-6 h-6 rounded-full bg-neutral-900 text-white flex items-center justify-center text-xs font-medium shrink-0">
-              1
-            </div>
-            <div>
-              <p className="font-medium text-neutral-900">Create an API Key</p>
-              <p className="text-sm text-neutral-500">Go to API Keys section and generate a new key for your application.</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-3">
-            <div className="w-6 h-6 rounded-full bg-neutral-900 text-white flex items-center justify-center text-xs font-medium shrink-0">
-              2
-            </div>
-            <div>
-              <p className="font-medium text-neutral-900">Install the SDK</p>
-              <p className="text-sm text-neutral-500">Use npm or pip to install the UniMemory client library.</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-3">
-            <div className="w-6 h-6 rounded-full bg-neutral-900 text-white flex items-center justify-center text-xs font-medium shrink-0">
-              3
-            </div>
-            <div>
-              <p className="font-medium text-neutral-900">Add Memory to Your App</p>
-              <p className="text-sm text-neutral-500">Use the SDK to store and retrieve memories in your application.</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Code Example */}
-        <div className="mt-6 bg-neutral-900 rounded-xl p-4 overflow-x-auto">
-          <pre className="text-sm text-neutral-100 font-mono">
-{`import UniMemory from 'unimemory';
-
-const client = new UniMemory({
-  apiKey: process.env.UNIMEMORY_API_KEY
-});
-
-// Add a memory
-await client.addMemory({
-  content: "User prefers dark mode"
-});
-
-// Search memories
-const results = await client.search("preferences");`}
-          </pre>
-        </div>
-      </div>
     </div>
   );
 }
