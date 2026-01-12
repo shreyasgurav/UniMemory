@@ -137,8 +137,8 @@ export default function MemoriesPage() {
                                 key={userId}
                                 onClick={() => setSelectedUserId(userId)}
                                 className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 group ${selectedUserId === userId
-                                        ? "bg-neutral-100 text-neutral-900"
-                                        : "text-neutral-500 hover:bg-neutral-50 hover:text-neutral-700"
+                                    ? "bg-neutral-100 text-neutral-900"
+                                    : "text-neutral-500 hover:bg-neutral-50 hover:text-neutral-700"
                                     }`}
                             >
                                 <div className="flex items-center justify-between gap-3">
@@ -149,8 +149,8 @@ export default function MemoriesPage() {
                                         </p>
                                     </div>
                                     <ChevronRight className={`w-3.5 h-3.5 transition-all ${selectedUserId === userId
-                                            ? "translate-x-0 opacity-100 text-neutral-900"
-                                            : "opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0"
+                                        ? "translate-x-0 opacity-100 text-neutral-900"
+                                        : "opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0"
                                         }`} />
                                 </div>
                             </button>
@@ -166,18 +166,7 @@ export default function MemoriesPage() {
                         {/* Header */}
                         <div className="p-8 pb-4 flex items-center justify-between border-b border-neutral-50">
                             <div>
-                                <div className="flex items-center gap-2 text-xs text-neutral-400 mb-1 uppercase tracking-wider font-semibold">
-                                    <User className="w-3 h-3" />
-                                    User Intelligence
-                                </div>
                                 <h2 className="text-xl font-semibold text-neutral-900">{selectedUserId}</h2>
-                            </div>
-
-                            <div className="flex items-center gap-3">
-                                <div className="px-3 py-1.5 bg-neutral-50 rounded-lg text-xs font-medium text-neutral-500 flex items-center gap-2">
-                                    <Clock className="w-3.5 h-3.5" />
-                                    Last activity {new Date(filteredMemories[0]?.created_at).toLocaleDateString()}
-                                </div>
                             </div>
                         </div>
 
