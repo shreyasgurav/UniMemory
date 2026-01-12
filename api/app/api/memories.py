@@ -78,6 +78,7 @@ class MemoryDetailResponse(BaseModel):
 
 class UpdateMemoryRequest(BaseModel):
     """Request to update a memory"""
+    content: Optional[str] = Field(None, min_length=1, max_length=50000)
     salience: Optional[float] = Field(None, ge=0.0, le=1.0)
     tags: Optional[List[str]] = None
     metadata: Optional[Dict[str, Any]] = None
@@ -508,6 +509,12 @@ async def update_memory(
         raise HTTPException(status_code=404, detail="Memory not found")
     
     # Update fields if provided
+    if request.content is not None:
+        memory.content = request.content
+        # Re-compute simhash if content changed
+        memory.simhash = compute_simhash(request.content)
+        memory.updated_at = datetime.utcnow()
+    
     if request.salience is not None:
         memory.salience = request.salience
     
@@ -550,6 +557,92 @@ async def delete_memory(
     Can only delete memories owned by the authenticated user.
     """
     user, api_key = user_info
+    owner_id = str(user.id)
+    
+    stmt = select(Memory).where(
+        Memory.id == memory_id,
+        Memory.owner_id == owner_id
+    )
+    result = await session.execute(stmt)
+    memory = result.scalar_one_or_none()
+    
+    if not memory:
+        raise HTTPException(status_code=404, detail="Memory not found or not authorized")
+    
+    memory.is_active = False
+    memory.updated_at = datetime.utcnow()
+    
+    await session.commit()
+    
+    return {"success": True, "id": memory_id}
+
+
+@router.patch("/memories/me/{memory_id}", response_model=MemoryDetailResponse)
+async def patch_my_memory(
+    memory_id: str,
+    request: UpdateMemoryRequest,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Update a memory (content, salience, tags, metadata) for authenticated user.
+    """
+    owner_id = str(user.id)
+    
+    stmt = select(Memory).where(
+        Memory.id == memory_id,
+        Memory.owner_id == owner_id,
+        Memory.is_active == True
+    )
+    result = await session.execute(stmt)
+    memory = result.scalar_one_or_none()
+    
+    if not memory:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    
+    if request.content is not None:
+        memory.content = request.content
+        memory.simhash = compute_simhash(request.content)
+        memory.updated_at = datetime.utcnow()
+    
+    if request.salience is not None:
+        memory.salience = request.salience
+    
+    if request.tags is not None:
+        memory.tags = request.tags
+    
+    if request.metadata is not None:
+        existing_meta = memory.extra_metadata or {}
+        existing_meta.update(request.metadata)
+        memory.extra_metadata = existing_meta
+    
+    memory.updated_at = datetime.utcnow()
+    await session.commit()
+    await session.refresh(memory)
+    
+    return MemoryDetailResponse(
+        id=str(memory.id),
+        content=memory.content,
+        sector=memory.sector,
+        salience=memory.salience,
+        tags=memory.tags or [],
+        source_app=memory.source_app,
+        user_id=memory.user_id or "anonymous",
+        created_at=memory.created_at,
+        updated_at=memory.updated_at,
+        last_seen_at=memory.last_seen_at
+    )
+
+
+@router.delete("/memories/me/{memory_id}")
+async def delete_my_memory(
+    memory_id: str,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Delete (deactivate) a memory for authenticated user.
+    """
     owner_id = str(user.id)
     
     stmt = select(Memory).where(

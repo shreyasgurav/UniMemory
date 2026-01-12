@@ -144,8 +144,20 @@ export const listMemories = async (
 };
 
 export const deleteMemory = async (token: string, memoryId: string) => {
-  return request<void>(`/memories/${memoryId}`, {
+  return request<void>(`/memories/me/${memoryId}`, {
     method: "DELETE",
     token,
+  });
+};
+
+export const updateMemory = async (
+  token: string,
+  memoryId: string,
+  updates: { content?: string; salience?: number; tags?: string[] }
+) => {
+  return request<Memory>(`/memories/me/${memoryId}`, {
+    method: "PATCH",
+    token,
+    body: JSON.stringify(updates),
   });
 };
