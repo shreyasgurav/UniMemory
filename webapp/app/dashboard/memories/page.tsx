@@ -119,7 +119,7 @@ export default function MemoriesPage() {
                         {memories.map((memory) => (
                             <div
                                 key={memory.id}
-                                className="group flex items-center justify-between p-4 rounded-2xl hover:bg-neutral-50 transition-colors duration-200"
+                                className="group flex items-center justify-between p-4 rounded-2xl hover:bg-neutral-100 transition-colors duration-200"
                             >
                                 <p className="text-[15px] text-neutral-700 leading-relaxed pr-8">
                                     {memory.content}
