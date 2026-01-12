@@ -1,18 +1,30 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth, getIdToken } from "@/lib/firebase";
 import { listMemories, deleteMemory, Memory } from "@/lib/api";
+import {
+    Users,
+    Search,
+    Trash2,
+    User,
+    Clock,
+    Tag,
+    ChevronRight,
+    MoreVertical,
+    Plus
+} from "lucide-react";
 
 export default function MemoriesPage() {
     const [memories, setMemories] = useState<Memory[]>([]);
     const [total, setTotal] = useState(0);
     const [loading, setLoading] = useState(true);
-    const [sectorFilter, setSectorFilter] = useState("");
+    const [searchTerm, setSearchTerm] = useState("");
+    const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
     const [offset, setOffset] = useState(0);
     const [deletingId, setDeletingId] = useState<string | null>(null);
-    const limit = 20;
+    const limit = 50;
 
     const loadMemories = useCallback(async (isLoadMore = false) => {
         if (!isLoadMore) setLoading(true);
@@ -23,8 +35,7 @@ export default function MemoriesPage() {
             const newOffset = isLoadMore ? offset + limit : 0;
             const data = await listMemories(token, {
                 limit,
-                offset: newOffset,
-                sector: sectorFilter || undefined
+                offset: newOffset
             });
 
             if (isLoadMore) {
@@ -34,12 +45,17 @@ export default function MemoriesPage() {
             }
             setTotal(data.total);
             setOffset(newOffset);
+
+            // Auto-select first user if none selected
+            if (!selectedUserId && data.memories.length > 0) {
+                setSelectedUserId(data.memories[0].user_id);
+            }
         } catch (error) {
             console.error("Failed to load memories:", error);
         } finally {
             setLoading(false);
         }
-    }, [offset, sectorFilter]);
+    }, [offset, selectedUserId]);
 
     const handleDelete = async (memoryId: string) => {
         if (!confirm("Are you sure you want to delete this memory?")) return;
@@ -69,75 +85,169 @@ export default function MemoriesPage() {
         });
 
         return () => unsubscribe();
-    }, [sectorFilter]);
+    }, []);
+
+    // Extract unique users from memories
+    const uniqueUsers = useMemo(() => {
+        const users = Array.from(new Set(memories.map(m => m.user_id)));
+        return users.filter(id =>
+            id.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+    }, [memories, searchTerm]);
+
+    // Filter memories by selected user
+    const filteredMemories = useMemo(() => {
+        if (!selectedUserId) return [];
+        return memories.filter(m => m.user_id === selectedUserId);
+    }, [memories, selectedUserId]);
 
     return (
-        <div className="p-8 max-w-5xl mx-auto">
-            {/* Header */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between mb-10 gap-4">
-                <div>
-                    <h1 className="text-2xl font-medium text-neutral-900">Memories</h1>
+        <div className="flex h-[calc(100vh-64px)] overflow-hidden bg-white">
+            {/* Left Sidebar - User List */}
+            <div className="w-80 border-r border-neutral-100 flex flex-col bg-neutral-50/30">
+                <div className="p-6 pb-4">
+                    <h1 className="text-xl font-semibold text-neutral-900 mb-4 px-1">Customers</h1>
+                    <div className="relative group">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 group-focus-within:text-neutral-900 transition-colors" />
+                        <input
+                            type="text"
+                            placeholder="Search by User ID..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="w-full pl-10 pr-4 py-2 bg-white border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900/5 focus:border-neutral-300 transition-all"
+                        />
+                    </div>
                 </div>
 
+                <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1">
+                    {loading && (
+                        Array.from({ length: 5 }).map((_, i) => (
+                            <div key={i} className="h-14 bg-neutral-100/50 rounded-xl animate-pulse mx-3 mb-2" />
+                        ))
+                    )}
+
+                    {!loading && uniqueUsers.length === 0 ? (
+                        <div className="pt-10 text-center text-neutral-400">
+                            <Users className="w-8 h-8 mx-auto mb-2 opacity-20" />
+                            <p className="text-sm">No users found</p>
+                        </div>
+                    ) : (
+                        uniqueUsers.map((userId) => (
+                            <button
+                                key={userId}
+                                onClick={() => setSelectedUserId(userId)}
+                                className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 group ${selectedUserId === userId
+                                        ? "bg-white shadow-sm border border-neutral-100 text-neutral-900"
+                                        : "text-neutral-500 hover:bg-neutral-100/80 hover:text-neutral-700"
+                                    }`}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ${selectedUserId === userId ? "bg-neutral-900 text-white" : "bg-neutral-200 text-neutral-500"
+                                        }`}>
+                                        {userId[0].toUpperCase()}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-medium truncate">{userId}</p>
+                                        <p className="text-[11px] opacity-60">
+                                            {memories.filter(m => m.user_id === userId).length} memories
+                                        </p>
+                                    </div>
+                                    <ChevronRight className={`w-4 h-4 transition-transform ${selectedUserId === userId ? "translate-x-0 opacity-100" : "-translate-x-2 opacity-0 group-hover:translate-x-0 group-hover:opacity-100"
+                                        }`} />
+                                </div>
+                            </button>
+                        ))
+                    )}
+                </div>
             </div>
 
-            {/* Memories List */}
-            <div className="space-y-1">
-                {loading && memories.length === 0 ? (
-                    Array.from({ length: 5 }).map((_, index) => (
-                        <div key={`skeleton-${index}`} className="p-4 animate-pulse border-b border-neutral-50">
-                            <div className="h-4 bg-neutral-100 rounded w-full mb-2"></div>
-                            <div className="h-4 bg-neutral-50 rounded w-2/3"></div>
-                        </div>
-                    ))
-                ) : memories.length === 0 ? (
-                    <div className="py-20 text-center">
-                        <h3 className="text-neutral-400 font-medium">No memories found</h3>
-                    </div>
-                ) : (
+            {/* Right Content - User Memories */}
+            <div className="flex-1 flex flex-col bg-white overflow-hidden">
+                {selectedUserId ? (
                     <>
-                        {memories.map((memory) => (
-                            <div
-                                key={memory.id}
-                                className="group flex items-center justify-between py-2 px-4 rounded-2xl hover:bg-neutral-100 transition-colors duration-200"
-                            >
-                                <p className="text-[15px] text-neutral-700 leading-relaxed pr-8">
-                                    {memory.content}
-                                </p>
-
-                                <button
-                                    onClick={() => handleDelete(memory.id)}
-                                    disabled={deletingId === memory.id}
-                                    className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-2 text-neutral-400 hover:text-red-500 hover:bg-red-50 rounded-lg"
-                                    title="Delete memory"
-                                >
-                                    {deletingId === memory.id ? (
-                                        <div className="w-4 h-4 border-2 border-neutral-300 border-t-neutral-600 rounded-full animate-spin" />
-                                    ) : (
-                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                        </svg>
-                                    )}
-                                </button>
+                        {/* Header */}
+                        <div className="p-8 pb-4 flex items-center justify-between border-b border-neutral-50">
+                            <div>
+                                <div className="flex items-center gap-2 text-xs text-neutral-400 mb-1 uppercase tracking-wider font-semibold">
+                                    <User className="w-3 h-3" />
+                                    Customer Intelligence
+                                </div>
+                                <h2 className="text-xl font-semibold text-neutral-900">{selectedUserId}</h2>
                             </div>
-                        ))}
 
-                        {memories.length < total && (
-                            <div className="pt-8 flex justify-center">
-                                <button
-                                    onClick={() => loadMemories(true)}
-                                    disabled={loading}
-                                    className="px-6 py-2 text-neutral-500 text-sm font-medium hover:text-neutral-900 transition-colors disabled:opacity-50"
-                                >
-                                    {loading ? "Loading..." : "Load more"}
-                                </button>
+                            <div className="flex items-center gap-3">
+                                <div className="px-3 py-1.5 bg-neutral-50 rounded-lg text-xs font-medium text-neutral-500 flex items-center gap-2">
+                                    <Clock className="w-3.5 h-3.5" />
+                                    Last activity {new Date(filteredMemories[0]?.created_at).toLocaleDateString()}
+                                </div>
                             </div>
-                        )}
+                        </div>
 
-                        <p className="text-center text-[11px] text-neutral-300 mt-10">
-                            {memories.length} of {total} memories
-                        </p>
+                        {/* List */}
+                        <div className="flex-1 overflow-y-auto px-8 py-6 space-y-1 [&::-webkit-scrollbar]:hidden">
+                            {filteredMemories.map((memory) => (
+                                <div
+                                    key={memory.id}
+                                    className="group flex items-center justify-between py-3 px-4 rounded-2xl hover:bg-neutral-50 transition-all duration-200"
+                                >
+                                    <div className="flex-1 pr-8">
+                                        <p className="text-[15px] text-neutral-700 leading-relaxed">
+                                            {memory.content}
+                                        </p>
+                                        <div className="flex items-center gap-4 mt-2">
+                                            <span className="text-[11px] text-neutral-400 flex items-center gap-1.5">
+                                                <Clock className="w-3 h-3" />
+                                                {new Date(memory.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                                            </span>
+                                            {memory.sector && (
+                                                <span className="text-[11px] text-neutral-400 flex items-center gap-1.5">
+                                                    <Tag className="w-3 h-3" />
+                                                    {memory.sector}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <button
+                                        onClick={() => handleDelete(memory.id)}
+                                        disabled={deletingId === memory.id}
+                                        className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-2 text-neutral-400 hover:text-red-500 hover:bg-red-50 rounded-lg"
+                                        title="Delete memory"
+                                    >
+                                        {deletingId === memory.id ? (
+                                            <div className="w-4 h-4 border-2 border-neutral-300 border-t-neutral-600 rounded-full animate-spin" />
+                                        ) : (
+                                            <Trash2 className="w-4 h-4" />
+                                        )}
+                                    </button>
+                                </div>
+                            ))}
+
+                            {memories.length < total && (
+                                <div className="pt-8 flex justify-center pb-12">
+                                    <button
+                                        onClick={() => loadMemories(true)}
+                                        disabled={loading}
+                                        className="px-6 py-2 bg-neutral-50 border border-neutral-100 rounded-xl text-neutral-600 text-sm font-medium hover:bg-neutral-100 hover:text-neutral-900 transition-all disabled:opacity-50"
+                                    >
+                                        {loading ? "Loading..." : "Load more customer data"}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
                     </>
+                ) : (
+                    <div className="flex-1 flex flex-center items-center justify-center p-12">
+                        <div className="text-center max-w-sm">
+                            <div className="w-16 h-16 bg-neutral-50 rounded-3xl flex items-center justify-center mx-auto mb-6 text-neutral-200">
+                                <Users className="w-8 h-8" />
+                            </div>
+                            <h3 className="text-lg font-semibold text-neutral-900 mb-2">Select a Customer</h3>
+                            <p className="text-sm text-neutral-500">
+                                Browse semantic memories extracted from your AI's interactions with specific users.
+                            </p>
+                        </div>
+                    </div>
                 )}
             </div>
         </div>

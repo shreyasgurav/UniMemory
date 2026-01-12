@@ -23,6 +23,7 @@ export interface UserSettings {
 
 export interface Memory {
   id: string;
+  user_id: string;
   content: string;
   sector?: string;
   salience: number;

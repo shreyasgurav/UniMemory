@@ -45,6 +45,7 @@ class MemoryResponse(BaseModel):
     sector: Optional[str]
     salience: float
     tags: List[str]
+    user_id: str
     created_at: datetime
     was_deduplicated: bool = False
     extracted_count: int = 0
