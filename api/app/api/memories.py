@@ -46,6 +46,7 @@ class MemoryResponse(BaseModel):
     salience: float
     tags: List[str]
     user_id: str
+    api_key_id: Optional[str] = None
     created_at: datetime
     was_deduplicated: bool = False
     extracted_count: int = 0
@@ -68,6 +69,7 @@ class MemoryDetailResponse(BaseModel):
     tags: List[str]
     source_app: Optional[str]
     user_id: str
+    api_key_id: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime]  # Can be None for older records
     last_seen_at: Optional[datetime]
@@ -250,6 +252,7 @@ async def add_memory(
             source_app=request.source_app,
             user_id=request.user_id,
             owner_id=owner_id,
+            api_key_id=str(api_key.id) if api_key else None,
             embedding=embedding,
             embedding_model=settings.EMBEDDING_MODEL,
             is_active=True,
@@ -309,6 +312,7 @@ async def add_memory(
 @router.get("/memories/me", response_model=MemoryListResponse)
 async def list_my_memories(
     user_id: Optional[str] = None,
+    api_key_id: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
     sector: Optional[str] = None,
@@ -335,6 +339,9 @@ async def list_my_memories(
     if user_id:
         stmt = stmt.where(Memory.user_id == user_id)
     
+    if api_key_id:
+        stmt = stmt.where(Memory.api_key_id == api_key_id)
+    
     if sector:
         stmt = stmt.where(Memory.sector == sector)
     
@@ -350,6 +357,8 @@ async def list_my_memories(
     )
     if user_id:
         count_stmt = count_stmt.where(Memory.user_id == user_id)
+    if api_key_id:
+        count_stmt = count_stmt.where(Memory.api_key_id == api_key_id)
     if sector:
         count_stmt = count_stmt.where(Memory.sector == sector)
     
@@ -364,6 +373,7 @@ async def list_my_memories(
             salience=m.salience,
             tags=m.tags or [],
             user_id=m.user_id or "anonymous",
+            api_key_id=str(m.api_key_id) if m.api_key_id else None,
             created_at=m.created_at
         ) for m in memories],
         total=total
@@ -430,6 +440,7 @@ async def list_memories(
             salience=m.salience,
             tags=m.tags or [],
             user_id=m.user_id or "anonymous",
+            api_key_id=str(m.api_key_id) if m.api_key_id else None,
             created_at=m.created_at
         ) for m in memories],
         total=total

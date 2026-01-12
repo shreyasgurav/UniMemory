@@ -24,6 +24,7 @@ export interface UserSettings {
 export interface Memory {
   id: string;
   user_id: string;
+  api_key_id?: string;
   content: string;
   sector?: string;
   salience: number;
@@ -132,12 +133,13 @@ export const revokeAPIKey = async (token: string, keyId: string) => {
 // Memories
 export const listMemories = async (
   token: string,
-  options: { limit?: number; offset?: number; sector?: string } = {}
+  options: { limit?: number; offset?: number; sector?: string; api_key_id?: string } = {}
 ) => {
   const query = new URLSearchParams();
   if (options.limit) query.append("limit", options.limit.toString());
   if (options.offset) query.append("offset", options.offset.toString());
   if (options.sector) query.append("sector", options.sector);
+  if (options.api_key_id) query.append("api_key_id", options.api_key_id);
 
   const queryString = query.toString();
   return request<MemoryListResponse>(`/memories/me${queryString ? `?${queryString}` : ""}`, { token });

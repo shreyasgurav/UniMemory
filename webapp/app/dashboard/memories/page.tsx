@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth, getIdToken } from "@/lib/firebase";
-import { listMemories, deleteMemory, updateMemory, Memory } from "@/lib/api";
+import { listMemories, deleteMemory, updateMemory, Memory, APIKey, listAPIKeys } from "@/lib/api";
 import {
     Users,
     Search,
@@ -16,29 +16,36 @@ import {
     Plus,
     Pencil,
     Check,
-    X
+    X,
+    Key,
+    ChevronDown
 } from "lucide-react";
 
 export default function MemoriesPage() {
     const [memories, setMemories] = useState<Memory[]>([]);
+    const [apiKeys, setApiKeys] = useState<APIKey[]>([]);
+    const [selectedApiKeyId, setSelectedApiKeyId] = useState<string>("all");
     const [total, setTotal] = useState(0);
     const [loading, setLoading] = useState(true);
+    const [loadingKeys, setLoadingKeys] = useState(true);
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
     const [offset, setOffset] = useState(0);
     const [deletingId, setDeletingId] = useState<string | null>(null);
     const limit = 50;
 
-    const loadMemories = useCallback(async (isLoadMore = false) => {
+    const loadMemories = useCallback(async (isLoadMore = false, apiKeyId?: string) => {
         if (!isLoadMore) setLoading(true);
         try {
             const token = await getIdToken();
             if (!token) return;
 
+            const currentApiKeyId = apiKeyId ?? selectedApiKeyId;
             const newOffset = isLoadMore ? offset + limit : 0;
             const data = await listMemories(token, {
                 limit,
-                offset: newOffset
+                offset: newOffset,
+                api_key_id: currentApiKeyId === "all" ? undefined : currentApiKeyId
             });
 
             if (isLoadMore) {
@@ -110,8 +117,21 @@ export default function MemoriesPage() {
     };
 
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, (user) => {
+        const unsubscribe = onAuthStateChanged(auth, async (user) => {
             if (user) {
+                setLoadingKeys(true);
+                try {
+                    const token = await getIdToken();
+                    if (token) {
+                        const keys = await listAPIKeys(token);
+                        setApiKeys(keys);
+                    }
+                } catch (error) {
+                    console.error("Failed to load API keys:", error);
+                } finally {
+                    setLoadingKeys(false);
+                }
+
                 setOffset(0);
                 loadMemories(false);
             }
@@ -119,6 +139,13 @@ export default function MemoriesPage() {
 
         return () => unsubscribe();
     }, []);
+
+    const handleApiKeyChange = (newKeyId: string) => {
+        setSelectedApiKeyId(newKeyId);
+        setSelectedUserId(null);
+        setOffset(0);
+        loadMemories(false, newKeyId);
+    };
 
     // Extract unique users from memories
     const uniqueUsers = useMemo(() => {
@@ -138,16 +165,41 @@ export default function MemoriesPage() {
         <div className="flex h-[calc(100vh-64px)] overflow-hidden bg-white">
             {/* Left Sidebar - User List */}
             <div className="w-80 border-r border-neutral-100 flex flex-col bg-neutral-50/10">
-                <div className="p-6 pb-4">
-                    <h1 className="text-xl font-semibold text-neutral-900 mb-4 px-1">Users</h1>
-                    <div className="relative group">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 group-focus-within:text-neutral-900 transition-colors" />
+                <div className="p-6 border-b border-neutral-100 flex flex-col gap-4">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <Users className="w-5 h-5 text-neutral-900" />
+                            <h1 className="text-[17px] font-semibold text-neutral-900 tracking-tight">Users</h1>
+                        </div>
+                    </div>
+
+                    {/* API Key Filter */}
+                    <div className="relative">
+                        <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-400 pointer-events-none" />
+                        <select
+                            value={selectedApiKeyId}
+                            onChange={(e) => handleApiKeyChange(e.target.value)}
+                            disabled={loadingKeys}
+                            className="w-full pl-9 pr-8 py-2 text-xs font-medium text-neutral-600 bg-white border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-neutral-900/5 focus:border-neutral-300 transition-all appearance-none disabled:opacity-50"
+                        >
+                            <option value="all">All API Keys</option>
+                            {apiKeys.map(key => (
+                                <option key={key.id} value={key.id}>
+                                    {key.name}
+                                </option>
+                            ))}
+                        </select>
+                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-400 pointer-events-none" />
+                    </div>
+
+                    <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
                         <input
                             type="text"
-                            placeholder="Search by User ID..."
+                            placeholder="Search users..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2 bg-white border border-neutral-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900/5 focus:border-neutral-300 transition-all"
+                            className="w-full pl-9 pr-4 py-2 text-sm bg-white border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-neutral-900/5 focus:border-neutral-300 transition-all placeholder:text-neutral-400"
                         />
                     </div>
                 </div>

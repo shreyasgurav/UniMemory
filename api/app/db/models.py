@@ -39,6 +39,7 @@ class Memory(Base):
     source_app = Column(String(100))
     user_id = Column(String(100), index=True, default="anonymous")  # End-user ID (chatbot customer)
     owner_id = Column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)  # UniMemory user who owns this memory
+    api_key_id = Column(UUID(as_uuid=False), ForeignKey("api_keys.id", ondelete="SET NULL"), nullable=True, index=True)  # API Key used to create this memory
     
     # Embeddings (pgvector)
     embedding = Column(Vector(1536))  # text-embedding-3-small = 1536 dims
@@ -51,6 +52,7 @@ class Memory(Base):
     # Relationships
     waypoints_from = relationship("Waypoint", foreign_keys="Waypoint.src_id", back_populates="source")
     waypoints_to = relationship("Waypoint", foreign_keys="Waypoint.dst_id", back_populates="target")
+    api_key = relationship("APIKey")
     
     # Indexes - optimized for production queries
     __table_args__ = (
@@ -59,11 +61,13 @@ class Memory(Base):
         Index("idx_memories_sector", "sector"),
         Index("idx_memories_user_id", "user_id"),
         Index("idx_memories_owner_id", "owner_id"),
+        Index("idx_memories_api_key_id", "api_key_id"),
         Index("idx_memories_created_at", "created_at", postgresql_ops={"created_at": "DESC"}),
         Index("idx_memories_simhash", "simhash"),
         
         # Compound indexes for common query patterns
         Index("idx_memories_owner_user_active", "owner_id", "user_id", "is_active"),  # List memories
+        Index("idx_memories_owner_api_key_active", "owner_id", "api_key_id", "is_active"),  # Filter by API key
         Index("idx_memories_owner_active_created", "owner_id", "is_active", "created_at"),  # Sorted list
         Index("idx_memories_owner_simhash", "owner_id", "simhash"),  # Deduplication
         
