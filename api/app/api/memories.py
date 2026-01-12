@@ -362,6 +362,7 @@ async def list_my_memories(
             sector=m.sector,
             salience=m.salience,
             tags=m.tags or [],
+            user_id=m.user_id or "anonymous",
             created_at=m.created_at
         ) for m in memories],
         total=total
@@ -427,6 +428,7 @@ async def list_memories(
             sector=m.sector,
             salience=m.salience,
             tags=m.tags or [],
+            user_id=m.user_id or "anonymous",
             created_at=m.created_at
         ) for m in memories],
         total=total
