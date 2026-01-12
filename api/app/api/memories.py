@@ -187,7 +187,7 @@ async def add_memory(
         if isinstance(mem_data, str):
             mem_content = mem_data.strip()
         elif isinstance(mem_data, dict):
-        mem_content = mem_data.get("content", "").strip()
+            mem_content = mem_data.get("content", "").strip()
         else:
             continue
             
