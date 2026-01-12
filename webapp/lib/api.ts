@@ -141,3 +141,10 @@ export const listMemories = async (
   const queryString = query.toString();
   return request<MemoryListResponse>(`/memories/me${queryString ? `?${queryString}` : ""}`, { token });
 };
+
+export const deleteMemory = async (token: string, memoryId: string) => {
+  return request<void>(`/memories/${memoryId}`, {
+    method: "DELETE",
+    token,
+  });
+};
