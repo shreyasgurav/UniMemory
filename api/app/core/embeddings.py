@@ -37,7 +37,7 @@ class EmbeddingService:
             
             response = await asyncio.wait_for(
                 self.client.embeddings.create(
-                    model=settings.EMBEDDING_MODEL,
+                model=settings.EMBEDDING_MODEL,
                     input=truncated_text
                 ),
                 timeout=settings.OPENAI_TIMEOUT
@@ -68,7 +68,7 @@ class EmbeddingService:
             
             response = await asyncio.wait_for(
                 self.client.embeddings.create(
-                    model=settings.EMBEDDING_MODEL,
+                model=settings.EMBEDDING_MODEL,
                     input=truncated_texts
                 ),
                 timeout=settings.OPENAI_TIMEOUT * 2  # Allow more time for batch

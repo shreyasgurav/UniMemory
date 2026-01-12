@@ -187,7 +187,7 @@ async def add_memory(
         if isinstance(mem_data, str):
             mem_content = mem_data.strip()
         elif isinstance(mem_data, dict):
-            mem_content = mem_data.get("content", "").strip()
+        mem_content = mem_data.get("content", "").strip()
         else:
             continue
             
@@ -226,7 +226,7 @@ async def add_memory(
         
         # Step 6: Generate embedding
         try:
-            embedding, dim = await embedding_service.embed(mem_content)
+        embedding, dim = await embedding_service.embed(mem_content)
         except Exception as e:
             logger.error(f"Failed to generate embedding: {e}")
             continue
@@ -303,6 +303,69 @@ async def add_memory(
         "extracted_count": len(saved_memories),
         "memories": saved_memories
     }
+
+@router.get("/memories/me", response_model=MemoryListResponse)
+async def list_my_memories(
+    user_id: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+    sector: Optional[str] = None,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    List memories for the current authenticated user (Firebase auth).
+    
+    Requires Bearer token in Authorization header.
+    Only returns memories owned by the authenticated user.
+    """
+    owner_id = str(user.id)
+    
+    # Enforce limits
+    limit = min(limit, settings.MAX_SEARCH_LIMIT)
+    
+    # Always filter by owner_id (multi-tenant isolation)
+    stmt = select(Memory).where(
+        Memory.is_active == True,
+        Memory.owner_id == owner_id
+    )
+    
+    if user_id:
+        stmt = stmt.where(Memory.user_id == user_id)
+    
+    if sector:
+        stmt = stmt.where(Memory.sector == sector)
+    
+    stmt = stmt.order_by(Memory.created_at.desc()).offset(offset).limit(limit)
+    
+    result = await session.execute(stmt)
+    memories = result.scalars().all()
+    
+    # Get total count (also filtered by owner_id)
+    count_stmt = select(func.count(Memory.id)).where(
+        Memory.is_active == True,
+        Memory.owner_id == owner_id
+    )
+    if user_id:
+        count_stmt = count_stmt.where(Memory.user_id == user_id)
+    if sector:
+        count_stmt = count_stmt.where(Memory.sector == sector)
+    
+    count_result = await session.execute(count_stmt)
+    total = count_result.scalar() or 0
+    
+    return MemoryListResponse(
+        memories=[MemoryResponse(
+            id=str(m.id),
+            content=m.content,
+            sector=m.sector,
+            salience=m.salience,
+            tags=m.tags or [],
+            created_at=m.created_at
+        ) for m in memories],
+        total=total
+    )
+
 
 
 @router.get("/memories", response_model=MemoryListResponse)

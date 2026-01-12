@@ -21,26 +21,40 @@ export interface UserSettings {
   avatar_url?: string;
 }
 
+export interface Memory {
+  id: string;
+  content: string;
+  sector?: string;
+  salience: number;
+  tags: string[];
+  created_at: string;
+}
+
+export interface MemoryListResponse {
+  memories: Memory[];
+  total: number;
+}
+
 async function request<T>(
   path: string,
   options: RequestInit & { token?: string } = {}
 ): Promise<T> {
   const { token, ...fetchOptions } = options;
-  
+
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(options.headers as Record<string, string>),
   };
-  
+
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
-  
+
   const response = await fetch(`${API_BASE}${path}`, {
     ...fetchOptions,
     headers,
   });
-  
+
   if (!response.ok) {
     let errorDetail = `Request failed: ${response.status}`;
     try {
@@ -48,7 +62,7 @@ async function request<T>(
       // FastAPI validation errors can be an array or object
       if (Array.isArray(error.detail)) {
         // Pydantic validation errors
-        const messages = error.detail.map((e: any) => 
+        const messages = error.detail.map((e: any) =>
           `${e.loc?.join('.')}: ${e.msg}`
         ).join(', ');
         errorDetail = messages || JSON.stringify(error);
@@ -73,19 +87,19 @@ async function request<T>(
     (error as any).status = response.status;
     throw error;
   }
-  
+
   // Handle 204 No Content responses
   if (response.status === 204) {
     return {} as T;
   }
-  
+
   // Check if response has content before parsing JSON
   const contentType = response.headers.get("content-type");
   if (contentType && contentType.includes("application/json")) {
     const text = await response.text();
     return text ? JSON.parse(text) : ({} as T);
   }
-  
+
   return {} as T;
 }
 
@@ -112,4 +126,18 @@ export const revokeAPIKey = async (token: string, keyId: string) => {
     method: "DELETE",
     token,
   });
+};
+
+// Memories
+export const listMemories = async (
+  token: string,
+  options: { limit?: number; offset?: number; sector?: string } = {}
+) => {
+  const query = new URLSearchParams();
+  if (options.limit) query.append("limit", options.limit.toString());
+  if (options.offset) query.append("offset", options.offset.toString());
+  if (options.sector) query.append("sector", options.sector);
+
+  const queryString = query.toString();
+  return request<MemoryListResponse>(`/memories/me${queryString ? `?${queryString}` : ""}`, { token });
 };

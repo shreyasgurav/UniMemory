@@ -64,12 +64,12 @@ Return JSON:
         try:
             response = await asyncio.wait_for(
                 self.client.chat.completions.create(
-                    model=settings.OPENAI_MODEL,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
+                model=settings.OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
                         {"role": "user", "content": f"Input: {text[:2000]}"}  # Limit input
-                    ],
-                    temperature=0.3,
+                ],
+                temperature=0.3,
                     response_format={"type": "json_object"},
                     max_tokens=200,
                 ),
@@ -126,11 +126,11 @@ Memory types:
 Return JSON object with memories array:
 {
   "memories": [
-    {
-      "content": "Extracted fact/insight",
-      "type": "fact",
-      "confidence": 0.9,
-      "tags": ["tag1", "tag2"],
+  {
+    "content": "Extracted fact/insight",
+    "type": "fact",
+    "confidence": 0.9,
+    "tags": ["tag1", "tag2"],
       "expires_at": null
     }
   ]
@@ -144,12 +144,12 @@ Extract at most 5 memories. Focus on the most important facts."""
             
             response = await asyncio.wait_for(
                 self.client.chat.completions.create(
-                    model=settings.OPENAI_MODEL,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
+                model=settings.OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
                         {"role": "user", "content": f"Extract memories from: {truncated_text}"}
-                    ],
-                    temperature=0.3,
+                ],
+                temperature=0.3,
                     response_format={"type": "json_object"},
                     max_tokens=1000,
                 ),
