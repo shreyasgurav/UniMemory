@@ -18,7 +18,7 @@ from app.core.embeddings import get_embedding_service
 from app.core.simhash import compute_simhash, hamming_distance
 from app.core.sector import classify_sector, get_sector_decay_lambda, calculate_initial_salience
 from app.core.waypoints import create_waypoint_for_memory
-from app.core.auth import validate_api_key
+from app.core.auth import validate_api_key, get_current_user
 from app.config import settings
 
 logger = logging.getLogger(__name__)
