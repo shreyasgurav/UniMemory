@@ -104,9 +104,9 @@ export default function MemoriesPage() {
     return (
         <div className="flex h-[calc(100vh-64px)] overflow-hidden bg-white">
             {/* Left Sidebar - User List */}
-            <div className="w-80 border-r border-neutral-100 flex flex-col bg-neutral-50/30">
+            <div className="w-80 border-r border-neutral-100 flex flex-col bg-neutral-50/10">
                 <div className="p-6 pb-4">
-                    <h1 className="text-xl font-semibold text-neutral-900 mb-4 px-1">Customers</h1>
+                    <h1 className="text-xl font-semibold text-neutral-900 mb-4 px-1">Users</h1>
                     <div className="relative group">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 group-focus-within:text-neutral-900 transition-colors" />
                         <input
@@ -137,22 +137,20 @@ export default function MemoriesPage() {
                                 key={userId}
                                 onClick={() => setSelectedUserId(userId)}
                                 className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 group ${selectedUserId === userId
-                                        ? "bg-white shadow-sm border border-neutral-100 text-neutral-900"
-                                        : "text-neutral-500 hover:bg-neutral-100/80 hover:text-neutral-700"
+                                        ? "bg-neutral-100 text-neutral-900"
+                                        : "text-neutral-500 hover:bg-neutral-50 hover:text-neutral-700"
                                     }`}
                             >
-                                <div className="flex items-center gap-3">
-                                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ${selectedUserId === userId ? "bg-neutral-900 text-white" : "bg-neutral-200 text-neutral-500"
-                                        }`}>
-                                        {userId[0].toUpperCase()}
-                                    </div>
+                                <div className="flex items-center justify-between gap-3">
                                     <div className="flex-1 min-w-0">
                                         <p className="text-sm font-medium truncate">{userId}</p>
-                                        <p className="text-[11px] opacity-60">
+                                        <p className="text-[11px] opacity-60 flex items-center gap-1 mt-0.5">
                                             {memories.filter(m => m.user_id === userId).length} memories
                                         </p>
                                     </div>
-                                    <ChevronRight className={`w-4 h-4 transition-transform ${selectedUserId === userId ? "translate-x-0 opacity-100" : "-translate-x-2 opacity-0 group-hover:translate-x-0 group-hover:opacity-100"
+                                    <ChevronRight className={`w-3.5 h-3.5 transition-all ${selectedUserId === userId
+                                            ? "translate-x-0 opacity-100 text-neutral-900"
+                                            : "opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0"
                                         }`} />
                                 </div>
                             </button>
@@ -170,7 +168,7 @@ export default function MemoriesPage() {
                             <div>
                                 <div className="flex items-center gap-2 text-xs text-neutral-400 mb-1 uppercase tracking-wider font-semibold">
                                     <User className="w-3 h-3" />
-                                    Customer Intelligence
+                                    User Intelligence
                                 </div>
                                 <h2 className="text-xl font-semibold text-neutral-900">{selectedUserId}</h2>
                             </div>
@@ -230,19 +228,19 @@ export default function MemoriesPage() {
                                         disabled={loading}
                                         className="px-6 py-2 bg-neutral-50 border border-neutral-100 rounded-xl text-neutral-600 text-sm font-medium hover:bg-neutral-100 hover:text-neutral-900 transition-all disabled:opacity-50"
                                     >
-                                        {loading ? "Loading..." : "Load more customer data"}
+                                        {loading ? "Loading..." : "Load more user data"}
                                     </button>
                                 </div>
                             )}
                         </div>
                     </>
                 ) : (
-                    <div className="flex-1 flex flex-center items-center justify-center p-12">
+                    <div className="flex-1 flex flex-col items-center justify-center p-12">
                         <div className="text-center max-w-sm">
                             <div className="w-16 h-16 bg-neutral-50 rounded-3xl flex items-center justify-center mx-auto mb-6 text-neutral-200">
                                 <Users className="w-8 h-8" />
                             </div>
-                            <h3 className="text-lg font-semibold text-neutral-900 mb-2">Select a Customer</h3>
+                            <h3 className="text-lg font-semibold text-neutral-900 mb-2">Select a User</h3>
                             <p className="text-sm text-neutral-500">
                                 Browse semantic memories extracted from your AI's interactions with specific users.
                             </p>
