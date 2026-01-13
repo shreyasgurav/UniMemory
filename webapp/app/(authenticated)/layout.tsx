@@ -6,7 +6,7 @@ import { User, onAuthStateChanged } from "firebase/auth";
 import { auth, logout } from "@/lib/firebase";
 import Sidebar from "@/components/shared/Sidebar";
 
-export default function DashboardLayout({
+export default function AuthenticatedLayout({
   children,
 }: {
   children: React.ReactNode;
