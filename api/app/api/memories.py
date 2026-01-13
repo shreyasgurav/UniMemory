@@ -79,11 +79,12 @@ class MemoryDetailResponse(BaseModel):
 
 
 class UpdateMemoryRequest(BaseModel):
-    """Request to update a memory"""
+    """Request to update a memory (tags, metadata, salience recommended; content changes require force=true)"""
     content: Optional[str] = Field(None, min_length=1, max_length=50000)
     salience: Optional[float] = Field(None, ge=0.0, le=1.0)
     tags: Optional[List[str]] = None
     metadata: Optional[Dict[str, Any]] = None
+    force: bool = Field(False, description="Set to true to allow content changes (breaks embeddings)")
 
 
 async def create_waypoints_background(
@@ -675,10 +676,14 @@ async def update_memory(
     if not memory:
         raise HTTPException(status_code=404, detail="Memory not found")
     
-    # Reject content changes in public API (breaks embeddings)
+    # Reject content changes unless force=true (content changes break embeddings)
     if request.content is not None:
-        logger.warning(f"Content update attempted on memory {memory_id} - discouraged but allowed for backwards compat")
-        # Still allow for backwards compatibility, but log warning
+        if not request.force:
+            raise HTTPException(
+                status_code=400,
+                detail="Content changes require force=true (breaks embedding consistency). Use DELETE + POST /memories to replace instead."
+            )
+        logger.warning(f"Content update forced on memory {memory_id} - embeddings may be inconsistent")
         memory.content = request.content
         memory.simhash = compute_simhash(request.content)
         memory.updated_at = datetime.utcnow()

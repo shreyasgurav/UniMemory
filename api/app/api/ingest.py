@@ -1,6 +1,12 @@
 """
 Ingestion API - Intelligent memory extraction from raw content
 These endpoints run LLM-based extraction and are allowed to evolve.
+
+Guardrails:
+- User-level ingest_enabled setting
+- Token usage tracking
+- Strict extraction schemas
+- No internal details in responses
 """
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,8 +18,8 @@ import uuid
 import logging
 
 from app.db.database import get_db, AsyncSessionLocal
-from app.db.models import Memory, ProcessingLog, MemorySource
-from app.core.extractor import get_extractor
+from app.db.models import Memory, ProcessingLog, MemorySource, User
+from app.core.extractor import get_extractor, ExtractedMemoryItem
 from app.core.embeddings import get_embedding_service
 from app.core.simhash import compute_simhash, hamming_distance
 from app.core.sector import classify_sector, get_sector_decay_lambda, calculate_initial_salience
@@ -23,6 +29,9 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# Maximum waypoints to create per ingest call (prevents unbounded background tasks)
+MAX_WAYPOINTS_PER_INGEST = 20
 
 
 # =============================================================================
@@ -34,12 +43,12 @@ class IngestTextRequest(BaseModel):
     content: str = Field(..., min_length=1, max_length=50000)
     user_id: Optional[str] = Field("anonymous", max_length=100)
     app_id: Optional[str] = Field(None, max_length=100)
-    source_id: Optional[str] = Field(None, max_length=255)  # External reference
+    source_id: Optional[str] = Field(None, max_length=255)
 
 
 class IngestChatRequest(BaseModel):
     """Request to ingest chat messages and extract memories"""
-    messages: List[Dict[str, str]] = Field(..., min_items=1)  # [{"role": "user", "content": "..."}]
+    messages: List[Dict[str, str]] = Field(..., min_items=1)
     user_id: Optional[str] = Field("anonymous", max_length=100)
     app_id: Optional[str] = Field(None, max_length=100)
     source_id: Optional[str] = Field(None, max_length=255)
@@ -55,17 +64,25 @@ class IngestDocumentRequest(BaseModel):
 
 
 class IngestResponse(BaseModel):
-    """Response from ingestion endpoints"""
+    """Public response from ingestion endpoints (no internal details)"""
     stored: int
     skipped: int
     memory_ids: List[str]
+    tokens_used: int = 0  # Token transparency
     source_id: Optional[str] = None
-    was_worth_remembering: bool = True
+    # Note: was_worth_remembering removed from public response (internal detail)
 
 
 # =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
+
+def check_ingest_enabled(user: User) -> bool:
+    """Check if ingest is enabled for this user (via settings)"""
+    settings_dict = user.settings or {}
+    # Default to True for backwards compatibility
+    return settings_dict.get("ingest_enabled", True)
+
 
 async def create_waypoints_background(
     session_factory,
@@ -73,10 +90,11 @@ async def create_waypoints_background(
     embeddings: List[List[float]],
     user_id: str
 ):
-    """Background task to create waypoints (non-blocking)"""
+    """Background task to create waypoints (non-blocking, capped)"""
     try:
         async with session_factory() as session:
-            for memory_id, embedding in zip(memory_ids, embeddings):
+            # Cap waypoints to prevent unbounded work
+            for memory_id, embedding in zip(memory_ids[:MAX_WAYPOINTS_PER_INGEST], embeddings[:MAX_WAYPOINTS_PER_INGEST]):
                 await create_waypoint_for_memory(
                     session=session,
                     new_memory_id=memory_id,
@@ -85,12 +103,12 @@ async def create_waypoints_background(
                 )
             await session.commit()
     except Exception as e:
-        logger.error(f"Background waypoint creation failed: {e}")
+        logger.error(f"Background waypoint creation failed for memories {memory_ids[:3]}...: {e}")
 
 
 async def store_extracted_memories(
     session: AsyncSession,
-    extracted: List[Dict[str, Any]],
+    extracted: List[ExtractedMemoryItem],
     owner_id: str,
     user_id: str,
     app_id: Optional[str],
@@ -124,15 +142,8 @@ async def store_extracted_memories(
     memory_ids = []
     new_memories_for_waypoints = []
     
-    for mem_data in extracted:
-        # Handle both dict and string formats
-        if isinstance(mem_data, str):
-            mem_content = mem_data.strip()
-        elif isinstance(mem_data, dict):
-            mem_content = mem_data.get("content", "").strip()
-        else:
-            continue
-        
+    for mem_item in extracted:
+        mem_content = mem_item.content.strip()
         if not mem_content:
             continue
         
@@ -167,7 +178,6 @@ async def store_extracted_memories(
         
         # Create memory
         memory_id = str(uuid.uuid4())
-        tags = mem_data.get("tags", []) if isinstance(mem_data, dict) else []
         
         memory = Memory(
             id=memory_id,
@@ -177,7 +187,7 @@ async def store_extracted_memories(
             salience=initial_salience,
             decay_lambda=decay_lambda,
             segment=0,
-            tags=tags,
+            tags=mem_item.tags or [],
             extra_metadata={},
             source_app=app_id,
             user_id=user_id,
@@ -210,7 +220,7 @@ async def store_extracted_memories(
     
     await session.commit()
     
-    # Schedule waypoint creation in background
+    # Schedule waypoint creation in background (capped)
     if new_memories_for_waypoints:
         background_tasks.add_task(
             create_waypoints_background,
@@ -245,23 +255,35 @@ async def ingest_text(
     
     Use POST /memories for explicit, known memories.
     Use this endpoint for intelligent extraction from raw content.
+    
+    Can be disabled via user settings: {"ingest_enabled": false}
     """
     user, api_key = user_info
     owner_id = str(user.id)
     
+    # Check if ingest is enabled for this user
+    if not check_ingest_enabled(user):
+        raise HTTPException(
+            status_code=403,
+            detail="Ingest is disabled for this account. Enable via settings or use POST /memories."
+        )
+    
     extractor = get_extractor()
     content = request.content
+    total_tokens = 0
     
     # Step 1: Check worthiness
     worthiness = await extractor.check_worthiness(content)
-    if not worthiness.get("is_worth_remembering", False):
-        # Log as not worth remembering
+    total_tokens += worthiness.tokens_used
+    
+    if not worthiness.is_worth_remembering:
+        # Log internally only
         log = ProcessingLog(
             id=str(uuid.uuid4()),
             raw_content_hash=compute_simhash(content),
             processed_at=datetime.utcnow(),
             was_worth_remembering=False,
-            reason=worthiness.get("reason", "Not worth remembering"),
+            reason=worthiness.reason,
             extracted_count=0
         )
         session.add(log)
@@ -271,25 +293,27 @@ async def ingest_text(
             stored=0,
             skipped=0,
             memory_ids=[],
-            source_id=request.source_id,
-            was_worth_remembering=False
+            tokens_used=total_tokens,
+            source_id=request.source_id
         )
     
     # Step 2: Extract memories
-    extracted = await extractor.extract_memories(content)
-    if not extracted:
+    extraction = await extractor.extract_memories(content)
+    total_tokens += extraction.tokens_used
+    
+    if not extraction.memories:
         return IngestResponse(
             stored=0,
             skipped=0,
             memory_ids=[],
-            source_id=request.source_id,
-            was_worth_remembering=True
+            tokens_used=total_tokens,
+            source_id=request.source_id
         )
     
     # Step 3: Store extracted memories
     stored, skipped, memory_ids = await store_extracted_memories(
         session=session,
-        extracted=extracted,
+        extracted=extraction.memories,
         owner_id=owner_id,
         user_id=request.user_id or "anonymous",
         app_id=request.app_id,
@@ -315,8 +339,8 @@ async def ingest_text(
         stored=stored,
         skipped=skipped,
         memory_ids=memory_ids,
-        source_id=request.source_id,
-        was_worth_remembering=True
+        tokens_used=total_tokens,
+        source_id=request.source_id
     )
 
 
@@ -334,11 +358,21 @@ async def ingest_chat(
     [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]
     
     Extracts relevant facts, preferences, and insights from the conversation.
+    
+    Can be disabled via user settings: {"ingest_enabled": false}
     """
     user, api_key = user_info
     owner_id = str(user.id)
     
+    # Check if ingest is enabled
+    if not check_ingest_enabled(user):
+        raise HTTPException(
+            status_code=403,
+            detail="Ingest is disabled for this account. Enable via settings or use POST /memories."
+        )
+    
     extractor = get_extractor()
+    total_tokens = 0
     
     # Combine messages into conversation text
     conversation = "\n".join([
@@ -348,30 +382,34 @@ async def ingest_chat(
     
     # Step 1: Check worthiness
     worthiness = await extractor.check_worthiness(conversation)
-    if not worthiness.get("is_worth_remembering", False):
+    total_tokens += worthiness.tokens_used
+    
+    if not worthiness.is_worth_remembering:
         return IngestResponse(
             stored=0,
             skipped=0,
             memory_ids=[],
-            source_id=request.source_id,
-            was_worth_remembering=False
+            tokens_used=total_tokens,
+            source_id=request.source_id
         )
     
     # Step 2: Extract memories
-    extracted = await extractor.extract_memories(conversation)
-    if not extracted:
+    extraction = await extractor.extract_memories(conversation)
+    total_tokens += extraction.tokens_used
+    
+    if not extraction.memories:
         return IngestResponse(
             stored=0,
             skipped=0,
             memory_ids=[],
-            source_id=request.source_id,
-            was_worth_remembering=True
+            tokens_used=total_tokens,
+            source_id=request.source_id
         )
     
     # Step 3: Store extracted memories
     stored, skipped, memory_ids = await store_extracted_memories(
         session=session,
-        extracted=extracted,
+        extracted=extraction.memories,
         owner_id=owner_id,
         user_id=request.user_id or "anonymous",
         app_id=request.app_id,
@@ -385,8 +423,8 @@ async def ingest_chat(
         stored=stored,
         skipped=skipped,
         memory_ids=memory_ids,
-        source_id=request.source_id,
-        was_worth_remembering=True
+        tokens_used=total_tokens,
+        source_id=request.source_id
     )
 
 
@@ -401,19 +439,44 @@ async def ingest_document(
     Ingest document content and extract memories using LLM.
     
     Handles longer content (up to 100k chars) by chunking if needed.
-    Extracts key facts, insights, and learnings from the document.
+    Checks worthiness on FULL document first, then extracts from chunks.
+    
+    Can be disabled via user settings: {"ingest_enabled": false}
     """
     user, api_key = user_info
     owner_id = str(user.id)
     
+    # Check if ingest is enabled
+    if not check_ingest_enabled(user):
+        raise HTTPException(
+            status_code=403,
+            detail="Ingest is disabled for this account. Enable via settings or use POST /memories."
+        )
+    
     extractor = get_extractor()
     content = request.content
+    total_tokens = 0
     
     # Add title context if provided
     if request.title:
         content = f"Document: {request.title}\n\n{content}"
     
-    # For long documents, process in chunks
+    # Step 1: Check worthiness on FULL document (not per-chunk)
+    # Use first 10k chars for worthiness to get aggregate signal
+    worthiness_sample = content[:10000]
+    worthiness = await extractor.check_worthiness(worthiness_sample)
+    total_tokens += worthiness.tokens_used
+    
+    if not worthiness.is_worth_remembering:
+        return IngestResponse(
+            stored=0,
+            skipped=0,
+            memory_ids=[],
+            tokens_used=total_tokens,
+            source_id=request.source_id
+        )
+    
+    # Step 2: Process in chunks (worthiness already checked)
     max_chunk_size = 10000
     chunks = [content[i:i+max_chunk_size] for i in range(0, len(content), max_chunk_size)]
     
@@ -422,20 +485,17 @@ async def ingest_document(
     all_memory_ids = []
     
     for chunk in chunks:
-        # Check worthiness
-        worthiness = await extractor.check_worthiness(chunk)
-        if not worthiness.get("is_worth_remembering", False):
-            continue
+        # Extract memories (no per-chunk worthiness check)
+        extraction = await extractor.extract_memories(chunk)
+        total_tokens += extraction.tokens_used
         
-        # Extract memories
-        extracted = await extractor.extract_memories(chunk)
-        if not extracted:
+        if not extraction.memories:
             continue
         
         # Store memories
         stored, skipped, memory_ids = await store_extracted_memories(
             session=session,
-            extracted=extracted,
+            extracted=extraction.memories,
             owner_id=owner_id,
             user_id=request.user_id or "anonymous",
             app_id=request.app_id,
@@ -453,6 +513,6 @@ async def ingest_document(
         stored=total_stored,
         skipped=total_skipped,
         memory_ids=all_memory_ids,
-        source_id=request.source_id,
-        was_worth_remembering=total_stored > 0 or total_skipped > 0
+        tokens_used=total_tokens,
+        source_id=request.source_id
     )

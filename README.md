@@ -2,7 +2,7 @@
 
 <div align="center">
 
-**The memory layer for your AI apps.**
+**Long-term memory infrastructure for AI applications.**
 
 [![npm version](https://img.shields.io/npm/v/unimemory.svg?style=flat-square)](https://www.npmjs.com/package/unimemory)
 [![PyPI version](https://img.shields.io/pypi/v/unimemory.svg?style=flat-square)](https://pypi.org/project/unimemory/)
@@ -16,19 +16,29 @@
 
 ---
 
-UniMemory provides intelligent memory management for AI applications. Store, search, and retrieve memories with semantic understanding, automatic deduplication, and intelligent extraction.
+## What is UniMemory?
+
+UniMemory provides:
+
+1. **A Long-Term Memory API** — Stable, deterministic storage for memories your app explicitly decides to keep
+2. **An AI-Powered Ingest Layer** — Optional, intelligent extraction from raw content (chats, documents, text)
+
+This separation means:
+- Your SDKs can rely on the Core API forever
+- Extraction logic can evolve without breaking your app
+- You control what gets remembered
 
 ##  Features
 
-- 🧠 **Semantic Memory Storage** - Store memories with vector embeddings for intelligent retrieval
-- 🔍 **Semantic Search** - Find memories by meaning, not just keywords
-- 🎯 **Automatic Deduplication** - Prevents duplicate memories using similarity detection
-- 📊 **Memory Extraction** - Automatically extracts meaningful information from content
-- 🏷️ **Sector Classification** - Organizes memories into semantic sectors
-- 🔗 **Memory Relationships** - Tracks connections between related memories
-- 📱 **Multi-Platform SDKs** - JavaScript/TypeScript and Python support
-- 🎨 **Modern Dashboard** - Beautiful web interface for managing projects and API keys
-- ⚡ **Production Ready** - Deployed API and scalable infrastructure
+- 🧠 **Core Memory API** — Store and retrieve explicit memories with vector search
+- 🤖 **Intelligent Ingest** — Optional LLM-powered extraction from raw content
+- 🔍 **Semantic Search** — Find memories by meaning, not just keywords
+- 🎯 **Automatic Deduplication** — Prevents duplicate memories using similarity detection
+- 🔗 **Memory Relationships** — Graph-based connections between related memories
+- 📊 **Token Tracking** — Know exactly how many tokens your ingest calls consume
+- 📱 **Multi-Platform SDKs** — JavaScript/TypeScript and Python support
+- 🎨 **Modern Dashboard** — Web interface for managing API keys and viewing memories
+- ⚡ **Production Ready** — Deployed API with proper guardrails
 
 ##  Quick Start
 
@@ -48,12 +58,11 @@ pip install unimemory
 
 1. Visit the [UniMemory Dashboard](https://app.unimemory.ai)
 2. Sign in with Google
-3. Create a new project
-4. Generate an API key
+3. Create a new API key
 
 ### Usage
 
-**JavaScript/TypeScript:**
+**Store an explicit memory (Core API):**
 ```typescript
 import UniMemory from 'unimemory';
 
@@ -61,79 +70,57 @@ const client = new UniMemory({
   apiKey: process.env.UNIMEMORY_API_KEY
 });
 
-// Add a memory
-const result = await client.addMemory({
+// Store a memory you've decided to keep
+const memory = await client.addMemory({
   content: "User prefers dark mode",
-  sourceApp: "my-app",
+  userId: "user123",
+  tags: ["preferences"]
+});
+```
+
+**Extract memories from content (Ingest API):**
+```typescript
+// Let AI extract memories from a conversation
+const result = await client.ingestText({
+  content: "User says: I'm moving to San Francisco next month for my new job at Google",
   userId: "user123"
 });
-
-// Search memories semantically
-const results = await client.search("user preferences");
-console.log(results.results);
+// Result: stored: 2 (e.g., "User is moving to San Francisco", "User works at Google")
 ```
 
-**Python:**
-```python
-from unimemory import UniMemory
+##  API Architecture
 
-client = UniMemory(api_key="um_live_xxx...")
+### Core Memory API (Stable, Public)
 
-# Add a memory
-result = client.add_memory(
-    content="User prefers dark mode",
-    source_app="my-app",
-    user_id="user123"
-)
+These endpoints are your long-term contract. SDKs wrap these.
 
-# Search memories
-results = client.search("user preferences")
-for memory in results.results:
-    print(f"{memory.content} (score: {memory.score})")
-```
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/memories` | Store an explicit memory |
+| `GET` | `/memories` | List memories with filters |
+| `GET` | `/memories/{id}` | Get a single memory |
+| `DELETE` | `/memories/{id}` | Delete a memory |
+| `POST` | `/search` | Semantic search |
 
-##  Documentation
+### Ingest API (Smart, Evolvable)
 
-### JavaScript/TypeScript SDK
+These endpoints run LLM-based extraction. Logic may change over time.
 
-Full documentation: [packages/js/README.md](./packages/js/README.md)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/ingest/text` | Extract memories from raw text |
+| `POST` | `/ingest/chat` | Extract from chat messages |
+| `POST` | `/ingest/document` | Extract from documents |
 
-#### Methods
+### Platform API (Account Management)
 
-- `addMemory(options)` - Add a new memory
-- `search(query, options?)` - Semantic search memories
-- `listMemories(options?)` - List memories with filters
-- `deleteMemory(memoryId)` - Delete a memory by ID
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/auth/me` | Get current user |
+| `POST` | `/keys` | Create API key |
+| `GET` | `/keys` | List API keys |
+| `DELETE` | `/keys/{id}` | Delete API key |
 
-### Python SDK
-
-Full documentation: [packages/python/README.md](./packages/python/README.md)
-
-#### Methods
-
-- `add_memory(**kwargs)` - Add a new memory
-- `search(query, **kwargs)` - Semantic search memories
-- `list_memories(**kwargs)` - List memories with filters
-- `delete_memory(memory_id)` - Delete a memory by ID
-
-### API Reference
-
-The UniMemory API provides RESTful endpoints for memory management:
-
-- **Base URL**: `https://unimemory.up.railway.app/api/v1`
-- **Authentication**: Bearer token (API Key)
-- **Documentation**: [API Documentation](./api/README.md)
-
-#### Endpoints
-
-- `POST /memories` - Create a new memory
-- `GET /memories` - List memories
-- `POST /search` - Semantic search
-- `DELETE /memories/{id}` - Delete a memory
-- `GET /projects` - List projects
-- `POST /projects` - Create project
-- `POST /keys` - Create API key
-- `GET /keys` - List API keys
 
 ##  Architecture
 
