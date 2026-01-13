@@ -24,6 +24,29 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+# =============================================================================
+# PUBLIC RESPONSE MODELS
+# =============================================================================
+
+class PublicMemoryResponse(BaseModel):
+    """Stable public memory response (SDK-safe)"""
+    id: str
+    content: str
+    sector: Optional[str]
+    salience: float
+    tags: List[str]
+    user_id: str
+    created_at: datetime
+    updated_at: Optional[datetime]
+    
+    class Config:
+        from_attributes = True
+
+
+class PublicMemoryListResponse(BaseModel):
+    memories: List[PublicMemoryResponse]
+    total: int
+
 
 # Request/Response models with validation
 class AddMemoryRequest(BaseModel):
@@ -76,6 +99,16 @@ class MemoryDetailResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+
+class InternalMemoryResponse(MemoryDetailResponse):
+    """Full detail response for dashboard (includes internal fields)"""
+    pass
+
+
+class InternalMemoryListResponse(BaseModel):
+    memories: List[InternalMemoryResponse]
+    total: int
 
 
 class UpdateMemoryRequest(BaseModel):
@@ -259,211 +292,18 @@ async def create_memory(
 @router.post("/memories/add", response_model=Dict[str, Any], deprecated=True)
 async def add_memory(
     request: AddMemoryRequest,
-    background_tasks: BackgroundTasks,
     user_info: tuple = Depends(validate_api_key),
     session: AsyncSession = Depends(get_db)
 ):
     """
-    ⚠️ DEPRECATED: Use POST /memories for explicit storage or POST /ingest/text for intelligent extraction.
-    
-    Add a new memory (extracts and stores)
-    
-    Requires X-API-Key header for authentication.
-    
-    Flow:
-    1. Check if worth remembering (LLM)
-    2. Extract structured memories (LLM)
-    3. Generate embeddings
-    4. Check for duplicates (SimHash)
-    5. Store in database (batched)
-    6. Create waypoint links (background)
+    DEPRECATED: Use POST /memories for explicit storage or POST /ingest/text for intelligent extraction.
     """
-    # Log deprecation warning
-    logger.warning("Deprecated endpoint /memories/add called. Migrate to POST /memories or POST /ingest/text")
-    
-    user, api_key = user_info
-    owner_id = str(user.id)
-    
-    content = request.content
-    
-    extractor = get_extractor()
-    embedding_service = get_embedding_service()
-    
-    # Step 1: Check worthiness
-    worthiness = await extractor.check_worthiness(content)
-    if not worthiness.get("is_worth_remembering", False):
-        # Log as not worth remembering
-        log = ProcessingLog(
-            id=str(uuid.uuid4()),
-            raw_content_hash=compute_simhash(content),
-            processed_at=datetime.utcnow(),
-            was_worth_remembering=False,
-            reason=worthiness.get("reason", "Not worth remembering"),
-            extracted_count=0
-        )
-        session.add(log)
-        await session.commit()
-        
-        return {
-            "was_worth_remembering": False,
-            "reason": worthiness.get("reason"),
-            "extracted_count": 0
-        }
-    
-    # Step 2: Extract memories
-    extracted = await extractor.extract_memories(content)
-    if not extracted:
-        return {
-            "was_worth_remembering": True,
-            "reason": "Worth remembering but extraction failed",
-            "extracted_count": 0
-        }
-    
-    # Step 3: Batch process extracted memories
-    saved_memories = []
-    new_memories_for_waypoints = []  # (memory_id, embedding)
-    
-    # Pre-fetch existing memories for deduplication (single query)
-    stmt = select(Memory).where(
-        Memory.simhash.isnot(None),
-        Memory.is_active == True,
-        Memory.owner_id == owner_id,
-        Memory.user_id == request.user_id
-    ).order_by(Memory.salience.desc()).limit(500)
-    
-    result = await session.execute(stmt)
-    existing_memories = result.scalars().all()
-    
-    # Build simhash lookup for fast dedup
-    simhash_to_memory = {}
-    for em in existing_memories:
-        if em.simhash:
-            simhash_to_memory[em.simhash] = em
-    
-    for mem_data in extracted:
-        # Handle both dict format {"content": "..."} and plain string format
-        if isinstance(mem_data, str):
-            mem_content = mem_data.strip()
-        elif isinstance(mem_data, dict):
-            mem_content = mem_data.get("content", "").strip()
-        else:
-            continue
-            
-        if not mem_content:
-            continue
-        
-        # Generate SimHash for deduplication
-        simhash = compute_simhash(mem_content)
-        
-        # Check for existing similar memory (optimized)
-        existing = None
-        for existing_hash, existing_mem in simhash_to_memory.items():
-            if hamming_distance(simhash, existing_hash) <= 3:
-                existing = existing_mem
-                break
-        
-        if existing:
-            # Boost salience on duplicate
-            DUPLICATE_BOOST = 0.15
-            existing.salience = min(1.0, (existing.salience or 0.5) + DUPLICATE_BOOST)
-            existing.last_seen_at = datetime.utcnow()
-            existing.updated_at = datetime.utcnow()
-            
-            saved_memories.append({
-                "id": str(existing.id),
-                "was_deduplicated": True
-            })
-            continue
-        
-        # Step 4: Classify sector
-        sector, additional_sectors, confidence = classify_sector(mem_content)
-        decay_lambda = get_sector_decay_lambda(sector)
-        
-        # Step 5: Calculate initial salience
-        initial_salience = calculate_initial_salience(sector, additional_sectors)
-        
-        # Step 6: Generate embedding
-        try:
-            embedding, dim = await embedding_service.embed(mem_content)
-        except Exception as e:
-            logger.error(f"Failed to generate embedding: {e}")
-            continue
-        
-        # Step 7: Create memory object
-        memory_id = str(uuid.uuid4())
-        tags = mem_data.get("tags", []) if isinstance(mem_data, dict) else []
-        
-        memory = Memory(
-            id=memory_id,
-            content=mem_content,
-            simhash=simhash,
-            sector=sector,
-            salience=initial_salience,
-            decay_lambda=decay_lambda,
-            segment=0,
-            tags=tags,
-            extra_metadata=request.metadata or {},
-            source_app=request.source_app,
-            user_id=request.user_id,
-            owner_id=owner_id,
-            api_key_id=str(api_key.id) if api_key else None,
-            embedding=embedding,
-            embedding_model=settings.EMBEDDING_MODEL,
-            is_active=True,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
-            last_seen_at=datetime.utcnow()
-        )
-        
-        session.add(memory)
-        
-        # Track for waypoint creation (background)
-        new_memories_for_waypoints.append((memory_id, embedding))
-        
-        # Add to simhash lookup to prevent duplicates within same batch
-        simhash_to_memory[simhash] = memory
-        
-        saved_memories.append({
-            "id": memory_id,
-            "was_deduplicated": False
-        })
-    
-    # Step 8: Single commit for all changes
-    await session.commit()
-    
-    # Step 9: Create waypoints in background (non-blocking)
-    if new_memories_for_waypoints:
-        from app.db.database import AsyncSessionLocal
-        memory_ids = [m[0] for m in new_memories_for_waypoints]
-        embeddings = [m[1] for m in new_memories_for_waypoints]
-        background_tasks.add_task(
-            create_waypoints_background,
-            AsyncSessionLocal,
-            memory_ids,
-            embeddings,
-            request.user_id
-        )
-    
-    # Step 10: Log processing
-    log = ProcessingLog(
-        id=str(uuid.uuid4()),
-        raw_content_hash=compute_simhash(content),
-        processed_at=datetime.utcnow(),
-        was_worth_remembering=True,
-        reason=worthiness.get("reason"),
-        extracted_count=len(saved_memories)
+    raise HTTPException(
+        status_code=410,
+        detail="This endpoint is deprecated and removed. Use POST /ingest/text for extraction or POST /memories for explicit storage."
     )
-    session.add(log)
-    await session.commit()
-    
-    return {
-        "was_worth_remembering": True,
-        "reason": worthiness.get("reason"),
-        "extracted_count": len(saved_memories),
-        "memories": saved_memories
-    }
 
-@router.get("/memories/me", response_model=MemoryListResponse)
+@router.get("/memories/me", response_model=InternalMemoryListResponse)
 async def list_my_memories(
     user_id: Optional[str] = None,
     api_key_id: Optional[str] = None,
@@ -519,23 +359,26 @@ async def list_my_memories(
     count_result = await session.execute(count_stmt)
     total = count_result.scalar() or 0
     
-    return MemoryListResponse(
-        memories=[MemoryResponse(
+    return InternalMemoryListResponse(
+        memories=[InternalMemoryResponse(
             id=str(m.id),
             content=m.content,
             sector=m.sector,
             salience=m.salience,
             tags=m.tags or [],
+            source_app=m.source_app,
             user_id=m.user_id or "anonymous",
             api_key_id=str(m.api_key_id) if m.api_key_id else None,
-            created_at=m.created_at
+            created_at=m.created_at,
+            updated_at=m.updated_at,
+            last_seen_at=m.last_seen_at
         ) for m in memories],
         total=total
     )
 
 
 
-@router.get("/memories", response_model=MemoryListResponse)
+@router.get("/memories", response_model=PublicMemoryListResponse)
 async def list_memories(
     user_id: Optional[str] = None,
     limit: int = 50,
@@ -586,16 +429,16 @@ async def list_memories(
     count_result = await session.execute(count_stmt)
     total = count_result.scalar() or 0
     
-    return MemoryListResponse(
-        memories=[MemoryResponse(
+    return PublicMemoryListResponse(
+        memories=[PublicMemoryResponse(
             id=str(m.id),
             content=m.content,
             sector=m.sector,
             salience=m.salience,
             tags=m.tags or [],
             user_id=m.user_id or "anonymous",
-            api_key_id=str(m.api_key_id) if m.api_key_id else None,
-            created_at=m.created_at
+            created_at=m.created_at,
+            updated_at=m.updated_at
         ) for m in memories],
         total=total
     )
@@ -722,7 +565,7 @@ async def update_memory(
     """
     Update a memory (tags, metadata, salience only).
     
-    ⚠️ Content updates are NOT allowed. To change content, delete and re-create.
+    Content updates are NOT allowed. To change content, delete and re-create.
     
     Requires X-API-Key header for authentication.
     """
@@ -765,7 +608,7 @@ async def delete_memory(
     return {"success": True, "id": memory_id}
 
 
-@router.patch("/memories/me/{memory_id}", response_model=MemoryDetailResponse)
+@router.patch("/memories/me/{memory_id}", response_model=InternalMemoryResponse)
 async def patch_my_memory(
     memory_id: str,
     request: UpdateMemoryRequest,
@@ -774,51 +617,30 @@ async def patch_my_memory(
 ):
     """
     Update a memory (content, salience, tags, metadata) for authenticated user.
+    
+    Content updates are NOT allowed. To change content, delete and re-create.
     """
     owner_id = str(user.id)
     
-    stmt = select(Memory).where(
-        Memory.id == memory_id,
-        Memory.owner_id == owner_id,
-        Memory.is_active == True
+    updated_memory = await _update_memory_internal(
+        session=session,
+        memory_id=memory_id,
+        owner_id=owner_id,
+        request=request
     )
-    result = await session.execute(stmt)
-    memory = result.scalar_one_or_none()
     
-    if not memory:
-        raise HTTPException(status_code=404, detail="Memory not found")
-    
-    if request.content is not None:
-        memory.content = request.content
-        memory.simhash = compute_simhash(request.content)
-        memory.updated_at = datetime.utcnow()
-    
-    if request.salience is not None:
-        memory.salience = request.salience
-    
-    if request.tags is not None:
-        memory.tags = request.tags
-    
-    if request.metadata is not None:
-        existing_meta = memory.extra_metadata or {}
-        existing_meta.update(request.metadata)
-        memory.extra_metadata = existing_meta
-    
-    memory.updated_at = datetime.utcnow()
-    await session.commit()
-    await session.refresh(memory)
-    
-    return MemoryDetailResponse(
-        id=str(memory.id),
-        content=memory.content,
-        sector=memory.sector,
-        salience=memory.salience,
-        tags=memory.tags or [],
-        source_app=memory.source_app,
-        user_id=memory.user_id or "anonymous",
-        created_at=memory.created_at,
-        updated_at=memory.updated_at,
-        last_seen_at=memory.last_seen_at
+    return InternalMemoryResponse(
+        id=str(updated_memory.id),
+        content=updated_memory.content,
+        sector=updated_memory.sector,
+        salience=updated_memory.salience,
+        tags=updated_memory.tags or [],
+        source_app=updated_memory.source_app,
+        user_id=updated_memory.user_id or "anonymous",
+        api_key_id=str(updated_memory.api_key_id) if updated_memory.api_key_id else None,
+        created_at=updated_memory.created_at,
+        updated_at=updated_memory.updated_at,
+        last_seen_at=updated_memory.last_seen_at
     )
 
 
