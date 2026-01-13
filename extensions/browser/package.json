@@ -1,0 +1,13 @@
+{
+  "name": "@unimemory/browser-extension",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "echo 'Browser extension build coming soon'",
+    "watch": "echo 'Browser extension watch coming soon'"
+  },
+  "devDependencies": {
+    "typescript": "^5",
+    "@types/chrome": "^0.0.268"
+  }
+}

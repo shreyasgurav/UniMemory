@@ -126,17 +126,44 @@ These endpoints run LLM-based extraction. Logic may change over time.
 
 ```
 UniMemory/
-├── api/                 # Backend API (FastAPI + PostgreSQL + pgvector)
+├── api/                      # Backend API (FastAPI + PostgreSQL + pgvector)
 │   ├── app/
-│   │   ├── api/        # API routes
-│   │   ├── core/       # Core logic (embeddings, search, extraction)
-│   │   └── db/         # Database models and migrations
-│   └── Dockerfile      # Production deployment
-├── webapp/            # Web application (Next.js 14)
-│   └── app/           # Next.js App Router pages
-├── packages/
-│   ├── js/            # JavaScript/TypeScript SDK
-│   └── python/        # Python SDK
+│   │   ├── api/             # API routes
+│   │   ├── core/            # Core logic (embeddings, search, extraction)
+│   │   └── db/              # Database models and migrations
+│   └── Dockerfile           # Production deployment
+│
+├── apps/                     # Frontend applications
+│   ├── console/             # Developer dashboard (console.unimemory.app)
+│   │   ├── app/             # Next.js App Router
+│   │   ├── components/      # React components
+│   │   └── lib/             # API clients, utilities
+│   └── consumer/            # End-user app (app.unimemory.app)
+│       ├── app/             # Next.js App Router
+│       ├── components/      # React components
+│       ├── lib/             # API clients, utilities
+│       └── hooks/           # Custom React hooks
+│
+├── packages/                 # Shared libraries
+│   ├── sdk-js/              # JavaScript/TypeScript SDK
+│   ├── sdk-python/          # Python SDK
+│   └── shared-ui/           # Shared UI components (future)
+│
+├── extensions/               # Client-side capture
+│   ├── browser/             # Chrome/Arc/Brave extension
+│   │   ├── src/
+│   │   │   ├── content/     # Content scripts
+│   │   │   ├── background/  # Service worker
+│   │   │   └── popup/       # Extension popup
+│   │   └── manifest.json
+│   └── vscode/              # VS Code extension
+│       └── src/
+│
+├── mcp/                      # MCP servers
+│   └── unimemory-mcp/       # MCP server for AI agents
+│       └── src/
+│           └── tools/
+│
 └── README.md
 ```
 
@@ -184,28 +211,33 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-3. **Setup Webapp:**
+3. **Setup Console Dashboard:**
 ```bash
-cd webapp
+cd apps/console
 npm install
 # Configure .env.local with Firebase and API settings
 npm run dev
 ```
 
-4. **Setup JavaScript SDK:**
+4. **Setup Consumer App:**
 ```bash
-cd packages/js
+cd apps/consumer
 npm install
-npm run build
-npm run dev  # Watch mode
+# Configure .env.local with Firebase and API settings
+npm run dev
 ```
 
-5. **Setup Python SDK:**
+5. **Setup JavaScript SDK:**
 ```bash
-cd packages/python
+cd packages/sdk-js
+npm install
+npm run build
+```
+
+6. **Setup Python SDK:**
+```bash
+cd packages/sdk-python
 pip install -e .
-# Or for development
-pip install -e ".[dev]"
 ```
 
 ### Environment Variables
