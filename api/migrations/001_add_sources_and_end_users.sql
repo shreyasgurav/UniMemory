@@ -1,3 +1,4 @@
+
 -- UniMemory Database Migration: Add sources, end_users, and related schema changes
 -- Version: 001
 -- Date: 2026-01-13
@@ -40,7 +41,7 @@ CREATE TABLE IF NOT EXISTS sources (
     summary_embedding VECTOR(1536),
     
     -- Metadata
-    metadata JSONB DEFAULT '{}',
+    source_metadata JSONB DEFAULT '{}',
     external_ref VARCHAR(500),  -- chat_id, file_path, url, etc.
     
     -- Timestamps

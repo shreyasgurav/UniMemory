@@ -54,7 +54,7 @@ class Source(Base):
     summary_embedding = Column(Vector(1536))  # Embedded summary for RAG
     
     # Metadata
-    metadata = Column(JSONB, default=dict)
+    source_metadata = Column(JSONB, default=dict)
     external_ref = Column(String(500))  # chat_id, file_path, url, etc.
     
     # Timestamps

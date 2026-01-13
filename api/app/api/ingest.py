@@ -323,7 +323,7 @@ async def ingest_text(
         raw_content={"content": content},
         summary=summary,
         summary_embedding=summary_embedding,
-        metadata={},
+        source_metadata={},
         external_ref=request.source_id,
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow()
@@ -451,7 +451,7 @@ async def ingest_chat(
         raw_content={"messages": request.messages},
         summary=summary,
         summary_embedding=summary_embedding,
-        metadata={},
+        source_metadata={},
         external_ref=request.source_id,
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow()
@@ -566,7 +566,7 @@ async def ingest_document(
         raw_content={"content": request.content},
         summary=summary,
         summary_embedding=summary_embedding,
-        metadata={},
+        source_metadata={},
         external_ref=request.source_id,
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow()
