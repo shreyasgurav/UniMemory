@@ -1,10 +1,11 @@
 """
-Search endpoints
+Search endpoints - Core Public API
 """
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
+from datetime import datetime
 
 from app.db.database import get_db
 from app.core.search import hybrid_search
@@ -14,30 +15,33 @@ from app.core.auth import validate_api_key
 router = APIRouter()
 
 
+# =============================================================================
+# PUBLIC API MODELS (stable, no internal details)
+# =============================================================================
+
 class SearchRequest(BaseModel):
+    """Public search request"""
     query: str
     limit: Optional[int] = 10
     user_id: Optional[str] = None
     min_salience: Optional[float] = 0.0
-    debug: Optional[bool] = False
 
 
-class SearchResult(BaseModel):
+class PublicSearchResult(BaseModel):
+    """Public search result (no internal scoring details)"""
     id: str
     content: str
-    sector: Optional[str]
-    salience: float
-    score: float
     tags: List[str]
-    path: List[str]
-    debug: Optional[Dict[str, Any]] = None
+    salience: float
+    created_at: Optional[datetime] = None
     
     class Config:
         from_attributes = True
 
 
 class SearchResponse(BaseModel):
-    results: List[SearchResult]
+    """Public search response"""
+    results: List[PublicSearchResult]
     total: int
     query: str
 
@@ -49,17 +53,12 @@ async def search_memories(
     session: AsyncSession = Depends(get_db)
 ):
     """
-    Search for relevant memories using hybrid search (OpenMemory HSG-style)
+    Search for relevant memories (Core Public API)
+    
+    Returns memories matching the query, ranked by relevance.
     
     Requires X-API-Key header for authentication.
     Only searches memories owned by the authenticated user.
-    
-    Combines:
-    - Vector similarity (embeddings)
-    - Token overlap (keywords)
-    - Waypoint expansion (graph traversal)
-    - Recency scoring
-    - Tag matching
     """
     user, api_key = user_info
     owner_id = str(user.id)
@@ -68,8 +67,8 @@ async def search_memories(
         raise HTTPException(status_code=400, detail="Query cannot be empty")
     
     filters = {
-        "debug": request.debug,
-        "owner_id": owner_id  # Add owner_id filter for multi-tenant isolation
+        "debug": False,  # Never expose debug info in public API
+        "owner_id": owner_id
     }
     
     try:
@@ -82,19 +81,16 @@ async def search_memories(
             filters=filters
         )
         
-        # Convert to response format
+        # Convert to public response format (no internal details)
         search_results = []
         for result in results:
             mem = result["memory"]
-            search_results.append(SearchResult(
+            search_results.append(PublicSearchResult(
                 id=str(mem.id),
                 content=mem.content,
-                sector=mem.sector,
-                salience=mem.salience,
-                score=result["score"],
                 tags=mem.tags or [],
-                path=result["path"],
-                debug=result.get("debug")
+                salience=mem.salience,
+                created_at=mem.created_at
             ))
         
         return SearchResponse(
@@ -105,4 +101,3 @@ async def search_memories(
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
-

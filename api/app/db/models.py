@@ -180,3 +180,27 @@ class ProcessingLog(Base):
     def __repr__(self):
         return f"<ProcessingLog(id={self.id}, worth={self.was_worth_remembering})>"
 
+
+class MemorySource(Base):
+    """Links memories to their original source data (for RAG without bloating memory DB)"""
+    __tablename__ = "memory_sources"
+    
+    id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    memory_id = Column(UUID(as_uuid=False), ForeignKey("memories.id", ondelete="CASCADE"), nullable=False, index=True)
+    source_id = Column(String(255), nullable=False, index=True)  # External reference ID
+    source_type = Column(String(50), nullable=False)  # "text", "chat", "document"
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    # Relationships
+    memory = relationship("Memory")
+    
+    # Indexes
+    __table_args__ = (
+        Index("idx_memory_sources_memory", "memory_id"),
+        Index("idx_memory_sources_source", "source_id", "source_type"),
+    )
+    
+    def __repr__(self):
+        return f"<MemorySource(memory={self.memory_id}, source={self.source_id})>"
+

@@ -108,28 +108,31 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
       </nav>
 
       {/* User Profile Section */}
-      <div className="p-3 border-t border-neutral-100">
+      <div className="p-3">
         <div className="relative">
           <button
             onClick={() => setShowProfileDropdown(!showProfileDropdown)}
-            className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-neutral-700 hover:bg-neutral-50 rounded-xl transition-all"
+            className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-neutral-700 hover:bg-neutral-50 rounded-xl transition-all"
           >
             {user?.photoURL ? (
               <img
                 src={user.photoURL}
                 alt={user.displayName || "User"}
-                className="w-8 h-8 rounded-full"
+                className="w-7 h-7 rounded-full"
               />
             ) : (
-              <div className="w-8 h-8 bg-neutral-200 rounded-full flex items-center justify-center">
-                <span className="text-neutral-600 text-sm font-medium">
+              <div className="w-7 h-7 bg-neutral-200 rounded-full flex items-center justify-center">
+                <span className="text-neutral-600 text-xs font-semibold">
                   {user?.email?.charAt(0).toUpperCase() || "U"}
                 </span>
               </div>
             )}
             <div className="flex-1 text-left min-w-0">
-              <p className="font-medium text-neutral-900 truncate text-sm">
+              <p className="font-medium text-neutral-900 truncate text-[13px] leading-5">
                 {user?.displayName || user?.email?.split('@')[0] || 'User'}
+              </p>
+              <p className="text-xs text-neutral-500 truncate leading-4">
+                {user?.email || ''}
               </p>
             </div>
             <svg

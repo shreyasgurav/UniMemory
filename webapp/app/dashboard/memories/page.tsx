@@ -6,7 +6,6 @@ import { auth, getIdToken } from "@/lib/firebase";
 import { listMemories, deleteMemory, updateMemory, Memory, APIKey, listAPIKeys } from "@/lib/api";
 import {
     Users,
-    Search,
     Trash2,
     User,
     Clock,
@@ -28,7 +27,6 @@ export default function MemoriesPage() {
     const [total, setTotal] = useState(0);
     const [loading, setLoading] = useState(true);
     const [loadingKeys, setLoadingKeys] = useState(true);
-    const [searchTerm, setSearchTerm] = useState("");
     const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
     const [offset, setOffset] = useState(0);
     const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -149,11 +147,8 @@ export default function MemoriesPage() {
 
     // Extract unique users from memories
     const uniqueUsers = useMemo(() => {
-        const users = Array.from(new Set(memories.map(m => m.user_id)));
-        return users.filter(id =>
-            id.toLowerCase().includes(searchTerm.toLowerCase())
-        );
-    }, [memories, searchTerm]);
+        return Array.from(new Set(memories.map(m => m.user_id)));
+    }, [memories]);
 
     // Filter memories by selected user
     const filteredMemories = useMemo(() => {
@@ -162,45 +157,31 @@ export default function MemoriesPage() {
     }, [memories, selectedUserId]);
 
     return (
-        <div className="flex h-[calc(100vh-64px)] overflow-hidden bg-white">
+        <div className="flex min-h-full overflow-hidden bg-gray-50">
             {/* Left Sidebar - User List */}
             <div className="w-80 border-r border-neutral-100 flex flex-col bg-neutral-50/10">
                 <div className="p-6 border-b border-neutral-100 flex flex-col gap-4">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                            <Users className="w-5 h-5 text-neutral-900" />
-                            <h1 className="text-[17px] font-semibold text-neutral-900 tracking-tight">Users</h1>
+                    <div className="flex items-center justify-between gap-3">
+                        <h1 className="text-2xl font-semibold text-neutral-900">Memories</h1>
+
+                        {/* API Key Filter */}
+                        <div className="relative min-w-[140px]">
+                            <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-400 pointer-events-none" />
+                            <select
+                                value={selectedApiKeyId}
+                                onChange={(e) => handleApiKeyChange(e.target.value)}
+                                disabled={loadingKeys}
+                                className="w-full pl-9 pr-8 py-2 text-xs font-medium text-neutral-600 bg-white border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-neutral-900/5 focus:border-neutral-300 transition-all appearance-none disabled:opacity-50"
+                            >
+                                <option value="all">All</option>
+                                {apiKeys.map(key => (
+                                    <option key={key.id} value={key.id}>
+                                        {key.name}
+                                    </option>
+                                ))}
+                            </select>
+                            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-400 pointer-events-none" />
                         </div>
-                    </div>
-
-                    {/* API Key Filter */}
-                    <div className="relative">
-                        <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-400 pointer-events-none" />
-                        <select
-                            value={selectedApiKeyId}
-                            onChange={(e) => handleApiKeyChange(e.target.value)}
-                            disabled={loadingKeys}
-                            className="w-full pl-9 pr-8 py-2 text-xs font-medium text-neutral-600 bg-white border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-neutral-900/5 focus:border-neutral-300 transition-all appearance-none disabled:opacity-50"
-                        >
-                            <option value="all">All API Keys</option>
-                            {apiKeys.map(key => (
-                                <option key={key.id} value={key.id}>
-                                    {key.name}
-                                </option>
-                            ))}
-                        </select>
-                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-400 pointer-events-none" />
-                    </div>
-
-                    <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
-                        <input
-                            type="text"
-                            placeholder="Search users..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full pl-9 pr-4 py-2 text-sm bg-white border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-neutral-900/5 focus:border-neutral-300 transition-all placeholder:text-neutral-400"
-                        />
                     </div>
                 </div>
 
@@ -245,7 +226,7 @@ export default function MemoriesPage() {
             </div>
 
             {/* Right Content - User Memories */}
-            <div className="flex-1 flex flex-col bg-white overflow-hidden">
+            <div className="flex-1 flex flex-col bg-gray-50 overflow-hidden">
                 {selectedUserId ? (
                     <>
                         {/* Header */}

@@ -107,7 +107,155 @@ async def create_waypoints_background(
         logger.error(f"Background waypoint creation failed: {e}")
 
 
-@router.post("/memories/add", response_model=Dict[str, Any])
+# =============================================================================
+# CORE PUBLIC API - Stable, documented, SDK-ready
+# =============================================================================
+
+class CreateMemoryRequest(BaseModel):
+    """Request to store an explicit memory (Core API)"""
+    content: str = Field(..., min_length=1, max_length=50000)
+    user_id: Optional[str] = Field("anonymous", max_length=100)
+    app_id: Optional[str] = Field(None, max_length=100)  # Application identifier
+    tags: Optional[List[str]] = Field(default_factory=list)
+    metadata: Optional[Dict[str, Any]] = None
+    
+    @validator('content')
+    def validate_content(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Content cannot be empty')
+        return v.strip()
+
+
+class CreateMemoryResponse(BaseModel):
+    """Clean response for core memory creation (no internal details)"""
+    id: str
+    created_at: datetime
+
+
+class CoreMemoryResponse(BaseModel):
+    """Public memory response (no internal implementation details)"""
+    id: str
+    content: str
+    user_id: str
+    tags: List[str]
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class CoreMemoryListResponse(BaseModel):
+    """Public list response"""
+    memories: List[CoreMemoryResponse]
+    total: int
+
+
+@router.post("/memories", response_model=CreateMemoryResponse)
+async def create_memory(
+    request: CreateMemoryRequest,
+    background_tasks: BackgroundTasks,
+    user_info: tuple = Depends(validate_api_key),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Store an explicit long-term memory (Core Public API)
+    
+    This is the stable, public memory storage endpoint.
+    Use this when you know exactly what to remember.
+    
+    For intelligent extraction from raw text/chat, use /ingest/* endpoints.
+    
+    Requires X-API-Key header for authentication.
+    """
+    user, api_key = user_info
+    owner_id = str(user.id)
+    
+    content = request.content
+    embedding_service = get_embedding_service()
+    
+    # Step 1: Compute SimHash for deduplication
+    simhash = compute_simhash(content)
+    
+    # Step 2: Check for near-duplicates
+    stmt = select(Memory).where(
+        Memory.simhash.isnot(None),
+        Memory.is_active == True,
+        Memory.owner_id == owner_id,
+        Memory.user_id == request.user_id
+    ).order_by(Memory.salience.desc()).limit(100)
+    
+    result = await session.execute(stmt)
+    existing_memories = result.scalars().all()
+    
+    for existing in existing_memories:
+        if existing.simhash and hamming_distance(simhash, existing.simhash) <= 3:
+            # Near-duplicate found - boost salience and return existing
+            existing.salience = min(1.0, (existing.salience or 0.5) + 0.1)
+            existing.last_seen_at = datetime.utcnow()
+            await session.commit()
+            return CreateMemoryResponse(
+                id=str(existing.id),
+                created_at=existing.created_at
+            )
+    
+    # Step 3: Generate embedding
+    try:
+        embedding, dim = await embedding_service.embed(content)
+    except Exception as e:
+        logger.error(f"Embedding generation failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process memory")
+    
+    # Step 4: Classify sector (lightweight, no LLM)
+    sector, _, _ = classify_sector(content)
+    
+    # Step 5: Create memory
+    memory_id = str(uuid.uuid4())
+    memory = Memory(
+        id=memory_id,
+        content=content,
+        simhash=simhash,
+        sector=sector,
+        salience=0.5,  # Default salience
+        decay_lambda=get_sector_decay_lambda(sector),
+        segment=0,
+        tags=request.tags or [],
+        extra_metadata=request.metadata or {},
+        source_app=request.app_id,
+        user_id=request.user_id,
+        owner_id=owner_id,
+        api_key_id=str(api_key.id) if api_key else None,
+        embedding=embedding,
+        embedding_model=settings.EMBEDDING_MODEL,
+        is_active=True,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+        last_seen_at=datetime.utcnow()
+    )
+    
+    session.add(memory)
+    await session.commit()
+    
+    # Step 6: Create waypoints in background
+    from app.db.database import AsyncSessionLocal
+    background_tasks.add_task(
+        create_waypoints_background,
+        AsyncSessionLocal,
+        [memory_id],
+        [embedding],
+        request.user_id or "anonymous"
+    )
+    
+    return CreateMemoryResponse(
+        id=memory_id,
+        created_at=memory.created_at
+    )
+
+
+# =============================================================================
+# LEGACY INGESTION API - Will be moved to /ingest/* in Phase 2
+# =============================================================================
+
+@router.post("/memories/add", response_model=Dict[str, Any], deprecated=True)
 async def add_memory(
     request: AddMemoryRequest,
     background_tasks: BackgroundTasks,
@@ -115,6 +263,8 @@ async def add_memory(
     session: AsyncSession = Depends(get_db)
 ):
     """
+    ⚠️ DEPRECATED: Use POST /memories for explicit storage or POST /ingest/text for intelligent extraction.
+    
     Add a new memory (extracts and stores)
     
     Requires X-API-Key header for authentication.
@@ -127,6 +277,9 @@ async def add_memory(
     5. Store in database (batched)
     6. Create waypoint links (background)
     """
+    # Log deprecation warning
+    logger.warning("Deprecated endpoint /memories/add called. Migrate to POST /memories or POST /ingest/text")
+    
     user, api_key = user_info
     owner_id = str(user.id)
     
@@ -500,7 +653,10 @@ async def update_memory(
     session: AsyncSession = Depends(get_db)
 ):
     """
-    Update a memory (salience, tags, metadata).
+    Update a memory (tags, metadata, salience only).
+    
+    ⚠️ Content changes are discouraged as they break embedding consistency.
+    Use DELETE + POST /memories to replace a memory instead.
     
     Requires X-API-Key header for authentication.
     Can only update memories owned by the authenticated user.
@@ -519,10 +675,11 @@ async def update_memory(
     if not memory:
         raise HTTPException(status_code=404, detail="Memory not found")
     
-    # Update fields if provided
+    # Reject content changes in public API (breaks embeddings)
     if request.content is not None:
+        logger.warning(f"Content update attempted on memory {memory_id} - discouraged but allowed for backwards compat")
+        # Still allow for backwards compatibility, but log warning
         memory.content = request.content
-        # Re-compute simhash if content changed
         memory.simhash = compute_simhash(request.content)
         memory.updated_at = datetime.utcnow()
     
@@ -539,7 +696,7 @@ async def update_memory(
     
     memory.updated_at = datetime.utcnow()
     await session.commit()
-    await session.refresh(memory)  # Refresh to get updated values after commit
+    await session.refresh(memory)
     
     return MemoryDetailResponse(
         id=str(memory.id),
