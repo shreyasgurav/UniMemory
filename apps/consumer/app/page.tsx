@@ -12,7 +12,8 @@ export default function HomePage() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
-        router.push("/");
+        // Send authenticated users to a concrete route to avoid redirect loops
+        router.push("/memories");
       } else {
         router.push("/login");
       }
