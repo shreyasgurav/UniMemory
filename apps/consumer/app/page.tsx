@@ -12,7 +12,7 @@ export default function HomePage() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
-        router.push("/(authenticated)");
+        router.push("/");
       } else {
         router.push("/login");
       }

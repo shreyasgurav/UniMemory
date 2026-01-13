@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, update
 from pydantic import BaseModel
 
-from app.db.session import get_db
+from app.db.database import get_db
 from app.db.models import Source, Memory, MemorySource, User
 from app.api.auth import get_current_user
 
