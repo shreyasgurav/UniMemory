@@ -111,6 +111,7 @@ Return JSON:
             
         except asyncio.TimeoutError:
             logger.warning(f"Worthiness check timed out for text: {text[:50]}...")
+            logger.info("Defaulting to is_worth_remembering=True due to LLM timeout")
             return WorthinessResult(
                 is_worth_remembering=True,
                 reason="Timeout - defaulting to worth remembering",

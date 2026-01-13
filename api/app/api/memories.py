@@ -79,12 +79,12 @@ class MemoryDetailResponse(BaseModel):
 
 
 class UpdateMemoryRequest(BaseModel):
-    """Request to update a memory (tags, metadata, salience recommended; content changes require force=true)"""
-    content: Optional[str] = Field(None, min_length=1, max_length=50000)
+    """Request to update a memory (tags, metadata, salience). Content updates are NOT allowed."""
+    content: Optional[str] = Field(None, description="Must be None. Content updates are not allowed.")
     salience: Optional[float] = Field(None, ge=0.0, le=1.0)
     tags: Optional[List[str]] = None
     metadata: Optional[Dict[str, Any]] = None
-    force: bool = Field(False, description="Set to true to allow content changes (breaks embeddings)")
+    force: bool = Field(False, description="Deprecated. Content updates are no longer supported via PATCH.")
 
 
 async def create_waypoints_background(
@@ -646,25 +646,37 @@ async def get_memory(
     )
 
 
-@router.patch("/memories/{memory_id}", response_model=MemoryDetailResponse)
-async def update_memory(
+# =============================================================================
+# PUBLIC RESPONSE MODELS
+# =============================================================================
+
+class InternalMemoryResponse(MemoryDetailResponse):
+    """Full detail response for dashboard (includes internal fields)"""
+    pass
+
+
+class PublicMemoryResponse(BaseModel):
+    """Stable public memory response (SDK-safe)"""
+    id: str
+    content: str
+    sector: Optional[str]
+    salience: float
+    tags: List[str]
+    user_id: str
+    created_at: datetime
+    updated_at: Optional[datetime]
+    
+    class Config:
+        from_attributes = True
+
+
+async def _update_memory_internal(
+    session: AsyncSession,
     memory_id: str,
-    request: UpdateMemoryRequest,
-    user_info: tuple = Depends(validate_api_key),
-    session: AsyncSession = Depends(get_db)
-):
-    """
-    Update a memory (tags, metadata, salience only).
-    
-    ⚠️ Content changes are discouraged as they break embedding consistency.
-    Use DELETE + POST /memories to replace a memory instead.
-    
-    Requires X-API-Key header for authentication.
-    Can only update memories owned by the authenticated user.
-    """
-    user, api_key = user_info
-    owner_id = str(user.id)
-    
+    owner_id: str,
+    request: UpdateMemoryRequest
+) -> Memory:
+    """Unified internal memory update logic"""
     stmt = select(Memory).where(
         Memory.id == memory_id,
         Memory.owner_id == owner_id,
@@ -676,17 +688,12 @@ async def update_memory(
     if not memory:
         raise HTTPException(status_code=404, detail="Memory not found")
     
-    # Reject content changes unless force=true (content changes break embeddings)
+    # Strictly disallow content changes in PATCH
     if request.content is not None:
-        if not request.force:
-            raise HTTPException(
-                status_code=400,
-                detail="Content changes require force=true (breaks embedding consistency). Use DELETE + POST /memories to replace instead."
-            )
-        logger.warning(f"Content update forced on memory {memory_id} - embeddings may be inconsistent")
-        memory.content = request.content
-        memory.simhash = compute_simhash(request.content)
-        memory.updated_at = datetime.utcnow()
+        raise HTTPException(
+            status_code=400,
+            detail="Content updates are not allowed in PATCH to preserve embedding consistency. DELETE and re-create the memory instead."
+        )
     
     if request.salience is not None:
         memory.salience = request.salience
@@ -702,19 +709,27 @@ async def update_memory(
     memory.updated_at = datetime.utcnow()
     await session.commit()
     await session.refresh(memory)
+    return memory
+
+
+@router.patch("/memories/{memory_id}", response_model=PublicMemoryResponse)
+async def update_memory(
+    memory_id: str,
+    request: UpdateMemoryRequest,
+    user_info: tuple = Depends(validate_api_key),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Update a memory (tags, metadata, salience only).
     
-    return MemoryDetailResponse(
-        id=str(memory.id),
-        content=memory.content,
-        sector=memory.sector,
-        salience=memory.salience,
-        tags=memory.tags or [],
-        source_app=memory.source_app,
-        user_id=memory.user_id or "anonymous",
-        created_at=memory.created_at,
-        updated_at=memory.updated_at,
-        last_seen_at=memory.last_seen_at
-    )
+    ⚠️ Content updates are NOT allowed. To change content, delete and re-create.
+    
+    Requires X-API-Key header for authentication.
+    """
+    user, api_key = user_info
+    owner_id = str(user.id)
+    
+    return await _update_memory_internal(session, memory_id, owner_id, request)
 
 
 @router.delete("/memories/{memory_id}")
