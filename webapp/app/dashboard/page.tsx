@@ -3,10 +3,11 @@
 import { useEffect, useState, useCallback } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth, getIdToken } from "@/lib/firebase";
-import { listAPIKeys, APIKey } from "@/lib/api";
+import { listAPIKeys, getDashboardStats, DashboardStats } from "@/lib/api";
 
 export default function DashboardPage() {
   const [keysCount, setKeysCount] = useState(0);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
 
   const loadStats = useCallback(async () => {
@@ -14,8 +15,13 @@ export default function DashboardPage() {
       const token = await getIdToken();
       if (!token) return;
       
-      const keys = await listAPIKeys(token);
+      const [keys, dashboardStats] = await Promise.all([
+        listAPIKeys(token),
+        getDashboardStats(token)
+      ]);
+      
       setKeysCount(keys.filter(k => k.is_active).length);
+      setStats(dashboardStats);
     } catch (error) {
       console.error("Failed to load stats:", error);
     } finally {
@@ -40,7 +46,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
         <div className="bg-white border border-gray-100 rounded-2xl p-6">
           <p className="text-sm text-neutral-500 mb-2">Active API Keys</p>
           {loading ? (
@@ -51,13 +57,39 @@ export default function DashboardPage() {
         </div>
 
         <div className="bg-white border border-gray-100 rounded-2xl p-6">
-          <p className="text-sm text-neutral-500 mb-2">Total Requests</p>
-          <p className="text-2xl font-semibold text-neutral-900">0</p>
+          <p className="text-sm text-neutral-500 mb-2">Memories Stored</p>
+          {loading ? (
+            <div className="h-8 w-16 bg-neutral-200 rounded animate-pulse" />
+          ) : (
+            <p className="text-2xl font-semibold text-neutral-900">{stats?.total_memories ?? 0}</p>
+          )}
         </div>
 
         <div className="bg-white border border-gray-100 rounded-2xl p-6">
-          <p className="text-sm text-neutral-500 mb-2">Memories Stored</p>
-          <p className="text-2xl font-semibold text-neutral-900">0</p>
+          <p className="text-sm text-neutral-500 mb-2">Sources Ingested</p>
+          {loading ? (
+            <div className="h-8 w-16 bg-neutral-200 rounded animate-pulse" />
+          ) : (
+            <p className="text-2xl font-semibold text-neutral-900">{stats?.total_sources ?? 0}</p>
+          )}
+        </div>
+
+        <div className="bg-white border border-gray-100 rounded-2xl p-6">
+          <p className="text-sm text-neutral-500 mb-2">End Users</p>
+          {loading ? (
+            <div className="h-8 w-16 bg-neutral-200 rounded animate-pulse" />
+          ) : (
+            <p className="text-2xl font-semibold text-neutral-900">{stats?.total_end_users ?? 0}</p>
+          )}
+        </div>
+
+        <div className="bg-white border border-gray-100 rounded-2xl p-6">
+          <p className="text-sm text-neutral-500 mb-2">Requests (24h)</p>
+          {loading ? (
+            <div className="h-8 w-16 bg-neutral-200 rounded animate-pulse" />
+          ) : (
+            <p className="text-2xl font-semibold text-neutral-900">{stats?.requests_24h ?? 0}</p>
+          )}
         </div>
       </div>
 
