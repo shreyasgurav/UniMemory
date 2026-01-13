@@ -18,13 +18,15 @@ import uuid
 import logging
 
 from app.db.database import get_db, AsyncSessionLocal
-from app.db.models import Memory, ProcessingLog, MemorySource, User
+from app.db.models import Memory, ProcessingLog, MemorySource, User, Source, EndUser
 from app.core.extractor import get_extractor, ExtractedMemoryItem
 from app.core.embeddings import get_embedding_service
 from app.core.simhash import compute_simhash, hamming_distance
 from app.core.sector import classify_sector, get_sector_decay_lambda, calculate_initial_salience
 from app.core.waypoints import create_waypoint_for_memory
 from app.core.auth import validate_api_key
+from app.core.end_user import get_or_create_end_user
+from app.core.summarizer import SourceSummarizer
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -111,14 +113,15 @@ async def store_extracted_memories(
     extracted: List[ExtractedMemoryItem],
     owner_id: str,
     user_id: str,
+    end_user_id: Optional[str],
     app_id: Optional[str],
     api_key_id: Optional[str],
-    source_id: Optional[str],
-    source_type: str,
+    source_uuid: Optional[str],
     background_tasks: BackgroundTasks
 ) -> tuple[int, int, List[str]]:
     """
     Store extracted memories with deduplication.
+    Links memories to source via memory_sources table.
     Returns (stored_count, skipped_count, memory_ids)
     """
     embedding_service = get_embedding_service()
@@ -191,6 +194,7 @@ async def store_extracted_memories(
             extra_metadata={},
             source_app=app_id,
             user_id=user_id,
+            end_user_id=end_user_id,
             owner_id=owner_id,
             api_key_id=api_key_id,
             embedding=embedding,
@@ -207,14 +211,13 @@ async def store_extracted_memories(
         new_memories_for_waypoints.append((memory_id, embedding))
         stored_count += 1
     
-    # Create source links if source_id provided
-    if source_id and memory_ids:
+    # Create source links if source_uuid provided
+    if source_uuid and memory_ids:
         for mem_id in memory_ids:
             source_link = MemorySource(
                 id=str(uuid.uuid4()),
                 memory_id=mem_id,
-                source_id=source_id,
-                source_type=source_type
+                source_id=source_uuid
             )
             session.add(source_link)
     
@@ -269,6 +272,7 @@ async def ingest_text(
         )
     
     extractor = get_extractor()
+    summarizer = SourceSummarizer()
     content = request.content
     total_tokens = 0
     
@@ -294,32 +298,63 @@ async def ingest_text(
             skipped=0,
             memory_ids=[],
             tokens_used=total_tokens,
-            source_id=request.source_id
+            source_id=None
         )
     
-    # Step 2: Extract memories
+    # Step 2: Create Source record with raw content + summary + embedding
+    summary, summary_embedding, summary_tokens = await summarizer.summarize_and_embed(content, "text")
+    total_tokens += summary_tokens
+    
+    # Get or create end_user
+    end_user = await get_or_create_end_user(
+        session=session,
+        owner_id=owner_id,
+        external_user_id=request.user_id or "anonymous"
+    )
+    
+    source_uuid = str(uuid.uuid4())
+    source = Source(
+        id=source_uuid,
+        owner_id=owner_id,
+        end_user_id=str(end_user.id),
+        type="text",
+        source_app=request.app_id,
+        title=None,
+        raw_content={"content": content},
+        summary=summary,
+        summary_embedding=summary_embedding,
+        metadata={},
+        external_ref=request.source_id,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow()
+    )
+    session.add(source)
+    await session.flush()
+    
+    # Step 3: Extract memories
     extraction = await extractor.extract_memories(content)
     total_tokens += extraction.tokens_used
     
     if not extraction.memories:
+        await session.commit()
         return IngestResponse(
             stored=0,
             skipped=0,
             memory_ids=[],
             tokens_used=total_tokens,
-            source_id=request.source_id
+            source_id=source_uuid
         )
     
-    # Step 3: Store extracted memories
+    # Step 4: Store extracted memories and link to source
     stored, skipped, memory_ids = await store_extracted_memories(
         session=session,
         extracted=extraction.memories,
         owner_id=owner_id,
         user_id=request.user_id or "anonymous",
+        end_user_id=str(end_user.id),
         app_id=request.app_id,
         api_key_id=str(api_key.id) if api_key else None,
-        source_id=request.source_id,
-        source_type="text",
+        source_uuid=source_uuid,
         background_tasks=background_tasks
     )
     
@@ -340,7 +375,7 @@ async def ingest_text(
         skipped=skipped,
         memory_ids=memory_ids,
         tokens_used=total_tokens,
-        source_id=request.source_id
+        source_id=source_uuid
     )
 
 
@@ -372,6 +407,7 @@ async def ingest_chat(
         )
     
     extractor = get_extractor()
+    summarizer = SourceSummarizer()
     total_tokens = 0
     
     # Combine messages into conversation text
@@ -390,32 +426,63 @@ async def ingest_chat(
             skipped=0,
             memory_ids=[],
             tokens_used=total_tokens,
-            source_id=request.source_id
+            source_id=None
         )
     
-    # Step 2: Extract memories
+    # Step 2: Create Source record with raw chat + summary + embedding
+    summary, summary_embedding, summary_tokens = await summarizer.summarize_and_embed(conversation, "chat")
+    total_tokens += summary_tokens
+    
+    # Get or create end_user
+    end_user = await get_or_create_end_user(
+        session=session,
+        owner_id=owner_id,
+        external_user_id=request.user_id or "anonymous"
+    )
+    
+    source_uuid = str(uuid.uuid4())
+    source = Source(
+        id=source_uuid,
+        owner_id=owner_id,
+        end_user_id=str(end_user.id),
+        type="chat",
+        source_app=request.app_id,
+        title=None,
+        raw_content={"messages": request.messages},
+        summary=summary,
+        summary_embedding=summary_embedding,
+        metadata={},
+        external_ref=request.source_id,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow()
+    )
+    session.add(source)
+    await session.flush()
+    
+    # Step 3: Extract memories
     extraction = await extractor.extract_memories(conversation)
     total_tokens += extraction.tokens_used
     
     if not extraction.memories:
+        await session.commit()
         return IngestResponse(
             stored=0,
             skipped=0,
             memory_ids=[],
             tokens_used=total_tokens,
-            source_id=request.source_id
+            source_id=source_uuid
         )
     
-    # Step 3: Store extracted memories
+    # Step 4: Store extracted memories and link to source
     stored, skipped, memory_ids = await store_extracted_memories(
         session=session,
         extracted=extraction.memories,
         owner_id=owner_id,
         user_id=request.user_id or "anonymous",
+        end_user_id=str(end_user.id),
         app_id=request.app_id,
         api_key_id=str(api_key.id) if api_key else None,
-        source_id=request.source_id,
-        source_type="chat",
+        source_uuid=source_uuid,
         background_tasks=background_tasks
     )
     
@@ -424,7 +491,7 @@ async def ingest_chat(
         skipped=skipped,
         memory_ids=memory_ids,
         tokens_used=total_tokens,
-        source_id=request.source_id
+        source_id=source_uuid
     )
 
 
@@ -454,6 +521,7 @@ async def ingest_document(
         )
     
     extractor = get_extractor()
+    summarizer = SourceSummarizer()
     content = request.content
     total_tokens = 0
     
@@ -473,10 +541,40 @@ async def ingest_document(
             skipped=0,
             memory_ids=[],
             tokens_used=total_tokens,
-            source_id=request.source_id
+            source_id=None
         )
     
-    # Step 2: Process in chunks (worthiness already checked)
+    # Step 2: Create Source record with raw document + summary + embedding
+    summary, summary_embedding, summary_tokens = await summarizer.summarize_and_embed(content, "document")
+    total_tokens += summary_tokens
+    
+    # Get or create end_user
+    end_user = await get_or_create_end_user(
+        session=session,
+        owner_id=owner_id,
+        external_user_id=request.user_id or "anonymous"
+    )
+    
+    source_uuid = str(uuid.uuid4())
+    source = Source(
+        id=source_uuid,
+        owner_id=owner_id,
+        end_user_id=str(end_user.id),
+        type="document",
+        source_app=request.app_id,
+        title=request.title,
+        raw_content={"content": request.content},
+        summary=summary,
+        summary_embedding=summary_embedding,
+        metadata={},
+        external_ref=request.source_id,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow()
+    )
+    session.add(source)
+    await session.flush()
+    
+    # Step 3: Process in chunks (worthiness already checked)
     max_chunk_size = 10000
     chunks = [content[i:i+max_chunk_size] for i in range(0, len(content), max_chunk_size)]
     
@@ -492,16 +590,16 @@ async def ingest_document(
         if not extraction.memories:
             continue
         
-        # Store memories
+        # Store memories and link to source
         stored, skipped, memory_ids = await store_extracted_memories(
             session=session,
             extracted=extraction.memories,
             owner_id=owner_id,
             user_id=request.user_id or "anonymous",
+            end_user_id=str(end_user.id),
             app_id=request.app_id,
             api_key_id=str(api_key.id) if api_key else None,
-            source_id=request.source_id,
-            source_type="document",
+            source_uuid=source_uuid,
             background_tasks=background_tasks
         )
         
@@ -514,5 +612,5 @@ async def ingest_document(
         skipped=total_skipped,
         memory_ids=all_memory_ids,
         tokens_used=total_tokens,
-        source_id=request.source_id
+        source_id=source_uuid
     )

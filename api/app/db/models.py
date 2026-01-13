@@ -12,8 +12,72 @@ import uuid
 from app.db.database import Base
 
 
+class EndUser(Base):
+    """End users of API customers / consumer app users"""
+    __tablename__ = "end_users"
+    
+    id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    external_user_id = Column(String(255), nullable=False, index=True)  # user_id from API caller
+    owner_id = Column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    # Relationships
+    owner = relationship("User")
+    
+    __table_args__ = (
+        Index("idx_end_users_owner_external", "owner_id", "external_user_id", unique=True),
+    )
+    
+    def __repr__(self):
+        return f"<EndUser(id={self.id}, external_user_id={self.external_user_id})>"
+
+
+class Source(Base):
+    """Raw source data (chats, documents, web pages, code, files)"""
+    __tablename__ = "sources"
+    
+    id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    owner_id = Column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    end_user_id = Column(UUID(as_uuid=False), ForeignKey("end_users.id", ondelete="SET NULL"), nullable=True, index=True)
+    
+    # Source classification
+    type = Column(String(50), nullable=False, index=True)  # chat, document, web, code, file
+    source_app = Column(String(100), index=True)  # chrome, vscode, chatgpt, slack, etc.
+    title = Column(String(500))
+    
+    # Raw content (NEVER embedded directly)
+    raw_content = Column(JSONB, nullable=False)  # Full raw data
+    
+    # Summary (embedded for semantic search)
+    summary = Column(Text)  # LLM-generated summary
+    summary_embedding = Column(Vector(1536))  # Embedded summary for RAG
+    
+    # Metadata
+    metadata = Column(JSONB, default=dict)
+    external_ref = Column(String(500))  # chat_id, file_path, url, etc.
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # Relationships
+    owner = relationship("User")
+    end_user = relationship("EndUser")
+    
+    __table_args__ = (
+        Index("idx_sources_owner_type", "owner_id", "type"),
+        Index("idx_sources_owner_app", "owner_id", "source_app"),
+        Index("idx_sources_owner_created", "owner_id", "created_at"),
+        Index("idx_sources_summary_embedding", "summary_embedding", postgresql_using="ivfflat", postgresql_with={"lists": 100}),
+    )
+    
+    def __repr__(self):
+        return f"<Source(id={self.id}, type={self.type}, app={self.source_app})>"
+
+
 class Memory(Base):
-    """Extracted memory"""
+    """Extracted memory (atomic, durable, reusable knowledge)"""
     __tablename__ = "memories"
     
     id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -37,7 +101,8 @@ class Memory(Base):
     
     # Source info
     source_app = Column(String(100))
-    user_id = Column(String(100), index=True, default="anonymous")  # End-user ID (chatbot customer)
+    user_id = Column(String(100), index=True, default="anonymous")  # LEGACY: End-user ID string (kept for backward compat)
+    end_user_id = Column(UUID(as_uuid=False), ForeignKey("end_users.id", ondelete="SET NULL"), nullable=True, index=True)  # NEW: FK to end_users table
     owner_id = Column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)  # UniMemory user who owns this memory
     api_key_id = Column(UUID(as_uuid=False), ForeignKey("api_keys.id", ondelete="SET NULL"), nullable=True, index=True)  # API Key used to create this memory
     
@@ -53,6 +118,7 @@ class Memory(Base):
     waypoints_from = relationship("Waypoint", foreign_keys="Waypoint.src_id", back_populates="source")
     waypoints_to = relationship("Waypoint", foreign_keys="Waypoint.dst_id", back_populates="target")
     api_key = relationship("APIKey")
+    end_user = relationship("EndUser")
     
     # Indexes - optimized for production queries
     __table_args__ = (
@@ -118,6 +184,7 @@ class User(Base):
     avatar_url = Column(String(500))
     
     # Account status
+    account_type = Column(String(20), default="api")  # api, consumer
     plan = Column(String(50), default="free")  # free, pro, enterprise
     is_active = Column(Boolean, default=True)
     
@@ -182,25 +249,62 @@ class ProcessingLog(Base):
 
 
 class MemorySource(Base):
-    """Links memories to their original source data (for RAG without bloating memory DB)"""
+    """Links memories to their original source data (N:N relationship)"""
     __tablename__ = "memory_sources"
     
     id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
     memory_id = Column(UUID(as_uuid=False), ForeignKey("memories.id", ondelete="CASCADE"), nullable=False, index=True)
-    source_id = Column(String(255), nullable=False, index=True)  # External reference ID
-    source_type = Column(String(50), nullable=False)  # "text", "chat", "document"
+    source_id = Column(UUID(as_uuid=False), ForeignKey("sources.id", ondelete="CASCADE"), nullable=False, index=True)  # FK to sources table
     
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     
     # Relationships
     memory = relationship("Memory")
+    source = relationship("Source")
     
     # Indexes
     __table_args__ = (
         Index("idx_memory_sources_memory", "memory_id"),
-        Index("idx_memory_sources_source", "source_id", "source_type"),
+        Index("idx_memory_sources_source", "source_id"),
+        Index("idx_memory_sources_unique", "memory_id", "source_id", unique=True),
     )
     
     def __repr__(self):
         return f"<MemorySource(memory={self.memory_id}, source={self.source_id})>"
+
+
+class AgentSession(Base):
+    """Agent/MCP session tracking for debug and explainability"""
+    __tablename__ = "agent_sessions"
+    
+    id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    owner_id = Column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    agent_name = Column(String(255))
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    # Relationships
+    owner = relationship("User")
+    context_logs = relationship("AgentContextLog", back_populates="session", cascade="all, delete-orphan")
+    
+    def __repr__(self):
+        return f"<AgentSession(id={self.id}, agent={self.agent_name})>"
+
+
+class AgentContextLog(Base):
+    """Logs of context retrieved for agent sessions"""
+    __tablename__ = "agent_context_logs"
+    
+    id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    session_id = Column(UUID(as_uuid=False), ForeignKey("agent_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    memory_ids = Column(JSONB, default=list)  # Array of memory UUIDs retrieved
+    source_ids = Column(JSONB, default=list)  # Array of source UUIDs retrieved
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    # Relationships
+    session = relationship("AgentSession", back_populates="context_logs")
+    
+    def __repr__(self):
+        return f"<AgentContextLog(session={self.session_id})>"
 
