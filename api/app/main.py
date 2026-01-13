@@ -14,7 +14,7 @@ from datetime import datetime
 
 from app.config import settings
 from app.db.database import init_db, close_db, check_db_health
-from app.api import memories, search, health, auth, keys, ingest, stats
+from app.api import memories, search, health, auth, keys, ingest, stats, consumer
 
 # Configure logging
 logging.basicConfig(
@@ -166,6 +166,7 @@ app.include_router(memories.router, prefix=settings.API_PREFIX, tags=["memories"
 app.include_router(search.router, prefix=settings.API_PREFIX, tags=["search"])
 app.include_router(ingest.router, prefix=settings.API_PREFIX, tags=["ingest"])
 app.include_router(stats.router, prefix=settings.API_PREFIX, tags=["stats"])
+app.include_router(consumer.router, prefix=settings.API_PREFIX, tags=["consumer"])
 
 
 @app.get("/")

@@ -1,3 +1,141 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap');
+
+:root {
+  --foreground: #0a0a0a;
+  --background: #f9fafb;
+  --muted: #737373;
+  --muted-foreground: #a3a3a3;
+  --border: #e5e5e5;
+  --accent: #171717;
+  --card: #ffffff;
+  --card-hover: #f5f5f5;
+  --primary: #0a0a0a;
+  --primary-foreground: #fafafa;
+  --success: #22c55e;
+  --danger: #ef4444;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: 'Geist', system-ui, -apple-system, sans-serif;
+}
+
+.code, .font-mono {
+  font-family: 'Geist Mono', 'JetBrains Mono', monospace;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d4d4d4;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a3a3a3;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out forwards;
+}
+
+.animate-slide-up {
+  animation: slide-up 0.4s ease-out forwards;
+}
+
+.animate-scale-in {
+  animation: scale-in 0.2s ease-out forwards;
+}
+
+.stagger-1 { animation-delay: 0.05s; }
+.stagger-2 { animation-delay: 0.1s; }
+.stagger-3 { animation-delay: 0.15s; }
+.stagger-4 { animation-delay: 0.2s; }
+.stagger-5 { animation-delay: 0.25s; }
+
+.card-hover {
+  transition: all 0.2s ease;
+}
+
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.btn-primary {
+  @apply px-4 py-2 bg-neutral-900 text-white text-sm font-medium rounded-lg 
+         hover:bg-neutral-800 active:scale-[0.98] transition-all duration-150;
+}
+
+.btn-secondary {
+  @apply px-4 py-2 bg-white text-neutral-900 text-sm font-medium rounded-lg 
+         border border-neutral-200 hover:bg-neutral-50 active:scale-[0.98] transition-all duration-150;
+}
+
+.btn-ghost {
+  @apply px-3 py-2 text-neutral-600 text-sm font-medium rounded-lg 
+         hover:bg-neutral-100 active:scale-[0.98] transition-all duration-150;
+}
+
+.btn-danger {
+  @apply px-4 py-2 bg-red-500 text-white text-sm font-medium rounded-lg 
+         hover:bg-red-600 active:scale-[0.98] transition-all duration-150;
+}
+
+.input {
+  @apply w-full px-3 py-2 bg-white border border-neutral-200 rounded-lg 
+         text-neutral-900 placeholder:text-neutral-400
+         focus:outline-none focus:ring-2 focus:ring-neutral-900/10 focus:border-neutral-400
+         transition-all duration-150;
+}
+
+.badge {
+  @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium;
+}
+
+.badge-success {
+  @apply bg-green-100 text-green-700;
+}
+
+.badge-danger {
+  @apply bg-red-100 text-red-700;
+}
+
+.badge-neutral {
+  @apply bg-neutral-100 text-neutral-700;
+}
+
+.skeleton {
+  @apply bg-neutral-200 animate-pulse rounded;
+}
