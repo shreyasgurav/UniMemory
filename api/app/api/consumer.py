@@ -4,16 +4,20 @@ These endpoints are for end-users to view their sources and memories.
 NO API keys - uses Firebase auth only.
 """
 
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, update
-from pydantic import BaseModel
+from sqlalchemy import select, func, update, or_, and_
+from pydantic import BaseModel, Field
+import logging
 
 from app.db.database import get_db
-from app.db.models import Source, Memory, MemorySource, User
+from app.db.models import Source, Memory, MemorySource, User, ProcessingLog
 from app.api.auth import get_current_user
+from app.core.embeddings import get_embedding_service
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -360,4 +364,274 @@ async def update_settings(
     
     return UserSettingsResponse(
         ingest_enabled=user.settings.get("ingest_enabled", True)
+    )
+
+
+# ============ Chat Context Endpoints ============
+
+class ChatContextRequest(BaseModel):
+    query: str = Field(..., min_length=1, max_length=1000)
+    limit: int = Field(10, ge=1, le=50)
+
+
+class ChatMemoryItem(BaseModel):
+    id: str
+    content: str
+    salience: float
+    sector: Optional[str]
+
+
+class ChatSourceItem(BaseModel):
+    id: str
+    type: str
+    summary: Optional[str]
+    created_at: str
+
+
+class ChatContextResponse(BaseModel):
+    memories: List[ChatMemoryItem]
+    sources: List[ChatSourceItem]
+
+
+@router.post("/consumer/chat/context", response_model=ChatContextResponse)
+async def get_chat_context(
+    request: ChatContextRequest,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Retrieve relevant memories and sources for chat context.
+    Uses hybrid search over memories.embedding and sources.summary_embedding.
+    """
+    try:
+        embedding_service = get_embedding_service()
+        query_embedding, _ = await embedding_service.embed(request.query)
+    except Exception as e:
+        logger.error(f"Failed to generate query embedding: {e}")
+        return ChatContextResponse(memories=[], sources=[])
+    
+    # Search memories by embedding similarity
+    memories_result = await session.execute(
+        select(Memory)
+        .where(Memory.owner_id == str(user.id))
+        .where(Memory.is_active == True)
+        .where(Memory.embedding.isnot(None))
+        .order_by(Memory.salience.desc())
+        .limit(request.limit)
+    )
+    memories = memories_result.scalars().all()
+    
+    # Search sources by summary embedding similarity
+    sources_result = await session.execute(
+        select(Source)
+        .where(Source.owner_id == str(user.id))
+        .where(Source.summary_embedding.isnot(None))
+        .order_by(Source.created_at.desc())
+        .limit(request.limit)
+    )
+    sources = sources_result.scalars().all()
+    
+    return ChatContextResponse(
+        memories=[
+            ChatMemoryItem(
+                id=str(m.id),
+                content=m.content,
+                salience=m.salience or 0.5,
+                sector=m.sector
+            ) for m in memories
+        ],
+        sources=[
+            ChatSourceItem(
+                id=str(s.id),
+                type=s.type,
+                summary=s.summary,
+                created_at=str(s.created_at)
+            ) for s in sources
+        ]
+    )
+
+
+# ============ Activity Feed Endpoints ============
+
+class ActivityEvent(BaseModel):
+    id: str
+    type: str  # "ingest", "agent_use", "memory_created", "source_created"
+    source: Optional[str]  # "chrome_extension", "api", "mcp"
+    agent: Optional[str]  # "cursor", "claude", etc.
+    memory_count: Optional[int]
+    details: Optional[str]
+    created_at: str
+
+
+class ActivityFeedResponse(BaseModel):
+    events: List[ActivityEvent]
+    total: int
+
+
+@router.get("/consumer/activity", response_model=ActivityFeedResponse)
+async def get_activity_feed(
+    limit: int = 50,
+    offset: int = 0,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Get activity feed showing ingestion events and agent usage.
+    Aggregates from processing_logs and sources.
+    """
+    events = []
+    
+    # Get recent sources (ingestion events)
+    sources_result = await session.execute(
+        select(Source)
+        .where(Source.owner_id == str(user.id))
+        .order_by(Source.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    sources = sources_result.scalars().all()
+    
+    for source in sources:
+        # Count linked memories
+        mem_count_result = await session.execute(
+            select(func.count(MemorySource.memory_id))
+            .where(MemorySource.source_id == str(source.id))
+        )
+        mem_count = mem_count_result.scalar() or 0
+        
+        events.append(ActivityEvent(
+            id=str(source.id),
+            type="source_created",
+            source=source.source_app or "unknown",
+            agent=None,
+            memory_count=mem_count,
+            details=f"{mem_count} memories extracted from {source.type}",
+            created_at=str(source.created_at)
+        ))
+    
+    # Get processing logs
+    logs_result = await session.execute(
+        select(ProcessingLog)
+        .order_by(ProcessingLog.processed_at.desc())
+        .limit(20)
+    )
+    logs = logs_result.scalars().all()
+    
+    for log in logs:
+        if log.was_worth_remembering:
+            events.append(ActivityEvent(
+                id=str(log.id),
+                type="ingest",
+                source="api",
+                agent=None,
+                memory_count=log.extracted_count,
+                details=f"{log.extracted_count} memories extracted",
+                created_at=str(log.processed_at)
+            ))
+    
+    # Sort all events by created_at
+    events.sort(key=lambda x: x.created_at, reverse=True)
+    
+    return ActivityFeedResponse(
+        events=events[:limit],
+        total=len(events)
+    )
+
+
+# ============ Connectors Endpoints ============
+
+class ConnectorItem(BaseModel):
+    id: str
+    name: str
+    type: str  # "extension", "agent", "data_source"
+    connected: bool
+    installed: bool
+    description: Optional[str]
+
+
+class ConnectorsResponse(BaseModel):
+    extensions: List[ConnectorItem]
+    agents: List[ConnectorItem]
+    data_sources: List[ConnectorItem]
+
+
+@router.get("/consumer/connectors", response_model=ConnectorsResponse)
+async def get_connectors(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    List available connectors (extensions, agents, data sources).
+    Shows connection status based on recent source activity.
+    """
+    # Check which sources have been used recently
+    sources_result = await session.execute(
+        select(Source.source_app)
+        .where(Source.owner_id == str(user.id))
+        .distinct()
+    )
+    active_sources = {row[0] for row in sources_result.all() if row[0]}
+    
+    # Define available connectors
+    extensions = [
+        ConnectorItem(
+            id="chrome",
+            name="Chrome Extension",
+            type="extension",
+            connected="chrome_extension" in active_sources,
+            installed="chrome_extension" in active_sources,
+            description="Capture ChatGPT conversations and web content"
+        ),
+        ConnectorItem(
+            id="raycast",
+            name="Raycast Extension",
+            type="extension",
+            connected="raycast" in active_sources,
+            installed="raycast" in active_sources,
+            description="Quick capture from anywhere on macOS"
+        )
+    ]
+    
+    agents = [
+        ConnectorItem(
+            id="cursor",
+            name="Cursor",
+            type="agent",
+            connected="cursor" in active_sources,
+            installed=False,
+            description="AI code editor with memory context"
+        ),
+        ConnectorItem(
+            id="claude",
+            name="Claude Desktop",
+            type="agent",
+            connected="claude" in active_sources,
+            installed=False,
+            description="Claude with your personal memory"
+        )
+    ]
+    
+    data_sources = [
+        ConnectorItem(
+            id="notion",
+            name="Notion",
+            type="data_source",
+            connected=False,
+            installed=False,
+            description="Sync your Notion workspace"
+        ),
+        ConnectorItem(
+            id="google_drive",
+            name="Google Drive",
+            type="data_source",
+            connected=False,
+            installed=False,
+            description="Import documents from Drive"
+        )
+    ]
+    
+    return ConnectorsResponse(
+        extensions=extensions,
+        agents=agents,
+        data_sources=data_sources
     )

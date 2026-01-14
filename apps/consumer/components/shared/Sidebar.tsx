@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Home, FileText, Brain, Search, Settings } from "lucide-react";
+import { MessageSquare, Brain, Activity, PlugZap, Settings } from "lucide-react";
 import { useRouter, usePathname } from "next/navigation";
 import { User } from "firebase/auth";
 
@@ -15,24 +15,24 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
   const pathname = usePathname();
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
 
-  const activeView = pathname === "/" || pathname === ""
-    ? "timeline"
-    : pathname?.includes("/sources")
-      ? "sources"
-      : pathname?.includes("/memories")
-        ? "memories"
-        : pathname?.includes("/search")
-          ? "search"
+  const activeView = pathname === "/chat"
+    ? "chat"
+    : pathname?.includes("/memories")
+      ? "memories"
+      : pathname?.includes("/activity")
+        ? "activity"
+        : pathname?.includes("/connectors")
+          ? "connectors"
           : pathname?.includes("/settings")
             ? "settings"
-            : "timeline";
+            : "chat";
 
   const navItems = [
     {
-      id: "timeline",
-      path: "/",
-      icon: <Home className="w-4 h-4" strokeWidth={1.5} />,
-      label: "Timeline"
+      id: "chat",
+      path: "/chat",
+      icon: <MessageSquare className="w-4 h-4" strokeWidth={1.5} />,
+      label: "Chat"
     },
     {
       id: "memories",
@@ -41,10 +41,16 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
       label: "Memories"
     },
     {
-      id: "search",
-      path: "/search",
-      icon: <Search className="w-4 h-4" strokeWidth={1.5} />,
-      label: "Search"
+      id: "activity",
+      path: "/activity",
+      icon: <Activity className="w-4 h-4" strokeWidth={1.5} />,
+      label: "Activity"
+    },
+    {
+      id: "connectors",
+      path: "/connectors",
+      icon: <PlugZap className="w-4 h-4" strokeWidth={1.5} />,
+      label: "Connectors"
     },
     {
       id: "settings",
@@ -59,12 +65,11 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
       {/* Logo */}
       <div className="p-4 pl-5 flex items-center gap-2.5 border-b border-neutral-100">
         <img
-          src="/logo.png"
+          src="/Unimemory Name Logo NoBG.png"
           alt="UniMemory"
           className="h-7 w-auto cursor-pointer"
           onClick={() => router.push("/")}
         />
-        <span className="text-lg font-semibold text-neutral-900">UniMemory</span>
       </div>
 
       {/* Navigation */}
@@ -75,8 +80,8 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
               key={item.id}
               onClick={() => router.push(item.path)}
               className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-sm rounded-xl transition-all ${activeView === item.id
-                  ? "bg-neutral-100 text-neutral-900 font-medium"
-                  : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900"
+                ? "bg-neutral-100 text-neutral-900 font-medium"
+                : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900"
                 }`}
             >
               {item.icon}
