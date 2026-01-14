@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default function ExtensionWelcomePage() {
   const router = useRouter();
-  const params = useSearchParams();
   const [status, setStatus] = useState<string>("Connecting your extension...");
 
   useEffect(() => {
@@ -19,7 +21,7 @@ export default function ExtensionWelcomePage() {
           router.push(`/login?extension=true&redirect=${redirect}`);
           return;
         }
-        const token = await user.getIdToken();
+        const token = await user.getIdToken(true);
         // Post a message that the extension content script listens for
         window.postMessage({ type: "UNIMEMORY_ID_TOKEN", token }, window.location.origin);
         setStatus("Extension connected. You can close this tab.");
@@ -32,7 +34,7 @@ export default function ExtensionWelcomePage() {
       }
     });
     return () => unsub();
-  }, [router, params]);
+  }, [router]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-neutral-50">
