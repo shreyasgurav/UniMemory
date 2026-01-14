@@ -33,9 +33,16 @@ export default function ConnectorsPage() {
   const [tokens, setTokens] = useState<MCPToken[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedClient, setSelectedClient] = useState<string | null>(null);
-  const [createdToken, setCreatedToken] = useState<{ token: string; install_command: string } | null>(null);
+  const [createdToken, setCreatedToken] = useState<{ 
+    token: string; 
+    install_command: string;
+    cursor_deep_link?: string;
+    npx_command?: string;
+    mcp_url: string;
+  } | null>(null);
   const [copied, setCopied] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [installMethod, setInstallMethod] = useState<"one-click" | "manual">("one-click");
 
   const loadTokens = useCallback(async () => {
     try {
@@ -80,6 +87,9 @@ export default function ConnectorsPage() {
         setCreatedToken({
           token: data.token,
           install_command: data.install_command,
+          cursor_deep_link: data.cursor_deep_link,
+          npx_command: data.npx_command,
+          mcp_url: data.mcp_url,
         });
         loadTokens();
       }
@@ -292,16 +302,17 @@ export default function ConnectorsPage() {
       {/* Token Created Modal */}
       {createdToken && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-semibold text-neutral-900">
-                  Setup Instructions
+                  Connect UniMemory to Your AI
                 </h2>
                 <button
                   onClick={() => {
                     setCreatedToken(null);
                     setSelectedClient(null);
+                    setInstallMethod("one-click");
                   }}
                   className="text-neutral-400 hover:text-neutral-600"
                 >
@@ -310,26 +321,112 @@ export default function ConnectorsPage() {
               </div>
 
               <p className="text-sm text-neutral-600 mb-4">
-                Copy the configuration below and add it to your MCP settings:
+                Enable your AI assistant to create, search, and access your memories directly using the Model Context Protocol (MCP).
               </p>
 
-              <div className="bg-neutral-900 rounded-lg p-4 mb-4 relative">
+              {/* Install Method Tabs */}
+              <div className="flex gap-2 mb-6 border-b border-neutral-200">
                 <button
-                  onClick={() => copyToClipboard(createdToken.install_command)}
-                  className="absolute top-3 right-3 text-neutral-400 hover:text-white"
+                  onClick={() => setInstallMethod("one-click")}
+                  className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+                    installMethod === "one-click"
+                      ? "border-neutral-900 text-neutral-900"
+                      : "border-transparent text-neutral-500 hover:text-neutral-700"
+                  }`}
                 >
-                  {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  One Click Install
                 </button>
-                <pre className="text-sm text-neutral-300 whitespace-pre-wrap overflow-x-auto font-mono">
-                  {createdToken.install_command}
-                </pre>
+                <button
+                  onClick={() => setInstallMethod("manual")}
+                  className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+                    installMethod === "manual"
+                      ? "border-neutral-900 text-neutral-900"
+                      : "border-transparent text-neutral-500 hover:text-neutral-700"
+                  }`}
+                >
+                  Manual Config
+                </button>
               </div>
 
-              <div className="flex gap-3">
+              {/* One Click Install */}
+              {installMethod === "one-click" && (
+                <div className="space-y-4">
+                  {selectedClient === "cursor" && createdToken.cursor_deep_link && (
+                    <div className="bg-neutral-50 rounded-lg p-6 text-center">
+                      <p className="text-sm text-neutral-600 mb-4">
+                        Click the button below to automatically install and configure UniMemory in Cursor
+                      </p>
+                      <a
+                        href={createdToken.cursor_deep_link}
+                        className="inline-flex items-center gap-2 px-6 py-3 rounded-lg text-sm font-medium text-white bg-neutral-900 hover:bg-neutral-800 transition-colors"
+                      >
+                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M12 2L2 7v10c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-10-5z"/>
+                        </svg>
+                        Add to Cursor
+                      </a>
+                    </div>
+                  )}
+
+                  {createdToken.npx_command && (
+                    <div>
+                      <h3 className="text-sm font-semibold text-neutral-900 mb-2">Installation Command</h3>
+                      <p className="text-sm text-neutral-600 mb-3">
+                        Copy and run this command in your terminal to install the MCP server
+                      </p>
+                      <div className="bg-neutral-900 rounded-lg p-4 relative">
+                        <button
+                          onClick={() => copyToClipboard(createdToken.npx_command!)}
+                          className="absolute top-3 right-3 text-neutral-400 hover:text-white"
+                        >
+                          {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                        </button>
+                        <pre className="text-sm text-neutral-300 whitespace-pre-wrap overflow-x-auto font-mono pr-10">
+                          {createdToken.npx_command}
+                        </pre>
+                      </div>
+                    </div>
+                  )}
+
+                  {!createdToken.cursor_deep_link && !createdToken.npx_command && (
+                    <div className="bg-neutral-50 rounded-lg p-6 text-center">
+                      <p className="text-sm text-neutral-600">
+                        One-click install not available for this client. Please use Manual Config.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Manual Config */}
+              {installMethod === "manual" && (
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-neutral-900 mb-2">Configuration</h3>
+                    <p className="text-sm text-neutral-600 mb-3">
+                      {createdToken.install_command.split('\n')[0]}
+                    </p>
+                    <div className="bg-neutral-900 rounded-lg p-4 relative">
+                      <button
+                        onClick={() => copyToClipboard(createdToken.install_command.split('\n').slice(1).join('\n'))}
+                        className="absolute top-3 right-3 text-neutral-400 hover:text-white"
+                      >
+                        {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                      </button>
+                      <pre className="text-sm text-neutral-300 whitespace-pre-wrap overflow-x-auto font-mono pr-10">
+                        {createdToken.install_command.split('\n').slice(1).join('\n')}
+                      </pre>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-3 mt-6">
                 <button
                   onClick={() => {
                     setCreatedToken(null);
                     setSelectedClient(null);
+                    setInstallMethod("one-click");
                   }}
                   className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-white bg-neutral-900 hover:bg-neutral-800 transition-colors"
                 >

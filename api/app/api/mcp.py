@@ -91,6 +91,8 @@ class MCPTokenCreatedResponse(BaseModel):
     token: str  # Only returned once at creation
     mcp_url: str
     install_command: str
+    cursor_deep_link: Optional[str] = None
+    npx_command: Optional[str] = None
 
 
 class MCPTokenListResponse(BaseModel):
@@ -187,6 +189,17 @@ async def create_mcp_token(
     # MCP URL - this will be your hosted MCP endpoint
     mcp_url = "https://unimemory.up.railway.app/api/v1/mcp"
     
+    # Generate deep link config (base64 encoded JSON for Cursor)
+    import base64
+    config_json = json.dumps({"url": mcp_url, "headers": {"Authorization": f"Bearer {token}"}})
+    config_base64 = base64.b64encode(config_json.encode()).decode()
+    cursor_deep_link = f"cursor://anysphere.cursor-deeplink/mcp/install?name=unimemory&config={config_base64}"
+    
+    # Generate npx install-mcp command for other clients
+    npx_command = None
+    if client_type in ["claude", "vscode", "cline", "gemini"]:
+        npx_command = f"npx -y @unimemory/install-mcp {mcp_url} --client {client_type} --token {token}"
+    
     return MCPTokenCreatedResponse(
         id=str(mcp_token.id),
         name=mcp_token.name,
@@ -194,6 +207,8 @@ async def create_mcp_token(
         token=token,
         mcp_url=mcp_url,
         install_command=get_install_command(client_type, token, mcp_url),
+        cursor_deep_link=cursor_deep_link,
+        npx_command=npx_command,
     )
 
 
