@@ -292,7 +292,7 @@ async def mcp_search(
     from app.core.embeddings import get_embedding_service
     
     embedding_service = get_embedding_service()
-    query_embedding = await embedding_service.embed_text(request.query)
+    query_embedding, _ = await embedding_service.embed(request.query)
     
     # Vector similarity search
     result = await session.execute(
