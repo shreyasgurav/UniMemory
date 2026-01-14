@@ -452,18 +452,18 @@ async def ingest_chat(
         for msg in request.messages
     ])
     
-    # Step 1: Check worthiness
-    worthiness = await extractor.check_worthiness(conversation)
-    total_tokens += worthiness.tokens_used
-    
-    if not worthiness.is_worth_remembering:
-        return IngestResponse(
-            stored=0,
-            skipped=0,
-            memory_ids=[],
-            tokens_used=total_tokens,
-            source_id=None
-        )
+    # Step 1: Check worthiness (TEMPORARILY DISABLED FOR DEBUGGING)
+    # worthiness = await extractor.check_worthiness(conversation)
+    # total_tokens += worthiness.tokens_used
+    # 
+    # if not worthiness.is_worth_remembering:
+    #     return IngestResponse(
+    #         stored=0,
+    #         skipped=0,
+    #         memory_ids=[],
+    #         tokens_used=total_tokens,
+    #         source_id=None
+    #     )
     
     # Step 2: Create Source record with raw chat + summary + embedding
     summary, summary_embedding, summary_tokens = await summarizer.summarize_and_embed(conversation, "chat")
