@@ -40,11 +40,13 @@ export interface Memory {
 
 export class UniMemoryClient {
   private apiUrl: string;
-  private apiKey: string;
+  private token: string;
+  private authType: 'bearer' | 'apikey';
 
-  constructor(apiUrl: string, apiKey: string) {
+  constructor(apiUrl: string, token: string, authType: 'bearer' | 'apikey' = 'bearer') {
     this.apiUrl = apiUrl.replace(/\/$/, '');
-    this.apiKey = apiKey;
+    this.token = token;
+    this.authType = authType;
   }
 
   private async request<T>(
@@ -55,8 +57,14 @@ export class UniMemoryClient {
     const url = `${this.apiUrl}${endpoint}`;
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      'X-API-Key': this.apiKey,
     };
+    
+    // Support both Bearer token (consumer MCP) and API key (developer MCP)
+    if (this.authType === 'bearer') {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    } else {
+      headers['X-API-Key'] = this.token;
+    }
 
     const response = await fetch(url, {
       method,

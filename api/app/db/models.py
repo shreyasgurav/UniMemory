@@ -308,3 +308,38 @@ class AgentContextLog(Base):
     def __repr__(self):
         return f"<AgentContextLog(session={self.session_id})>"
 
+
+class MCPToken(Base):
+    """MCP tokens for consumer users to connect AI agents (Cursor, Claude, VSCode, etc.)"""
+    __tablename__ = "mcp_tokens"
+    
+    id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    # Token identification
+    name = Column(String(100), nullable=False)  # "Cursor", "Claude Desktop", etc.
+    client_type = Column(String(50), nullable=False)  # cursor, claude, vscode, windsurf, custom
+    token_hash = Column(String(255), nullable=False)  # Hashed token
+    token_prefix = Column(String(20), index=True)  # First chars for identification
+    
+    # Status
+    is_active = Column(Boolean, default=True, index=True)
+    
+    # Usage tracking
+    last_used_at = Column(DateTime(timezone=True))
+    usage_count = Column(Integer, default=0)
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    # Relationships
+    user = relationship("User")
+    
+    __table_args__ = (
+        Index("idx_mcp_tokens_user_client", "user_id", "client_type"),
+        Index("idx_mcp_tokens_prefix", "token_prefix"),
+    )
+    
+    def __repr__(self):
+        return f"<MCPToken(id={self.id}, name={self.name}, client={self.client_type})>"
+

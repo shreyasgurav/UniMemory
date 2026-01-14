@@ -30,15 +30,20 @@ import {
 
 // Configuration from environment
 const API_URL = process.env.UNIMEMORY_API_URL || 'https://unimemory.up.railway.app';
+const MCP_TOKEN = process.env.UNIMEMORY_MCP_TOKEN || '';
 const API_KEY = process.env.UNIMEMORY_API_KEY || '';
 
-if (!API_KEY) {
-  console.error('Error: UNIMEMORY_API_KEY environment variable is required');
+// Support both consumer MCP tokens and developer API keys
+const token = MCP_TOKEN || API_KEY;
+const authType = MCP_TOKEN ? 'bearer' : 'apikey';
+
+if (!token) {
+  console.error('Error: UNIMEMORY_MCP_TOKEN or UNIMEMORY_API_KEY environment variable is required');
   process.exit(1);
 }
 
 // Initialize client
-const client = new UniMemoryClient(API_URL, API_KEY);
+const client = new UniMemoryClient(API_URL, token, authType as 'bearer' | 'apikey');
 
 // Create MCP server
 const server = new Server(
