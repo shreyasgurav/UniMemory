@@ -247,7 +247,10 @@ async def store_extracted_memories(
         new_memories_for_waypoints.append((memory_id, embedding))
         stored_count += 1
     
-    # Create source links if source_uuid provided
+    # Commit memories first
+    await session.commit()
+    
+    # Create source links individually to avoid UUID batch insert issues
     if source_uuid and memory_ids:
         for mem_id in memory_ids:
             source_link = MemorySource(
@@ -256,11 +259,7 @@ async def store_extracted_memories(
                 source_id=source_uuid
             )
             session.add(source_link)
-        
-        # Flush to ensure UUIDs are properly handled before commit
-        await session.flush()
-    
-    await session.commit()
+            await session.commit()  # Commit each link individually
     
     # Schedule waypoint creation in background (capped)
     if new_memories_for_waypoints:
