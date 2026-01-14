@@ -126,21 +126,22 @@ def get_client_display_name(client_type: str) -> str:
 
 
 def get_install_command(client_type: str, token: str, mcp_url: str) -> str:
-    """Generate install command for each client type - all use URL+Bearer now"""
+    """Generate install command for each client type - terminal commands where possible"""
     json_config = f'''{{"mcpServers": {{"unimemory": {{"url": "{mcp_url}", "headers": {{"Authorization": "Bearer {token}"}}}}}}}}'''
     
     if client_type == "cursor":
         return f'''Add to ~/.cursor/mcp.json:
 {json_config}'''
     elif client_type == "claude":
-        return f'''Add to ~/Library/Application Support/Claude/claude_desktop_config.json:
-{json_config}'''
+        config_path = "~/Library/Application Support/Claude/claude_desktop_config.json"
+        return f'''mkdir -p ~/Library/Application\\ Support/Claude && echo '{json_config}' > "{config_path.replace('~', '$HOME')}"'''
     elif client_type == "vscode":
         return f'''Add to VS Code MCP settings:
 {json_config}'''
     elif client_type == "windsurf":
-        return f'''Add to ~/.codeium/windsurf/mcp_config.json:
-{json_config}'''
+        # macOS path
+        config_path = "~/Library/Application Support/Windsurf/User/mcp_config.json"
+        return f'''mkdir -p ~/Library/Application\\ Support/Windsurf/User && echo '{json_config}' > "{config_path.replace('~', '$HOME')}"'''
     elif client_type == "cline":
         return f'''Add to Cline MCP settings:
 {json_config}'''

@@ -368,7 +368,27 @@ export default function ConnectorsPage() {
                     </div>
                   )}
 
-                  {createdToken.npx_command && (
+                  {(selectedClient === "windsurf" || selectedClient === "claude") && (
+                    <div>
+                      <h3 className="text-sm font-semibold text-neutral-900 mb-2">Terminal Command</h3>
+                      <p className="text-sm text-neutral-600 mb-3">
+                        Copy and paste this command in your terminal, then restart {selectedClient === "windsurf" ? "Windsurf" : "Claude Desktop"}
+                      </p>
+                      <div className="bg-neutral-900 rounded-lg p-4 relative">
+                        <button
+                          onClick={() => copyToClipboard(createdToken.install_command)}
+                          className="absolute top-3 right-3 text-neutral-400 hover:text-white"
+                        >
+                          {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                        </button>
+                        <pre className="text-sm text-neutral-300 whitespace-pre-wrap overflow-x-auto font-mono pr-10">
+                          {createdToken.install_command}
+                        </pre>
+                      </div>
+                    </div>
+                  )}
+
+                  {createdToken.npx_command && selectedClient !== "windsurf" && selectedClient !== "claude" && (
                     <div>
                       <h3 className="text-sm font-semibold text-neutral-900 mb-2">Installation Command</h3>
                       <p className="text-sm text-neutral-600 mb-3">
@@ -388,7 +408,7 @@ export default function ConnectorsPage() {
                     </div>
                   )}
 
-                  {!createdToken.cursor_deep_link && !createdToken.npx_command && (
+                  {!createdToken.cursor_deep_link && !createdToken.npx_command && selectedClient !== "windsurf" && selectedClient !== "claude" && (
                     <div className="bg-neutral-50 rounded-lg p-6 text-center">
                       <p className="text-sm text-neutral-600">
                         One-click install not available for this client. Please use Manual Config.
