@@ -117,7 +117,7 @@ export default function ChatPage() {
                 Chat with your memories
               </h2>
               <p className="text-neutral-500 text-sm">
-                Ask questions about anything you've saved. Your memories will provide context for
+                Ask questions about anything you&apos;ve saved. Your memories will provide context for
                 every response.
               </p>
             </div>

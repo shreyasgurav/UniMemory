@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Brain, FileText, MessageSquare, File, X, Tag, Clock, Sparkles } from "lucide-react";
 import { auth } from "@/lib/firebase";
 
@@ -33,11 +33,7 @@ export default function MemoriesPage() {
   const [selectedSource, setSelectedSource] = useState<SourceDetail | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadData();
-  }, [view]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const token = await auth.currentUser?.getIdToken();
@@ -61,7 +57,11 @@ export default function MemoriesPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [view]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const loadSourceDetail = async (sourceId: string) => {
     try {

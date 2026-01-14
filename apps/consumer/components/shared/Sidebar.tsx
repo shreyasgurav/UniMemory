@@ -4,6 +4,7 @@ import { useState } from "react";
 import { MessageSquare, Brain, Activity, PlugZap, Settings } from "lucide-react";
 import { useRouter, usePathname } from "next/navigation";
 import { User } from "firebase/auth";
+import Image from "next/image";
 
 interface SidebarProps {
   user: User | null;
@@ -64,12 +65,16 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
     <aside className="w-56 flex flex-col fixed h-full border-r border-neutral-100 bg-white">
       {/* Logo */}
       <div className="p-4 pl-5 flex items-center gap-2.5 border-b border-neutral-100">
-        <img
-          src="/Unimemory Name Logo NoBG.png"
-          alt="UniMemory"
-          className="h-7 w-auto cursor-pointer"
-          onClick={() => router.push("/")}
-        />
+        <button onClick={() => router.push("/")} className="cursor-pointer">
+          <Image
+            src="/Unimemory Name Logo NoBG.png"
+            alt="UniMemory"
+            width={112}
+            height={28}
+            className="h-7 w-auto"
+            priority
+          />
+        </button>
       </div>
 
       {/* Navigation */}
@@ -99,10 +104,13 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
             className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-neutral-700 hover:bg-neutral-50 rounded-xl transition-all"
           >
             {user?.photoURL ? (
-              <img
+              <Image
                 src={user.photoURL}
                 alt={user.displayName || "User"}
-                className="w-7 h-7 rounded-full"
+                width={28}
+                height={28}
+                className="w-7 h-7 rounded-full object-cover"
+                unoptimized
               />
             ) : (
               <div className="w-7 h-7 bg-neutral-200 rounded-full flex items-center justify-center">
