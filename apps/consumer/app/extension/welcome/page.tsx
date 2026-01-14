@@ -6,7 +6,6 @@ import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 
 export const dynamic = "force-dynamic";
-export const revalidate = 0;
 
 export default function ExtensionWelcomePage() {
   const router = useRouter();
