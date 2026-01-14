@@ -55,6 +55,7 @@ class IngestChatRequest(BaseModel):
     user_id: Optional[str] = Field("anonymous", max_length=100)
     app_id: Optional[str] = Field(None, max_length=100)
     source_id: Optional[str] = Field(None, max_length=255)
+    source_metadata: Optional[Dict[str, Any]] = Field(None)
 
 
 class IngestDocumentRequest(BaseModel):
@@ -482,11 +483,11 @@ async def ingest_chat(
         end_user_id=str(end_user.id),
         type="chat",
         source_app=request.app_id or source_app,
-        title=None,
+        title=request.source_metadata.get("title") if request.source_metadata else None,
         raw_content={"messages": request.messages},
         summary=summary,
         summary_embedding=summary_embedding,
-        source_metadata={},
+        source_metadata=request.source_metadata or {},
         external_ref=request.source_id,
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow()
