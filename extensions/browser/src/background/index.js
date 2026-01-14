@@ -4,7 +4,7 @@
  */
 
 const API_BASE_URL = 'https://api.unimemory.app/api/v1';
-const APP_URL = 'https://app.unimemory.app';
+const APP_URL = 'https://unimemory-app.vercel.app';
 
 // ============ Auth State ============
 

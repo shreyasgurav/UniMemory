@@ -262,6 +262,32 @@
     }
     return true;
   });
+
+  // Listen for auth messages from UniMemory web app to authenticate the extension
+  window.addEventListener('message', async (event) => {
+    try {
+      const allowedOrigins = [
+        'https://unimemory-app.vercel.app',
+        'https://app.unimemory.app',
+      ];
+      if (!allowedOrigins.includes(event.origin)) return;
+
+      const data = event.data || {};
+      if (data.type === 'UNIMEMORY_ID_TOKEN' && data.token) {
+        const res = await chrome.runtime.sendMessage({
+          type: 'REFRESH_SESSION',
+          firebaseToken: data.token,
+        });
+        if (res && res.success) {
+          showNotification('UniMemory extension connected', 'success');
+        } else {
+          showNotification('Failed to connect UniMemory extension', 'error');
+        }
+      }
+    } catch (e) {
+      // no-op
+    }
+  });
   
   // ============ Initialization ============
   
