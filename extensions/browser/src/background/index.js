@@ -63,7 +63,7 @@ async function refreshSession(firebaseToken) {
 }
 
 async function ingestChat(chatData) {
-  const session = await getSession();
+  let session = await getSession();
   
   if (!session) {
     throw new Error('Not authenticated');
@@ -88,6 +88,13 @@ async function ingestChat(chatData) {
       }
     })
   });
+  
+  // If 401 Unauthorized, session might be expired - prompt re-login
+  if (response.status === 401) {
+    await clearSession();
+    console.error('[UniMemory] Session expired, please log in again');
+    throw new Error('Session expired. Please log in again.');
+  }
   
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
@@ -120,8 +127,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         
         case 'LOGIN': {
-          // Open UniMemory login page
-          chrome.tabs.create({ url: `${APP_URL}/login?extension=true` });
+          // Open UniMemory extension welcome page (handles login + auth handshake)
+          chrome.tabs.create({ url: `${APP_URL}/extension/welcome` });
           sendResponse({ success: true });
           break;
         }

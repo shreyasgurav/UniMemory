@@ -226,8 +226,8 @@
       if (response.success) {
         showNotification(`Saved ${messages.length} messages to UniMemory`, 'success');
       } else {
-        if (response.error === 'Not authenticated') {
-          showNotification('Please log in to UniMemory first', 'error');
+        if (response.error === 'Not authenticated' || response.error?.includes('Session expired')) {
+          showNotification('Session expired. Please log in again.', 'error');
           chrome.runtime.sendMessage({ type: 'LOGIN' });
         } else {
           showNotification(response.error || 'Failed to save', 'error');
@@ -235,7 +235,13 @@
       }
     } catch (error) {
       console.error('Failed to save page:', error);
-      showNotification('Failed to save page', 'error');
+      const errorMsg = error.message || 'Failed to save page';
+      if (errorMsg.includes('Session expired') || errorMsg.includes('Not authenticated')) {
+        showNotification('Session expired. Please log in again.', 'error');
+        chrome.runtime.sendMessage({ type: 'LOGIN' });
+      } else {
+        showNotification(errorMsg, 'error');
+      }
     }
   }
   
