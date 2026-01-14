@@ -1,16 +1,19 @@
 """
-MCP Token API endpoints for consumer users
-Handles creation, listing, and revocation of MCP tokens for AI agent connections
+MCP API endpoints for consumer users
+Handles MCP tokens and MCP-over-HTTP protocol for AI agent connections
 """
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 from pydantic import BaseModel
 import hashlib
 import secrets
 import logging
+import json
+import asyncio
 
 from app.db.database import get_db
 from app.db.models import MCPToken, User, Memory, Source, MemorySource
@@ -18,6 +21,48 @@ from app.core.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+MCP_SERVER_INFO = {
+    "name": "unimemory",
+    "version": "1.0.0",
+}
+
+MCP_TOOLS = [
+    {
+        "name": "search_memory",
+        "description": "Search your memory for relevant information. Use this to find what you know about a topic, person, preference, or past conversation.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "What to search for in memory (natural language query)"},
+                "limit": {"type": "number", "description": "Maximum number of results to return (default: 10)"}
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "get_memory_context",
+        "description": "Get detailed context for a specific memory, including its source summary and a preview of the raw content.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "memory_id": {"type": "string", "description": "The memory ID to get context for"}
+            },
+            "required": ["memory_id"]
+        }
+    },
+    {
+        "name": "get_source",
+        "description": "Get the full source document or conversation that a memory came from.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "source_id": {"type": "string", "description": "The source ID to retrieve"}
+            },
+            "required": ["source_id"]
+        }
+    }
+]
 
 
 # =============================================================================
@@ -79,33 +124,33 @@ def get_client_display_name(client_type: str) -> str:
 
 
 def get_install_command(client_type: str, token: str, mcp_url: str) -> str:
-    """Generate install command for each client type"""
+    """Generate install command for each client type - all use URL+Bearer now"""
+    json_config = f'''{{"mcpServers": {{"unimemory": {{"url": "{mcp_url}", "headers": {{"Authorization": "Bearer {token}"}}}}}}}}'''
+    
     if client_type == "cursor":
-        return f'cursor://mcp/install?name=unimemory&url={mcp_url}&token={token}'
+        return f'''Add to ~/.cursor/mcp.json:
+{json_config}'''
     elif client_type == "claude":
         return f'''Add to ~/Library/Application Support/Claude/claude_desktop_config.json:
-{{
-  "mcpServers": {{
-    "unimemory": {{
-      "url": "{mcp_url}",
-      "headers": {{ "Authorization": "Bearer {token}" }}
-    }}
-  }}
-}}'''
+{json_config}'''
     elif client_type == "vscode":
         return f'''Add to VS Code MCP settings:
-{{
-  "mcpServers": {{
-    "unimemory": {{
-      "url": "{mcp_url}",
-      "headers": {{ "Authorization": "Bearer {token}" }}
-    }}
-  }}
-}}'''
+{json_config}'''
     elif client_type == "windsurf":
-        return f'windsurf://mcp/install?name=unimemory&url={mcp_url}&token={token}'
+        return f'''Add to ~/.codeium/windsurf/mcp_config.json:
+{json_config}'''
+    elif client_type == "cline":
+        return f'''Add to Cline MCP settings:
+{json_config}'''
+    elif client_type == "gemini":
+        return f'''MCP URL: {mcp_url}
+Authorization: Bearer {token}'''
     else:
-        return f'MCP URL: {mcp_url}\nToken: {token}'
+        return f'''MCP URL: {mcp_url}
+Authorization: Bearer {token}
+
+JSON config:
+{json_config}'''
 
 
 # =============================================================================
@@ -420,3 +465,246 @@ async def mcp_get_source(
         raw_content=source.raw_content if isinstance(source.raw_content, dict) else None,
         found=True,
     )
+
+
+# =============================================================================
+# MCP-OVER-HTTP ENDPOINT (SSE Transport)
+# =============================================================================
+
+async def validate_mcp_token_from_header(authorization: str, session: AsyncSession) -> User:
+    """Validate MCP token and return user (non-dependency version for SSE)"""
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header required")
+    
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization format")
+    
+    token = authorization[7:]
+    
+    if not token.startswith("um_mcp_"):
+        raise HTTPException(status_code=401, detail="Invalid MCP token format")
+    
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    
+    result = await session.execute(
+        select(MCPToken).where(
+            MCPToken.token_hash == token_hash,
+            MCPToken.is_active == True
+        )
+    )
+    mcp_token = result.scalar_one_or_none()
+    
+    if not mcp_token:
+        raise HTTPException(status_code=401, detail="Invalid or revoked MCP token")
+    
+    await session.execute(
+        update(MCPToken)
+        .where(MCPToken.id == mcp_token.id)
+        .values(last_used_at=datetime.utcnow(), usage_count=MCPToken.usage_count + 1)
+    )
+    await session.commit()
+    
+    user_result = await session.execute(select(User).where(User.id == mcp_token.user_id))
+    user = user_result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    
+    return user
+
+
+async def execute_tool(tool_name: str, args: Dict[str, Any], user: User, session: AsyncSession) -> Dict[str, Any]:
+    """Execute an MCP tool and return result"""
+    
+    if tool_name == "search_memory":
+        from app.core.embeddings import get_embedding_service
+        
+        query = args.get("query", "")
+        limit = args.get("limit", 10)
+        
+        embedding_service = get_embedding_service()
+        query_embedding, _ = await embedding_service.embed(query)
+        
+        result = await session.execute(
+            select(Memory)
+            .where(Memory.owner_id == user.id)
+            .order_by(Memory.embedding.cosine_distance(query_embedding))
+            .limit(limit)
+        )
+        memories = result.scalars().all()
+        
+        results = []
+        for m in memories:
+            source_result = await session.execute(
+                select(MemorySource.source_id).where(MemorySource.memory_id == m.id).limit(1)
+            )
+            source_id = source_result.scalar_one_or_none()
+            results.append({
+                "memory_id": str(m.id),
+                "content": m.content,
+                "salience": m.salience or 0.5,
+                "source_id": str(source_id) if source_id else None,
+            })
+        
+        return {"results": results, "count": len(results)}
+    
+    elif tool_name == "get_memory_context":
+        memory_id = args.get("memory_id", "")
+        
+        result = await session.execute(
+            select(Memory).where(Memory.id == memory_id, Memory.owner_id == user.id)
+        )
+        memory = result.scalar_one_or_none()
+        
+        if not memory:
+            return {"memory_id": memory_id, "content": "", "found": False}
+        
+        source_result = await session.execute(
+            select(Source)
+            .join(MemorySource, MemorySource.source_id == Source.id)
+            .where(MemorySource.memory_id == memory_id)
+            .limit(1)
+        )
+        source = source_result.scalar_one_or_none()
+        
+        raw_excerpt = None
+        if source and source.raw_content:
+            raw_str = str(source.raw_content)[:500]
+            raw_excerpt = raw_str + "..." if len(str(source.raw_content)) > 500 else raw_str
+        
+        return {
+            "memory_id": str(memory.id),
+            "content": memory.content,
+            "summary": source.summary if source else None,
+            "source_type": source.type if source else None,
+            "source_id": str(source.id) if source else None,
+            "raw_excerpt": raw_excerpt,
+            "found": True,
+        }
+    
+    elif tool_name == "get_source":
+        source_id = args.get("source_id", "")
+        
+        result = await session.execute(
+            select(Source).where(Source.id == source_id, Source.owner_id == user.id)
+        )
+        source = result.scalar_one_or_none()
+        
+        if not source:
+            return {"id": source_id, "type": "unknown", "found": False}
+        
+        return {
+            "id": str(source.id),
+            "type": source.type,
+            "title": source.title,
+            "summary": source.summary,
+            "raw_content": source.raw_content if isinstance(source.raw_content, dict) else None,
+            "found": True,
+        }
+    
+    else:
+        return {"error": f"Unknown tool: {tool_name}"}
+
+
+def create_jsonrpc_response(id: Any, result: Any) -> str:
+    """Create a JSON-RPC 2.0 response"""
+    return json.dumps({"jsonrpc": "2.0", "id": id, "result": result})
+
+
+def create_jsonrpc_error(id: Any, code: int, message: str) -> str:
+    """Create a JSON-RPC 2.0 error response"""
+    return json.dumps({"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": message}})
+
+
+@router.post("/mcp")
+async def mcp_http_handler(request: Request, session: AsyncSession = Depends(get_db)):
+    """
+    MCP-over-HTTP endpoint (JSON-RPC 2.0)
+    Handles: initialize, tools/list, tools/call
+    """
+    authorization = request.headers.get("Authorization", "")
+    
+    try:
+        user = await validate_mcp_token_from_header(authorization, session)
+    except HTTPException as e:
+        return StreamingResponse(
+            iter([f"data: {create_jsonrpc_error(None, -32000, e.detail)}\n\n"]),
+            media_type="text/event-stream",
+            status_code=401
+        )
+    
+    try:
+        body = await request.json()
+    except:
+        return StreamingResponse(
+            iter([f"data: {create_jsonrpc_error(None, -32700, 'Parse error')}\n\n"]),
+            media_type="text/event-stream",
+            status_code=400
+        )
+    
+    method = body.get("method", "")
+    params = body.get("params", {})
+    msg_id = body.get("id", 1)
+    
+    if method == "initialize":
+        result = {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {"tools": {}},
+            "serverInfo": MCP_SERVER_INFO,
+        }
+        return StreamingResponse(
+            iter([f"data: {create_jsonrpc_response(msg_id, result)}\n\n"]),
+            media_type="text/event-stream"
+        )
+    
+    elif method == "tools/list":
+        result = {"tools": MCP_TOOLS}
+        return StreamingResponse(
+            iter([f"data: {create_jsonrpc_response(msg_id, result)}\n\n"]),
+            media_type="text/event-stream"
+        )
+    
+    elif method == "tools/call":
+        tool_name = params.get("name", "")
+        tool_args = params.get("arguments", {})
+        
+        try:
+            tool_result = await execute_tool(tool_name, tool_args, user, session)
+            result = {"content": [{"type": "text", "text": json.dumps(tool_result, default=str)}]}
+            return StreamingResponse(
+                iter([f"data: {create_jsonrpc_response(msg_id, result)}\n\n"]),
+                media_type="text/event-stream"
+            )
+        except Exception as e:
+            logger.error(f"Tool execution error: {e}")
+            return StreamingResponse(
+                iter([f"data: {create_jsonrpc_error(msg_id, -32603, str(e))}\n\n"]),
+                media_type="text/event-stream"
+            )
+    
+    else:
+        return StreamingResponse(
+            iter([f"data: {create_jsonrpc_error(msg_id, -32601, f'Method not found: {method}')}\n\n"]),
+            media_type="text/event-stream"
+        )
+
+
+@router.get("/mcp")
+async def mcp_http_sse(request: Request, session: AsyncSession = Depends(get_db)):
+    """
+    MCP-over-HTTP SSE endpoint for streaming connections
+    Returns server info on GET (for client handshake)
+    """
+    authorization = request.headers.get("Authorization", "")
+    
+    try:
+        user = await validate_mcp_token_from_header(authorization, session)
+    except HTTPException as e:
+        return {"error": e.detail}
+    
+    return {
+        "protocolVersion": "2024-11-05",
+        "capabilities": {"tools": {}},
+        "serverInfo": MCP_SERVER_INFO,
+        "tools": MCP_TOOLS,
+    }
