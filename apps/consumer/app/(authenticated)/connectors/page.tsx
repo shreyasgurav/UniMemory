@@ -35,10 +35,10 @@ export default function ConnectorsPage() {
   const [selectedClient, setSelectedClient] = useState<string | null>(null);
   const [createdToken, setCreatedToken] = useState<{ 
     token: string; 
-    install_command: string;
     cursor_deep_link?: string;
     npx_command?: string;
     mcp_url: string;
+    client_type: string;
   } | null>(null);
   const [copied, setCopied] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -86,10 +86,10 @@ export default function ConnectorsPage() {
         const data = await response.json();
         setCreatedToken({
           token: data.token,
-          install_command: data.install_command,
           cursor_deep_link: data.cursor_deep_link,
           npx_command: data.npx_command,
           mcp_url: data.mcp_url,
+          client_type: clientType,
         });
         loadTokens();
       }
@@ -124,6 +124,17 @@ export default function ConnectorsPage() {
 
   const isClientConnected = (clientId: string) => {
     return tokens.some((t) => t.client_type === clientId && t.is_active);
+  };
+
+  const getTerminalCommand = (clientType: string, token: string, mcpUrl: string) => {
+    const jsonConfig = `{"mcpServers": {"unimemory": {"url": "${mcpUrl}", "headers": {"Authorization": "Bearer ${token}"}}}}`;
+    
+    if (clientType === "windsurf") {
+      return `mkdir -p ~/Library/Application\\ Support/Windsurf/User && echo '${jsonConfig}' > "$HOME/Library/Application Support/Windsurf/User/mcp_config.json"`;
+    } else if (clientType === "claude") {
+      return `mkdir -p ~/Library/Application\\ Support/Claude && echo '${jsonConfig}' > "$HOME/Library/Application Support/Claude/claude_desktop_config.json"`;
+    }
+    return jsonConfig;
   };
 
   const getConnectorLogo = (id: string, name: string) => {
@@ -376,13 +387,13 @@ export default function ConnectorsPage() {
                       </p>
                       <div className="bg-neutral-900 rounded-lg p-4 relative">
                         <button
-                          onClick={() => copyToClipboard(createdToken.install_command)}
+                          onClick={() => copyToClipboard(getTerminalCommand(createdToken.client_type, createdToken.token, createdToken.mcp_url))}
                           className="absolute top-3 right-3 text-neutral-400 hover:text-white"
                         >
                           {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                         </button>
                         <pre className="text-sm text-neutral-300 whitespace-pre-wrap overflow-x-auto font-mono pr-10">
-                          {createdToken.install_command}
+                          {getTerminalCommand(createdToken.client_type, createdToken.token, createdToken.mcp_url)}
                         </pre>
                       </div>
                     </div>
@@ -422,19 +433,19 @@ export default function ConnectorsPage() {
               {installMethod === "manual" && (
                 <div className="space-y-4">
                   <div>
-                    <h3 className="text-sm font-semibold text-neutral-900 mb-2">Configuration</h3>
+                    <h3 className="text-sm font-semibold text-neutral-900 mb-2">JSON Configuration</h3>
                     <p className="text-sm text-neutral-600 mb-3">
-                      {createdToken.install_command.split('\n')[0]}
+                      Copy this JSON and add it to your MCP config file
                     </p>
                     <div className="bg-neutral-900 rounded-lg p-4 relative">
                       <button
-                        onClick={() => copyToClipboard(createdToken.install_command.split('\n').slice(1).join('\n'))}
+                        onClick={() => copyToClipboard(getTerminalCommand(createdToken.client_type, createdToken.token, createdToken.mcp_url))}
                         className="absolute top-3 right-3 text-neutral-400 hover:text-white"
                       >
                         {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                       </button>
                       <pre className="text-sm text-neutral-300 whitespace-pre-wrap overflow-x-auto font-mono pr-10">
-                        {createdToken.install_command.split('\n').slice(1).join('\n')}
+                        {getTerminalCommand(createdToken.client_type, createdToken.token, createdToken.mcp_url)}
                       </pre>
                     </div>
                   </div>
