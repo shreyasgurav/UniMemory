@@ -6,6 +6,7 @@ NO API keys - uses Firebase auth only.
 
 from typing import List, Optional, Dict, Any
 from datetime import datetime
+import os
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, update, or_, and_
@@ -635,3 +636,82 @@ async def get_connectors(
         agents=agents,
         data_sources=data_sources
     )
+
+
+# ============ Consumer Session Token (for Chrome Extension) ============
+
+class ConsumerSessionResponse(BaseModel):
+    authenticated: bool
+    session_token: Optional[str] = None
+    expires_in: Optional[int] = None
+    user: Optional[Dict[str, Any]] = None
+
+
+@router.get("/consumer/auth/session", response_model=ConsumerSessionResponse)
+async def get_consumer_session(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get a consumer session token for Chrome extension.
+    
+    The extension calls this endpoint with the Firebase ID token.
+    Backend returns a short-lived consumer session token that the extension
+    stores locally and uses for subsequent API calls.
+    
+    This keeps Firebase tokens out of the extension and provides
+    a clean separation between auth and API access.
+    """
+    import jwt
+    import secrets
+    from datetime import timedelta
+    
+    # Generate a short-lived consumer session token (1 hour)
+    expires_in = 3600  # 1 hour in seconds
+    expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
+    
+    # Create JWT payload
+    payload = {
+        "sub": str(user.id),
+        "firebase_uid": user.firebase_uid,
+        "email": user.email,
+        "type": "consumer_session",
+        "iat": datetime.utcnow(),
+        "exp": expires_at
+    }
+    
+    # Sign with app secret (use settings.SECRET_KEY or generate one)
+    secret_key = os.environ.get("JWT_SECRET_KEY", "unimemory-consumer-secret-key")
+    session_token = jwt.encode(payload, secret_key, algorithm="HS256")
+    
+    return ConsumerSessionResponse(
+        authenticated=True,
+        session_token=session_token,
+        expires_in=expires_in,
+        user={
+            "id": str(user.id),
+            "email": user.email,
+            "display_name": user.display_name,
+            "avatar_url": user.avatar_url
+        }
+    )
+
+
+async def verify_consumer_session_token(token: str) -> dict:
+    """
+    Verify a consumer session token and return the payload.
+    Used by ingest endpoints when called from the extension.
+    """
+    import jwt
+    
+    secret_key = os.environ.get("JWT_SECRET_KEY", "unimemory-consumer-secret-key")
+    
+    try:
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
+        if payload.get("type") != "consumer_session":
+            raise HTTPException(status_code=401, detail="Invalid token type")
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Session expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid session token")

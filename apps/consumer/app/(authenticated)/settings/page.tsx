@@ -60,9 +60,6 @@ export default function SettingsPage() {
     <div className="p-8 max-w-2xl mx-auto">
       <div className="mb-8">
         <h1 className="text-2xl font-semibold text-neutral-900">Settings</h1>
-        <p className="text-sm text-neutral-500 mt-2">
-          Manage your memory preferences
-        </p>
       </div>
 
       {/* Memory Ingestion */}
@@ -83,17 +80,15 @@ export default function SettingsPage() {
               <button
                 onClick={handleToggleIngest}
                 disabled={saving}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                  settings?.ingest_enabled ? "bg-green-500" : "bg-neutral-300"
-                }`}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${settings?.ingest_enabled ? "bg-green-500" : "bg-neutral-300"
+                  }`}
               >
                 {saving ? (
                   <Loader2 className="absolute left-1/2 -translate-x-1/2 w-4 h-4 animate-spin text-white" />
                 ) : (
                   <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      settings?.ingest_enabled ? "translate-x-6" : "translate-x-1"
-                    }`}
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${settings?.ingest_enabled ? "translate-x-6" : "translate-x-1"
+                      }`}
                   />
                 )}
               </button>

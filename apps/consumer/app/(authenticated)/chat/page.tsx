@@ -101,27 +101,8 @@ export default function ChatPage() {
   return (
     <div className="h-screen flex flex-col bg-white">
       {/* Header */}
-      <div className="border-b border-neutral-100 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-neutral-900 rounded-lg flex items-center justify-center">
-            <Brain className="w-4 h-4 text-white" />
-          </div>
-          <div>
-            <h1 className="text-lg font-semibold text-neutral-900">Chat</h1>
-            <p className="text-xs text-neutral-500">Powered by your memories</p>
-          </div>
-        </div>
-        <button
-          onClick={() => setUseMemory(!useMemory)}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-all ${
-            useMemory
-              ? "bg-neutral-900 text-white"
-              : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
-          }`}
-        >
-          <Sparkles className="w-3.5 h-3.5" />
-          Memory {useMemory ? "ON" : "OFF"}
-        </button>
+      <div className="px-6 py-4">
+        <h1 className="text-lg font-semibold text-neutral-900">Chat</h1>
       </div>
 
       {/* Messages */}
@@ -194,11 +175,10 @@ function MessageBubble({ message }: { message: Message }) {
       <div className={`max-w-[80%] ${isUser ? "" : "space-y-3"}`}>
         {/* Message content */}
         <div
-          className={`px-4 py-3 rounded-2xl ${
-            isUser
+          className={`px-4 py-3 rounded-2xl ${isUser
               ? "bg-neutral-900 text-white"
               : "bg-neutral-100 text-neutral-900"
-          }`}
+            }`}
         >
           <p className="text-sm whitespace-pre-wrap">{message.content}</p>
         </div>

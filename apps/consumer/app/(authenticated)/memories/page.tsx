@@ -92,34 +92,29 @@ export default function MemoriesPage() {
   return (
     <div className="h-screen flex flex-col bg-gray-50">
       {/* Header */}
-      <div className="bg-white border-b border-neutral-100 px-6 py-4">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-xl font-semibold text-neutral-900">Memories</h1>
-            <p className="text-sm text-neutral-500 mt-0.5">Browse sources and extracted memories</p>
-          </div>
+      <div className="bg-white px-6 py-4">
+        <div className="mb-4">
+          <h1 className="text-xl font-semibold text-neutral-900">Memories</h1>
         </div>
 
         {/* View Toggle */}
         <div className="flex gap-2">
           <button
             onClick={() => setView("sources")}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              view === "sources"
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${view === "sources"
                 ? "bg-neutral-900 text-white"
                 : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
-            }`}
+              }`}
           >
             <FileText className="w-4 h-4 inline mr-2" />
             Sources
           </button>
           <button
             onClick={() => setView("memories")}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              view === "memories"
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${view === "memories"
                 ? "bg-neutral-900 text-white"
                 : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
-            }`}
+              }`}
           >
             <Brain className="w-4 h-4 inline mr-2" />
             Atomic Memories

@@ -31,10 +31,16 @@ export default function ActivityPage() {
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/consumer/activity?limit=50`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const data = await response.json();
-      setEvents(data.events);
+      if (!response.ok) {
+        setEvents([]);
+        return;
+      }
+      const data = await response.json().catch(() => ({ events: [] }));
+      const items = Array.isArray(data?.events) ? (data.events as ActivityEvent[]) : [];
+      setEvents(items);
     } catch (error) {
       console.error("Failed to load activity:", error);
+      setEvents([]);
     } finally {
       setLoading(false);
     }
@@ -58,18 +64,8 @@ export default function ActivityPage() {
   return (
     <div className="h-screen flex flex-col bg-gray-50">
       {/* Header */}
-      <div className="bg-white border-b border-neutral-100 px-6 py-4">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-neutral-900 rounded-lg flex items-center justify-center">
-            <ActivityIcon className="w-4 h-4 text-white" />
-          </div>
-          <div>
-            <h1 className="text-xl font-semibold text-neutral-900">Activity</h1>
-            <p className="text-sm text-neutral-500 mt-0.5">
-              Track what UniMemory is collecting and sharing
-            </p>
-          </div>
-        </div>
+      <div className="bg-white px-6 py-4">
+        <h1 className="text-xl font-semibold text-neutral-900">Activity</h1>
       </div>
 
       {/* Content */}
@@ -84,7 +80,7 @@ export default function ActivityPage() {
                 </div>
               ))}
             </div>
-          ) : events.length === 0 ? (
+          ) : (events?.length ?? 0) === 0 ? (
             <div className="bg-white border border-gray-100 rounded-xl p-12 text-center">
               <ActivityIcon className="w-10 h-10 mx-auto mb-3 text-neutral-200" />
               <p className="text-neutral-600 font-medium">No activity yet</p>
@@ -94,7 +90,7 @@ export default function ActivityPage() {
             </div>
           ) : (
             <div className="space-y-3">
-              {events.map((event) => (
+              {(events || []).map((event) => (
                 <div
                   key={event.id}
                   className="bg-white border border-gray-100 rounded-xl p-5 hover:border-neutral-200 transition-all"
