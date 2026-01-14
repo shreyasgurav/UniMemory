@@ -343,3 +343,37 @@ class MCPToken(Base):
     def __repr__(self):
         return f"<MCPToken(id={self.id}, name={self.name}, client={self.client_type})>"
 
+
+class MCPActivity(Base):
+    """Log of MCP tool calls for activity feed"""
+    __tablename__ = "mcp_activity"
+    
+    id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    mcp_token_id = Column(UUID(as_uuid=False), ForeignKey("mcp_tokens.id", ondelete="SET NULL"), nullable=True, index=True)
+    
+    # Tool call details
+    tool_name = Column(String(100), nullable=False)  # search_memory, get_memory_context, get_source
+    client_type = Column(String(50))  # cursor, claude, vscode, windsurf
+    
+    # Tool arguments (for context)
+    tool_args = Column(JSONB, default=dict)  # query, memory_id, source_id, etc.
+    
+    # Results summary
+    result_count = Column(Integer, default=0)  # Number of results returned
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    
+    # Relationships
+    user = relationship("User")
+    mcp_token = relationship("MCPToken")
+    
+    __table_args__ = (
+        Index("idx_mcp_activity_user_created", "user_id", "created_at"),
+        Index("idx_mcp_activity_tool", "tool_name"),
+    )
+    
+    def __repr__(self):
+        return f"<MCPActivity(id={self.id}, tool={self.tool_name}, client={self.client_type})>"
+

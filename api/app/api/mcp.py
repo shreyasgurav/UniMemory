@@ -16,7 +16,7 @@ import json
 import asyncio
 
 from app.db.database import get_db
-from app.db.models import MCPToken, User, Memory, Source, MemorySource
+from app.db.models import MCPToken, User, Memory, Source, MemorySource, MCPActivity
 from app.core.auth import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -486,8 +486,8 @@ async def mcp_get_source(
 # MCP-OVER-HTTP ENDPOINT (SSE Transport)
 # =============================================================================
 
-async def validate_mcp_token_from_header(authorization: str, session: AsyncSession) -> User:
-    """Validate MCP token and return user (non-dependency version for SSE)"""
+async def validate_mcp_token_from_header(authorization: str, session: AsyncSession) -> tuple[User, MCPToken]:
+    """Validate MCP token and return user + token (non-dependency version for SSE)"""
     if not authorization:
         raise HTTPException(status_code=401, detail="Authorization header required")
     
@@ -525,10 +525,42 @@ async def validate_mcp_token_from_header(authorization: str, session: AsyncSessi
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
     
-    return user
+    return user, mcp_token
 
 
-async def execute_tool(tool_name: str, args: Dict[str, Any], user: User, session: AsyncSession) -> Dict[str, Any]:
+async def log_mcp_activity(
+    user_id: str,
+    mcp_token_id: Optional[str],
+    tool_name: str,
+    client_type: Optional[str],
+    tool_args: Dict[str, Any],
+    result_count: int,
+    session: AsyncSession
+):
+    """Log MCP tool call to activity feed"""
+    try:
+        activity = MCPActivity(
+            user_id=user_id,
+            mcp_token_id=mcp_token_id,
+            tool_name=tool_name,
+            client_type=client_type,
+            tool_args=tool_args,
+            result_count=result_count,
+        )
+        session.add(activity)
+        await session.commit()
+    except Exception as e:
+        logger.error(f"Failed to log MCP activity: {e}")
+
+
+async def execute_tool(
+    tool_name: str, 
+    args: Dict[str, Any], 
+    user: User, 
+    session: AsyncSession,
+    mcp_token_id: Optional[str] = None,
+    client_type: Optional[str] = None
+) -> Dict[str, Any]:
     """Execute an MCP tool and return result"""
     
     if tool_name == "search_memory":
@@ -561,6 +593,17 @@ async def execute_tool(tool_name: str, args: Dict[str, Any], user: User, session
                 "source_id": str(source_id) if source_id else None,
             })
         
+        # Log activity
+        await log_mcp_activity(
+            user_id=str(user.id),
+            mcp_token_id=mcp_token_id,
+            tool_name=tool_name,
+            client_type=client_type,
+            tool_args={"query": query, "limit": limit},
+            result_count=len(results),
+            session=session
+        )
+        
         return {"results": results, "count": len(results)}
     
     elif tool_name == "get_memory_context":
@@ -572,6 +615,15 @@ async def execute_tool(tool_name: str, args: Dict[str, Any], user: User, session
         memory = result.scalar_one_or_none()
         
         if not memory:
+            await log_mcp_activity(
+                user_id=str(user.id),
+                mcp_token_id=mcp_token_id,
+                tool_name=tool_name,
+                client_type=client_type,
+                tool_args={"memory_id": memory_id},
+                result_count=0,
+                session=session
+            )
             return {"memory_id": memory_id, "content": "", "found": False}
         
         source_result = await session.execute(
@@ -586,6 +638,16 @@ async def execute_tool(tool_name: str, args: Dict[str, Any], user: User, session
         if source and source.raw_content:
             raw_str = str(source.raw_content)[:500]
             raw_excerpt = raw_str + "..." if len(str(source.raw_content)) > 500 else raw_str
+        
+        await log_mcp_activity(
+            user_id=str(user.id),
+            mcp_token_id=mcp_token_id,
+            tool_name=tool_name,
+            client_type=client_type,
+            tool_args={"memory_id": memory_id},
+            result_count=1,
+            session=session
+        )
         
         return {
             "memory_id": str(memory.id),
@@ -606,7 +668,26 @@ async def execute_tool(tool_name: str, args: Dict[str, Any], user: User, session
         source = result.scalar_one_or_none()
         
         if not source:
+            await log_mcp_activity(
+                user_id=str(user.id),
+                mcp_token_id=mcp_token_id,
+                tool_name=tool_name,
+                client_type=client_type,
+                tool_args={"source_id": source_id},
+                result_count=0,
+                session=session
+            )
             return {"id": source_id, "type": "unknown", "found": False}
+        
+        await log_mcp_activity(
+            user_id=str(user.id),
+            mcp_token_id=mcp_token_id,
+            tool_name=tool_name,
+            client_type=client_type,
+            tool_args={"source_id": source_id},
+            result_count=1,
+            session=session
+        )
         
         return {
             "id": str(source.id),
@@ -640,7 +721,7 @@ async def mcp_http_handler(request: Request, session: AsyncSession = Depends(get
     authorization = request.headers.get("Authorization", "")
     
     try:
-        user = await validate_mcp_token_from_header(authorization, session)
+        user, mcp_token = await validate_mcp_token_from_header(authorization, session)
     except HTTPException as e:
         return StreamingResponse(
             iter([f"data: {create_jsonrpc_error(None, -32000, e.detail)}\n\n"]),
@@ -684,7 +765,14 @@ async def mcp_http_handler(request: Request, session: AsyncSession = Depends(get
         tool_args = params.get("arguments", {})
         
         try:
-            tool_result = await execute_tool(tool_name, tool_args, user, session)
+            tool_result = await execute_tool(
+                tool_name, 
+                tool_args, 
+                user, 
+                session,
+                mcp_token_id=str(mcp_token.id),
+                client_type=mcp_token.client_type
+            )
             result = {"content": [{"type": "text", "text": json.dumps(tool_result, default=str)}]}
             return StreamingResponse(
                 iter([f"data: {create_jsonrpc_response(msg_id, result)}\n\n"]),
@@ -713,7 +801,7 @@ async def mcp_http_sse(request: Request, session: AsyncSession = Depends(get_db)
     authorization = request.headers.get("Authorization", "")
     
     try:
-        user = await validate_mcp_token_from_header(authorization, session)
+        user, mcp_token = await validate_mcp_token_from_header(authorization, session)
     except HTTPException as e:
         return {"error": e.detail}
     

@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 import logging
 
 from app.db.database import get_db
-from app.db.models import Source, Memory, MemorySource, User, ProcessingLog
+from app.db.models import Source, Memory, MemorySource, User, ProcessingLog, MCPActivity
 from app.api.auth import get_current_user
 from app.core.embeddings import get_embedding_service
 
@@ -456,11 +456,12 @@ async def get_chat_context(
 
 class ActivityEvent(BaseModel):
     id: str
-    type: str  # "ingest", "agent_use", "memory_created", "source_created"
+    type: str  # "ingest", "mcp_search", "mcp_context", "mcp_source", "source_created"
     source: Optional[str]  # "chrome_extension", "api", "mcp"
     agent: Optional[str]  # "cursor", "claude", etc.
     memory_count: Optional[int]
     details: Optional[str]
+    tool_name: Optional[str]  # For MCP: search_memory, get_memory_context, get_source
     created_at: str
 
 
@@ -477,8 +478,8 @@ async def get_activity_feed(
     session: AsyncSession = Depends(get_db)
 ):
     """
-    Get activity feed showing ingestion events and agent usage.
-    Aggregates from processing_logs and sources.
+    Get activity feed showing ingestion events, MCP tool calls, and agent usage.
+    Aggregates from processing_logs, sources, and mcp_activity.
     """
     events = []
     
@@ -507,6 +508,7 @@ async def get_activity_feed(
             agent=None,
             memory_count=mem_count,
             details=f"{mem_count} memories extracted from {source.type}",
+            tool_name=None,
             created_at=str(source.created_at)
         ))
     
@@ -527,8 +529,46 @@ async def get_activity_feed(
                 agent=None,
                 memory_count=log.extracted_count,
                 details=f"{log.extracted_count} memories extracted",
+                tool_name=None,
                 created_at=str(log.processed_at)
             ))
+    
+    # Get MCP activity
+    mcp_result = await session.execute(
+        select(MCPActivity)
+        .where(MCPActivity.user_id == str(user.id))
+        .order_by(MCPActivity.created_at.desc())
+        .limit(limit)
+    )
+    mcp_activities = mcp_result.scalars().all()
+    
+    for mcp in mcp_activities:
+        # Determine activity type based on tool
+        activity_type = "mcp_search" if mcp.tool_name == "search_memory" else \
+                       "mcp_context" if mcp.tool_name == "get_memory_context" else \
+                       "mcp_source" if mcp.tool_name == "get_source" else "mcp_call"
+        
+        # Build details string
+        if mcp.tool_name == "search_memory":
+            query = mcp.tool_args.get("query", "")
+            details = f"Searched for '{query}' - {mcp.result_count} results"
+        elif mcp.tool_name == "get_memory_context":
+            details = f"Retrieved memory context"
+        elif mcp.tool_name == "get_source":
+            details = f"Retrieved source document"
+        else:
+            details = f"Called {mcp.tool_name}"
+        
+        events.append(ActivityEvent(
+            id=str(mcp.id),
+            type=activity_type,
+            source="mcp",
+            agent=mcp.client_type,
+            memory_count=mcp.result_count if mcp.tool_name == "search_memory" else None,
+            details=details,
+            tool_name=mcp.tool_name,
+            created_at=str(mcp.created_at)
+        ))
     
     # Sort all events by created_at
     events.sort(key=lambda x: x.created_at, reverse=True)

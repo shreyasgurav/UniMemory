@@ -12,6 +12,7 @@ interface ActivityEvent {
   memory_count?: number;
   details?: string;
   raw_preview?: string;
+  tool_name?: string;
   created_at: string;
 }
 
@@ -48,6 +49,20 @@ export default function ActivityPage() {
   };
 
   const getSourceName = (event: ActivityEvent) => {
+    // MCP activity
+    if (event.source === "mcp" && event.agent) {
+      const agentMap: Record<string, string> = {
+        cursor: "Cursor",
+        claude: "Claude Desktop",
+        vscode: "VS Code",
+        windsurf: "Windsurf",
+        cline: "Cline",
+        gemini: "Gemini CLI"
+      };
+      return agentMap[event.agent] || event.agent;
+    }
+    
+    // Legacy source detection
     const sourceApp = event.source_app || event.source || "";
     if (sourceApp.includes("chatgpt") || sourceApp.includes("chat")) return "ChatGPT";
     if (sourceApp.includes("claude")) return "Claude";
