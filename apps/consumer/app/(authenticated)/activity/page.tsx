@@ -1,13 +1,13 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Activity as ActivityIcon, FileText, Brain, Chrome, Code, Clock } from "lucide-react";
 import { auth } from "@/lib/firebase";
 
 interface ActivityEvent {
   id: string;
   type: string;
   source?: string;
+  source_app?: string;
   agent?: string;
   memory_count?: number;
   details?: string;
@@ -46,92 +46,116 @@ export default function ActivityPage() {
     }
   };
 
-  const getEventIcon = (event: ActivityEvent) => {
-    if (event.type === "source_created") return <FileText className="w-4 h-4" />;
-    if (event.type === "ingest") return <Brain className="w-4 h-4" />;
-    if (event.source === "chrome_extension") return <Chrome className="w-4 h-4" />;
-    if (event.agent) return <Code className="w-4 h-4" />;
-    return <ActivityIcon className="w-4 h-4" />;
+  const getSourceName = (event: ActivityEvent) => {
+    const sourceApp = event.source_app || event.source || "";
+    if (sourceApp.includes("chatgpt") || sourceApp.includes("chat")) return "ChatGPT";
+    if (sourceApp.includes("claude")) return "Claude";
+    if (sourceApp.includes("cursor")) return "Cursor";
+    if (sourceApp.includes("chrome")) return "Chrome Extension";
+    if (event.agent) return event.agent;
+    return "Unknown";
   };
 
-  const getEventColor = (event: ActivityEvent) => {
-    if (event.type === "source_created") return "bg-blue-100 text-blue-600";
-    if (event.type === "ingest") return "bg-purple-100 text-purple-600";
-    if (event.agent) return "bg-green-100 text-green-600";
-    return "bg-neutral-100 text-neutral-600";
+  const getSourceLogo = (sourceName: string) => {
+    const name = sourceName.toLowerCase();
+    if (name.includes("chatgpt")) {
+      return (
+        <div className="w-10 h-10 rounded-lg bg-[#10A37F] flex items-center justify-center text-white font-semibold text-sm">
+          GPT
+        </div>
+      );
+    }
+    if (name.includes("claude")) {
+      return (
+        <div className="w-10 h-10 rounded-lg bg-[#CC9B7A] flex items-center justify-center text-white font-semibold text-sm">
+          C
+        </div>
+      );
+    }
+    if (name.includes("cursor")) {
+      return (
+        <div className="w-10 h-10 rounded-lg bg-black flex items-center justify-center text-white font-semibold text-sm">
+          ⌘
+        </div>
+      );
+    }
+    return (
+      <div className="w-10 h-10 rounded-lg bg-neutral-200 flex items-center justify-center text-neutral-600 font-semibold text-sm">
+        {sourceName.charAt(0).toUpperCase()}
+      </div>
+    );
   };
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
+    <div className="h-screen flex flex-col bg-white">
       {/* Header */}
-      <div className="bg-white px-6 py-4">
-        <h1 className="text-xl font-semibold text-neutral-900">Activity</h1>
+      <div className="border-b border-neutral-100 px-8 py-6">
+        <h1 className="text-2xl font-semibold text-neutral-900">Activity</h1>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-6">
-        <div className="max-w-3xl mx-auto">
+      <div className="flex-1 overflow-y-auto p-8 bg-neutral-50">
+        <div className="max-w-2xl mx-auto">
           {loading ? (
-            <div className="space-y-3">
+            <div className="space-y-0">
               {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="bg-white border border-gray-100 rounded-xl p-5">
-                  <div className="h-5 bg-neutral-100 rounded w-3/4 animate-pulse mb-2" />
-                  <div className="h-4 bg-neutral-100 rounded w-1/2 animate-pulse" />
+                <div key={i} className="flex gap-4 pb-8">
+                  <div className="flex flex-col items-center">
+                    <div className="w-10 h-10 rounded-lg bg-neutral-200 animate-pulse" />
+                    {i < 4 && <div className="w-0.5 flex-1 bg-neutral-200 mt-2" />}
+                  </div>
+                  <div className="flex-1 pt-2">
+                    <div className="h-5 bg-neutral-200 rounded w-1/3 animate-pulse mb-2" />
+                    <div className="h-4 bg-neutral-200 rounded w-1/2 animate-pulse" />
+                  </div>
                 </div>
               ))}
             </div>
           ) : (events?.length ?? 0) === 0 ? (
-            <div className="bg-white border border-gray-100 rounded-xl p-12 text-center">
-              <ActivityIcon className="w-10 h-10 mx-auto mb-3 text-neutral-200" />
-              <p className="text-neutral-600 font-medium">No activity yet</p>
-              <p className="text-sm text-neutral-400 mt-1">
-                Activity will appear as you capture sources and use memory-powered agents
+            <div className="bg-white rounded-xl p-16 text-center">
+              <p className="text-neutral-700 font-medium text-lg">No activity yet</p>
+              <p className="text-sm text-neutral-500 mt-2">
+                Activity will appear as you capture sources and memories
               </p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {(events || []).map((event) => (
-                <div
-                  key={event.id}
-                  className="bg-white border border-gray-100 rounded-xl p-5 hover:border-neutral-200 transition-all"
-                >
-                  <div className="flex items-start gap-4">
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${getEventColor(event)}`}>
-                      {getEventIcon(event)}
+            <div className="space-y-0">
+              {(events || []).map((event, index) => {
+                const sourceName = getSourceName(event);
+                return (
+                  <div key={event.id} className="flex gap-4 pb-8 last:pb-0">
+                    {/* Timeline Node */}
+                    <div className="flex flex-col items-center">
+                      {getSourceLogo(sourceName)}
+                      {index < events.length - 1 && (
+                        <div className="w-0.5 flex-1 bg-neutral-200 mt-2" />
+                      )}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-sm font-medium text-neutral-900">
-                          {event.type === "source_created" && "Source Captured"}
-                          {event.type === "ingest" && "Memories Extracted"}
-                          {event.type === "agent_use" && "Agent Used Memory"}
-                        </span>
-                        {event.source && (
-                          <span className="px-2 py-0.5 bg-neutral-100 text-neutral-600 text-xs rounded-full">
-                            {event.source}
-                          </span>
-                        )}
-                        {event.agent && (
-                          <span className="px-2 py-0.5 bg-green-100 text-green-600 text-xs rounded-full">
-                            {event.agent}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-sm text-neutral-600">{event.details}</p>
+
+                    {/* Content */}
+                    <div className="flex-1 pt-2">
+                      <h3 className="text-base font-semibold text-neutral-900 mb-1">
+                        {sourceName}
+                      </h3>
                       {event.memory_count !== undefined && event.memory_count > 0 && (
-                        <p className="text-xs text-neutral-500 mt-2 flex items-center gap-1">
-                          <Brain className="w-3 h-3" />
-                          {event.memory_count} {event.memory_count === 1 ? "memory" : "memories"}
+                        <p className="text-sm text-neutral-600 mb-1">
+                          {event.memory_count} {event.memory_count === 1 ? "memory" : "memories"} added
                         </p>
                       )}
-                      <p className="text-xs text-neutral-400 mt-2 flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {new Date(event.created_at).toLocaleString()}
+                      <p className="text-xs text-neutral-400">
+                        {new Date(event.created_at).toLocaleString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                          hour: 'numeric',
+                          minute: '2-digit',
+                          hour12: true
+                        })}
                       </p>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
