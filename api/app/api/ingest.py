@@ -8,7 +8,7 @@ Guardrails:
 - Strict extraction schemas
 - No internal details in responses
 """
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Header, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import List, Optional, Dict, Any
@@ -24,7 +24,8 @@ from app.core.embeddings import get_embedding_service
 from app.core.simhash import compute_simhash, hamming_distance
 from app.core.sector import classify_sector, get_sector_decay_lambda, calculate_initial_salience
 from app.core.waypoints import create_waypoint_for_memory
-from app.core.auth import validate_api_key
+from app.core.auth import validate_api_key_optimized
+from app.api.consumer import verify_consumer_session_token
 from app.core.end_user import get_or_create_end_user
 from app.core.summarizer import SourceSummarizer
 from app.config import settings
@@ -84,6 +85,40 @@ def check_ingest_enabled(user: User) -> bool:
     settings_dict = user.settings or {}
     # Default to True for backwards compatibility
     return settings_dict.get("ingest_enabled", True)
+
+
+async def get_ingest_auth(
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Accept either authentication scheme:
+    - X-API-Key (B2B developer/API flow)
+    - Authorization: Bearer <consumer session token> (Chrome extension flow)
+
+    Returns a tuple (user, api_key_or_none, source_app) where source_app is
+    one of ["api", "chrome_extension"] to tag Source.source_app and app_id.
+    """
+    # Prefer API key if provided
+    if x_api_key:
+        user, api_key = await validate_api_key_optimized(x_api_key, session)
+        return user, api_key, "api"
+
+    # Try consumer session bearer token
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1].strip()
+        payload = await verify_consumer_session_token(token)
+        # Lookup user by payload["sub"] which stores owner/user id
+        stmt = select(User).where(User.id == payload.get("sub"))
+        result = await session.execute(stmt)
+        user = result.scalar_one_or_none()
+        if not user or not user.is_active:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session user")
+        return user, None, "chrome_extension"
+
+    # Neither provided
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="X-API-Key or Authorization bearer token required")
 
 
 async def create_waypoints_background(
@@ -244,7 +279,7 @@ async def store_extracted_memories(
 async def ingest_text(
     request: IngestTextRequest,
     background_tasks: BackgroundTasks,
-    user_info: tuple = Depends(validate_api_key),
+    user_info: tuple = Depends(get_ingest_auth),
     session: AsyncSession = Depends(get_db)
 ):
     """
@@ -261,7 +296,7 @@ async def ingest_text(
     
     Can be disabled via user settings: {"ingest_enabled": false}
     """
-    user, api_key = user_info
+    user, api_key, source_app = user_info
     owner_id = str(user.id)
     
     # Check if ingest is enabled for this user
@@ -318,7 +353,7 @@ async def ingest_text(
         owner_id=owner_id,
         end_user_id=str(end_user.id),
         type="text",
-        source_app=request.app_id,
+        source_app=request.app_id or source_app,
         title=None,
         raw_content={"content": content},
         summary=summary,
@@ -352,7 +387,7 @@ async def ingest_text(
         owner_id=owner_id,
         user_id=request.user_id or "anonymous",
         end_user_id=str(end_user.id),
-        app_id=request.app_id,
+        app_id=request.app_id or source_app,
         api_key_id=str(api_key.id) if api_key else None,
         source_uuid=source_uuid,
         background_tasks=background_tasks
@@ -383,7 +418,7 @@ async def ingest_text(
 async def ingest_chat(
     request: IngestChatRequest,
     background_tasks: BackgroundTasks,
-    user_info: tuple = Depends(validate_api_key),
+    user_info: tuple = Depends(get_ingest_auth),
     session: AsyncSession = Depends(get_db)
 ):
     """
@@ -396,7 +431,7 @@ async def ingest_chat(
     
     Can be disabled via user settings: {"ingest_enabled": false}
     """
-    user, api_key = user_info
+    user, api_key, source_app = user_info
     owner_id = str(user.id)
     
     # Check if ingest is enabled
@@ -446,7 +481,7 @@ async def ingest_chat(
         owner_id=owner_id,
         end_user_id=str(end_user.id),
         type="chat",
-        source_app=request.app_id,
+        source_app=request.app_id or source_app,
         title=None,
         raw_content={"messages": request.messages},
         summary=summary,
@@ -480,7 +515,7 @@ async def ingest_chat(
         owner_id=owner_id,
         user_id=request.user_id or "anonymous",
         end_user_id=str(end_user.id),
-        app_id=request.app_id,
+        app_id=request.app_id or source_app,
         api_key_id=str(api_key.id) if api_key else None,
         source_uuid=source_uuid,
         background_tasks=background_tasks
@@ -499,7 +534,7 @@ async def ingest_chat(
 async def ingest_document(
     request: IngestDocumentRequest,
     background_tasks: BackgroundTasks,
-    user_info: tuple = Depends(validate_api_key),
+    user_info: tuple = Depends(get_ingest_auth),
     session: AsyncSession = Depends(get_db)
 ):
     """
@@ -510,7 +545,7 @@ async def ingest_document(
     
     Can be disabled via user settings: {"ingest_enabled": false}
     """
-    user, api_key = user_info
+    user, api_key, source_app = user_info
     owner_id = str(user.id)
     
     # Check if ingest is enabled
@@ -561,7 +596,7 @@ async def ingest_document(
         owner_id=owner_id,
         end_user_id=str(end_user.id),
         type="document",
-        source_app=request.app_id,
+        source_app=request.app_id or source_app,
         title=request.title,
         raw_content={"content": request.content},
         summary=summary,
@@ -597,7 +632,7 @@ async def ingest_document(
             owner_id=owner_id,
             user_id=request.user_id or "anonymous",
             end_user_id=str(end_user.id),
-            app_id=request.app_id,
+            app_id=request.app_id or source_app,
             api_key_id=str(api_key.id) if api_key else None,
             source_uuid=source_uuid,
             background_tasks=background_tasks
