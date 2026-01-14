@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Brain, FileText, MessageSquare, File, X, Tag, Clock, Sparkles, Calendar } from "lucide-react";
+import { X } from "lucide-react";
 import { auth } from "@/lib/firebase";
 
 interface Source {
   id: string;
   type: string;
+  title?: string;
   summary?: string;
   raw_content: any;
   created_at: string;
@@ -27,11 +28,11 @@ interface SourceDetail extends Source {
 }
 
 export default function MemoriesPage() {
-  const [view, setView] = useState<"sources" | "memories">("sources");
   const [sources, setSources] = useState<Source[]>([]);
   const [memories, setMemories] = useState<Memory[]>([]);
   const [selectedSource, setSelectedSource] = useState<SourceDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'source' | 'memory', id: string } | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -39,25 +40,28 @@ export default function MemoriesPage() {
       const token = await auth.currentUser?.getIdToken();
       if (!token) return;
 
-      if (view === "sources") {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/consumer/sources?limit=50`, {
+      const [sourcesRes, memoriesRes] = await Promise.all([
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/consumer/sources?limit=50`, {
           headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await response.json();
-        setSources(data);
-      } else {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/consumer/memories?limit=50`, {
+        }),
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/consumer/memories?limit=50`, {
           headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await response.json();
-        setMemories(data);
-      }
+        })
+      ]);
+      
+      const [sourcesData, memoriesData] = await Promise.all([
+        sourcesRes.json(),
+        memoriesRes.json()
+      ]);
+      
+      setSources(sourcesData);
+      setMemories(memoriesData);
     } catch (error) {
       console.error("Failed to load data:", error);
     } finally {
       setLoading(false);
     }
-  }, [view]);
+  }, []);
 
   useEffect(() => {
     loadData();
@@ -78,14 +82,40 @@ export default function MemoriesPage() {
     }
   };
 
-  const getSourceIcon = (type: string) => {
-    switch (type) {
-      case "chat":
-        return <MessageSquare className="w-4 h-4" />;
-      case "document":
-        return <File className="w-4 h-4" />;
-      default:
-        return <FileText className="w-4 h-4" />;
+  const getSourceTitle = (source: Source) => {
+    if (source.title) return source.title;
+    if (source.type === "chat") return "ChatGPT";
+    return source.type.charAt(0).toUpperCase() + source.type.slice(1);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteConfirm) return;
+    
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) return;
+
+      const endpoint = deleteConfirm.type === 'source' 
+        ? `${process.env.NEXT_PUBLIC_API_URL}/consumer/sources/${deleteConfirm.id}`
+        : `${process.env.NEXT_PUBLIC_API_URL}/consumer/memories/${deleteConfirm.id}`;
+
+      await fetch(endpoint, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (deleteConfirm.type === 'source') {
+        setSources(sources.filter(s => s.id !== deleteConfirm.id));
+        if (selectedSource?.id === deleteConfirm.id) {
+          setSelectedSource(null);
+        }
+      } else {
+        setMemories(memories.filter(m => m.id !== deleteConfirm.id));
+      }
+    } catch (error) {
+      console.error('Failed to delete:', error);
+    } finally {
+      setDeleteConfirm(null);
     }
   };
 
@@ -93,31 +123,7 @@ export default function MemoriesPage() {
     <div className="h-screen flex flex-col bg-white">
       {/* Header */}
       <div className="border-b border-neutral-100 px-8 py-6">
-        <h1 className="text-2xl font-semibold text-neutral-900 mb-6">Memories</h1>
-
-        {/* View Toggle */}
-        <div className="flex gap-3">
-          <button
-            onClick={() => setView("sources")}
-            className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all ${view === "sources"
-                ? "bg-neutral-900 text-white shadow-sm"
-                : "bg-white text-neutral-600 hover:bg-neutral-50 border border-neutral-200"
-              }`}
-          >
-            <FileText className="w-4 h-4 inline mr-2" />
-            Sources
-          </button>
-          <button
-            onClick={() => setView("memories")}
-            className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all ${view === "memories"
-                ? "bg-neutral-900 text-white shadow-sm"
-                : "bg-white text-neutral-600 hover:bg-neutral-50 border border-neutral-200"
-              }`}
-          >
-            <Brain className="w-4 h-4 inline mr-2" />
-            Memories
-          </button>
-        </div>
+        <h1 className="text-2xl font-semibold text-neutral-900">Memories</h1>
       </div>
 
       {/* Content */}
@@ -126,90 +132,68 @@ export default function MemoriesPage() {
           {loading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="bg-white border border-neutral-200 rounded-xl p-5">
+                <div key={i} className="bg-white rounded-xl p-5">
                   <div className="h-5 bg-neutral-100 rounded w-3/4 animate-pulse mb-3" />
                   <div className="h-4 bg-neutral-100 rounded w-full animate-pulse mb-2" />
                   <div className="h-4 bg-neutral-100 rounded w-2/3 animate-pulse" />
                 </div>
               ))}
             </div>
-          ) : view === "sources" ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {sources.length === 0 ? (
-                <div className="col-span-full bg-white border border-neutral-200 rounded-xl p-16 text-center">
-                  <FileText className="w-12 h-12 mx-auto mb-4 text-neutral-300" />
-                  <p className="text-neutral-700 font-medium text-lg">No sources yet</p>
-                  <p className="text-sm text-neutral-500 mt-2">
-                    Sources will appear when you capture chats or documents
-                  </p>
-                </div>
-              ) : (
-                sources.map((source) => (
-                  <button
-                    key={source.id}
-                    onClick={() => loadSourceDetail(source.id)}
-                    className="bg-white border border-neutral-200 rounded-xl p-5 hover:border-neutral-300 hover:shadow-md transition-all text-left group"
-                  >
-                    <div className="flex items-start gap-3 mb-3">
-                      <div className="w-9 h-9 bg-neutral-100 rounded-lg flex items-center justify-center text-neutral-600 flex-shrink-0">
-                        {getSourceIcon(source.type)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <span className="text-xs font-medium text-neutral-500 uppercase tracking-wide">
-                          {source.type}
-                        </span>
-                      </div>
-                    </div>
-                    <p className="text-neutral-900 text-sm font-medium mb-2 line-clamp-3 leading-relaxed">
-                      {source.summary || "No summary available"}
-                    </p>
-                    <div className="flex items-center gap-2 text-xs text-neutral-500">
-                      <Calendar className="w-3.5 h-3.5" />
-                      {new Date(source.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                      {source.memory_count !== undefined && (
-                        <>
-                          <span>•</span>
-                          <Brain className="w-3.5 h-3.5" />
-                          <span>{source.memory_count} memories</span>
-                        </>
-                      )}
-                    </div>
-                  </button>
-                ))
-              )}
-            </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {memories.length === 0 ? (
-                <div className="col-span-full bg-white border border-neutral-200 rounded-xl p-16 text-center">
-                  <Brain className="w-12 h-12 mx-auto mb-4 text-neutral-300" />
+              {sources.length === 0 && memories.length === 0 ? (
+                <div className="col-span-full bg-white rounded-xl p-16 text-center">
                   <p className="text-neutral-700 font-medium text-lg">No memories yet</p>
                   <p className="text-sm text-neutral-500 mt-2">
-                    Memories will be extracted from your sources automatically
+                    Memories will appear when you capture chats or documents
                   </p>
                 </div>
               ) : (
-                memories.map((memory) => (
-                  <div
-                    key={memory.id}
-                    className="bg-white border border-neutral-200 rounded-xl p-5 hover:border-neutral-300 hover:shadow-md transition-all"
-                  >
-                    <p className="text-neutral-900 text-sm font-medium mb-3 leading-relaxed">
-                      {memory.content}
-                    </p>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {memory.sector && (
-                        <span className="px-2.5 py-1 bg-neutral-100 text-neutral-700 text-xs rounded-md font-medium">
-                          {memory.sector}
-                        </span>
-                      )}
-                      <span className="text-xs text-neutral-500 ml-auto flex items-center gap-1">
-                        <Calendar className="w-3.5 h-3.5" />
-                        {new Date(memory.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                      </span>
+                <>
+                  {sources.map((source) => (
+                    <div key={source.id} className="bg-white rounded-xl p-5 hover:shadow-md transition-all relative group">
+                      <button
+                        onClick={() => setDeleteConfirm({ type: 'source', id: source.id })}
+                        className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-neutral-400 hover:text-neutral-600"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => loadSourceDetail(source.id)}
+                        className="text-left w-full"
+                      >
+                        <h3 className="text-neutral-900 font-semibold mb-2 text-base">
+                          {getSourceTitle(source)}
+                        </h3>
+                        <p className="text-neutral-600 text-sm mb-2 line-clamp-3 leading-relaxed">
+                          {source.summary || "No summary available"}
+                        </p>
+                        <div className="text-xs text-neutral-400">
+                          {new Date(source.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </div>
+                      </button>
                     </div>
-                  </div>
-                ))
+                  ))}
+                  {memories.map((memory) => (
+                    <div
+                      key={memory.id}
+                      className="bg-white rounded-xl p-5 hover:shadow-md transition-all relative group"
+                    >
+                      <button
+                        onClick={() => setDeleteConfirm({ type: 'memory', id: memory.id })}
+                        className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-neutral-400 hover:text-neutral-600"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                      <p className="text-neutral-900 text-sm font-medium mb-3 leading-relaxed pr-6">
+                        {memory.content}
+                      </p>
+                      <div className="text-xs text-neutral-400">
+                        {new Date(memory.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      </div>
+                    </div>
+                  ))}
+                </>
               )}
             </div>
           )}
@@ -221,20 +205,10 @@ export default function MemoriesPage() {
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-6">
           <div className="bg-white rounded-2xl max-w-7xl w-full h-[85vh] overflow-hidden flex flex-col shadow-2xl">
             {/* Modal Header */}
-            <div className="border-b border-neutral-200 px-6 py-4 flex items-center justify-between bg-white">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-neutral-100 rounded-lg flex items-center justify-center text-neutral-600">
-                  {getSourceIcon(selectedSource.type)}
-                </div>
-                <div>
-                  <h2 className="text-lg font-semibold text-neutral-900 capitalize">
-                    {selectedSource.type} Source
-                  </h2>
-                  <p className="text-xs text-neutral-500">
-                    {new Date(selectedSource.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-                  </p>
-                </div>
-              </div>
+            <div className="px-6 py-5 flex items-center justify-between bg-white">
+              <h2 className="text-xl font-semibold text-neutral-900">
+                {getSourceTitle(selectedSource)}
+              </h2>
               <button
                 onClick={() => setSelectedSource(null)}
                 className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-neutral-100 transition-colors"
@@ -246,88 +220,91 @@ export default function MemoriesPage() {
             {/* Modal Content - Split View */}
             <div className="flex-1 overflow-hidden flex">
               {/* Left: Raw Content */}
-              <div className="w-1/2 border-r border-neutral-200 overflow-y-auto bg-neutral-50">
+              <div className="w-1/2 overflow-y-auto bg-white">
                 <div className="p-6">
-                  <h3 className="text-sm font-semibold text-neutral-900 mb-4 flex items-center gap-2">
-                    <FileText className="w-4 h-4" />
-                    Raw Content
-                  </h3>
-                  <div className="bg-white border border-neutral-200 rounded-xl p-5 text-sm text-neutral-700">
-                    {selectedSource.type === "chat" && selectedSource.raw_content.messages ? (
-                      <div className="space-y-4">
-                        {selectedSource.raw_content.messages.map((msg: any, idx: number) => (
-                          <div key={idx} className="pb-4 border-b border-neutral-100 last:border-0 last:pb-0">
-                            <div className="font-semibold text-neutral-900 mb-2 text-xs uppercase tracking-wide">
-                              {msg.role}
-                            </div>
-                            <div className="text-neutral-700 leading-relaxed whitespace-pre-wrap">
-                              {msg.content}
-                            </div>
+                  {selectedSource.type === "chat" && selectedSource.raw_content.messages ? (
+                    <div className="space-y-6">
+                      {selectedSource.raw_content.messages.map((msg: any, idx: number) => (
+                        <div key={idx}>
+                          <div className="font-semibold text-neutral-900 mb-2 text-xs uppercase tracking-wide">
+                            {msg.role}
                           </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <pre className="whitespace-pre-wrap font-mono text-xs text-neutral-600">
-                        {JSON.stringify(selectedSource.raw_content, null, 2)}
-                      </pre>
-                    )}
-                  </div>
+                          <div className="text-neutral-700 leading-relaxed whitespace-pre-wrap">
+                            {msg.content}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <pre className="whitespace-pre-wrap font-mono text-xs text-neutral-600">
+                      {JSON.stringify(selectedSource.raw_content, null, 2)}
+                    </pre>
+                  )}
                 </div>
               </div>
 
               {/* Right: Summary + Memories */}
-              <div className="w-1/2 overflow-y-auto bg-white">
+              <div className="w-1/2 overflow-y-auto bg-neutral-100">
                 <div className="p-6 space-y-6">
                   {/* Summary */}
                   {selectedSource.summary && (
                     <div>
-                      <h3 className="text-sm font-semibold text-neutral-900 mb-3 flex items-center gap-2">
-                        <Sparkles className="w-4 h-4" />
+                      <h3 className="text-sm font-semibold text-neutral-900 mb-3">
                         Summary
                       </h3>
-                      <div className="bg-neutral-50 border border-neutral-200 rounded-xl p-5">
-                        <p className="text-sm text-neutral-700 leading-relaxed">
-                          {selectedSource.summary}
-                        </p>
-                      </div>
+                      <p className="text-sm text-neutral-700 leading-relaxed">
+                        {selectedSource.summary}
+                      </p>
                     </div>
                   )}
 
                   {/* Extracted Memories */}
                   <div>
-                    <h3 className="text-sm font-semibold text-neutral-900 mb-3 flex items-center gap-2">
-                      <Brain className="w-4 h-4" />
+                    <h3 className="text-sm font-semibold text-neutral-900 mb-3">
                       Memories ({selectedSource.memories.length})
                     </h3>
-                    <div className="space-y-3">
+                    <div className="space-y-4">
                       {selectedSource.memories.length === 0 ? (
-                        <div className="bg-neutral-50 border border-neutral-200 rounded-xl p-8 text-center">
-                          <Brain className="w-8 h-8 mx-auto mb-2 text-neutral-300" />
-                          <p className="text-sm text-neutral-500">No memories extracted</p>
-                        </div>
+                        <p className="text-sm text-neutral-500">No memories extracted</p>
                       ) : (
                         selectedSource.memories.map((memory) => (
-                          <div
-                            key={memory.id}
-                            className="bg-white border border-neutral-200 rounded-xl p-4 hover:border-neutral-300 transition-colors"
-                          >
-                            <p className="text-sm text-neutral-900 leading-relaxed mb-3">
-                              {memory.content}
-                            </p>
-                            <div className="flex items-center gap-2">
-                              {memory.sector && (
-                                <span className="px-2.5 py-1 bg-neutral-100 text-neutral-700 text-xs rounded-md font-medium">
-                                  {memory.sector}
-                                </span>
-                              )}
-                            </div>
-                          </div>
+                          <p key={memory.id} className="text-sm text-neutral-700 leading-relaxed">
+                            {memory.content}
+                          </p>
                         ))
                       )}
                     </div>
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Popup */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl">
+            <h3 className="text-lg font-semibold text-neutral-900 mb-2">
+              Delete {deleteConfirm.type === 'source' ? 'Source' : 'Memory'}?
+            </h3>
+            <p className="text-sm text-neutral-600 mb-6">
+              This action cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-neutral-700 bg-neutral-100 hover:bg-neutral-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-white bg-neutral-900 hover:bg-neutral-800 transition-colors"
+              >
+                Delete
+              </button>
             </div>
           </div>
         </div>
