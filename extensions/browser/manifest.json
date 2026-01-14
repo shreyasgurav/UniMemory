@@ -1,20 +1,17 @@
 {
   "manifest_version": 3,
   "name": "UniMemory",
-  "version": "0.1.0",
-  "description": "Capture AI chats and build your personal memory layer",
+  "version": "0.2.0",
+  "description": "Save any AI chat to your personal memory layer",
   "permissions": [
     "storage",
     "activeTab",
-    "tabs"
+    "tabs",
+    "scripting"
   ],
   "host_permissions": [
-    "https://chat.openai.com/*",
-    "https://chatgpt.com/*",
-    "https://claude.ai/*",
-    "https://gemini.google.com/*",
-    "https://app.unimemory.app/*",
-    "https://api.unimemory.app/*"
+    "https://*/*",
+    "http://*/*"
   ],
   "background": {
     "service_worker": "src/background/index.js",
@@ -22,24 +19,9 @@
   },
   "content_scripts": [
     {
-      "matches": [
-        "https://chat.openai.com/*",
-        "https://chatgpt.com/*"
-      ],
-      "js": ["src/content/chatgpt.js"],
-      "css": ["src/styles/floating-button.css"],
-      "run_at": "document_idle"
-    },
-    {
-      "matches": ["https://claude.ai/*"],
-      "js": ["src/content/claude.js"],
-      "css": ["src/styles/floating-button.css"],
-      "run_at": "document_idle"
-    },
-    {
-      "matches": ["https://gemini.google.com/*"],
-      "js": ["src/content/gemini.js"],
-      "css": ["src/styles/floating-button.css"],
+      "matches": ["<all_urls>"],
+      "js": ["src/content/universal.js"],
+      "css": ["src/styles/extension.css"],
       "run_at": "document_idle"
     }
   ],

@@ -1,0 +1,50 @@
+/**
+ * UniMemory - Extension Styles
+ * Universal styles for all pages
+ */
+
+/* Notification Toast */
+.unimemory-notification {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 999999;
+  padding: 12px 20px;
+  background: #171717;
+  color: white;
+  border-radius: 10px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  animation: unimemory-slideIn 0.3s ease;
+}
+
+.unimemory-notification-success {
+  background: #16a34a;
+}
+
+.unimemory-notification-error {
+  background: #dc2626;
+}
+
+@keyframes unimemory-slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+  .unimemory-notification {
+    bottom: 16px;
+    right: 16px;
+    left: 16px;
+    text-align: center;
+  }
+}
