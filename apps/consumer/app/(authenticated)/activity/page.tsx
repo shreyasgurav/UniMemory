@@ -11,6 +11,7 @@ interface ActivityEvent {
   agent?: string;
   memory_count?: number;
   details?: string;
+  raw_preview?: string;
   created_at: string;
 }
 
@@ -60,27 +61,42 @@ export default function ActivityPage() {
     const name = sourceName.toLowerCase();
     if (name.includes("chatgpt")) {
       return (
-        <div className="w-10 h-10 rounded-lg bg-[#10A37F] flex items-center justify-center text-white font-semibold text-sm">
-          GPT
-        </div>
+        <img 
+          src="https://chat.openai.com/favicon.ico" 
+          alt="ChatGPT"
+          className="w-8 h-8 rounded-lg"
+          onError={(e) => {
+            e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2310A37F'%3E%3Crect width='24' height='24' rx='4'/%3E%3C/svg%3E";
+          }}
+        />
       );
     }
     if (name.includes("claude")) {
       return (
-        <div className="w-10 h-10 rounded-lg bg-[#CC9B7A] flex items-center justify-center text-white font-semibold text-sm">
-          C
-        </div>
+        <img 
+          src="https://claude.ai/favicon.ico" 
+          alt="Claude"
+          className="w-8 h-8 rounded-lg"
+          onError={(e) => {
+            e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23CC9B7A'%3E%3Crect width='24' height='24' rx='4'/%3E%3C/svg%3E";
+          }}
+        />
       );
     }
     if (name.includes("cursor")) {
       return (
-        <div className="w-10 h-10 rounded-lg bg-black flex items-center justify-center text-white font-semibold text-sm">
-          ⌘
-        </div>
+        <img 
+          src="https://cursor.sh/favicon.ico" 
+          alt="Cursor"
+          className="w-8 h-8 rounded-lg"
+          onError={(e) => {
+            e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23000000'%3E%3Crect width='24' height='24' rx='4'/%3E%3C/svg%3E";
+          }}
+        />
       );
     }
     return (
-      <div className="w-10 h-10 rounded-lg bg-neutral-200 flex items-center justify-center text-neutral-600 font-semibold text-sm">
+      <div className="w-8 h-8 rounded-lg bg-neutral-200 flex items-center justify-center text-neutral-600 font-semibold text-xs">
         {sourceName.charAt(0).toUpperCase()}
       </div>
     );
@@ -101,10 +117,10 @@ export default function ActivityPage() {
               {Array.from({ length: 5 }).map((_, i) => (
                 <div key={i} className="flex gap-4 pb-8">
                   <div className="flex flex-col items-center">
-                    <div className="w-10 h-10 rounded-lg bg-neutral-200 animate-pulse" />
-                    {i < 4 && <div className="w-0.5 flex-1 bg-neutral-200 mt-2" />}
+                    <div className="w-8 h-8 rounded-lg bg-neutral-200 animate-pulse" />
+                    {i < 4 && <div className="w-px flex-1 bg-neutral-200 mt-2" />}
                   </div>
-                  <div className="flex-1 pt-2">
+                  <div className="flex-1">
                     <div className="h-5 bg-neutral-200 rounded w-1/3 animate-pulse mb-2" />
                     <div className="h-4 bg-neutral-200 rounded w-1/2 animate-pulse" />
                   </div>
@@ -122,24 +138,36 @@ export default function ActivityPage() {
             <div className="space-y-0">
               {(events || []).map((event, index) => {
                 const sourceName = getSourceName(event);
+                const rawPreview = event.details || event.raw_preview || "";
+                const truncatedPreview = rawPreview.length > 100 ? rawPreview.substring(0, 100) + "..." : rawPreview;
+                
                 return (
                   <div key={event.id} className="flex gap-4 pb-8 last:pb-0">
                     {/* Timeline Node */}
                     <div className="flex flex-col items-center">
-                      {getSourceLogo(sourceName)}
+                      <div className="relative">
+                        {getSourceLogo(sourceName)}
+                      </div>
                       {index < events.length - 1 && (
-                        <div className="w-0.5 flex-1 bg-neutral-200 mt-2" />
+                        <div className="w-px flex-1 bg-neutral-200 mt-2" />
                       )}
                     </div>
 
                     {/* Content */}
-                    <div className="flex-1 pt-2">
-                      <h3 className="text-base font-semibold text-neutral-900 mb-1">
-                        {sourceName}
-                      </h3>
-                      {event.memory_count !== undefined && event.memory_count > 0 && (
-                        <p className="text-sm text-neutral-600 mb-1">
-                          {event.memory_count} {event.memory_count === 1 ? "memory" : "memories"} added
+                    <div className="flex-1">
+                      <div className="flex items-baseline gap-2 mb-1">
+                        <h3 className="text-base font-semibold text-neutral-900">
+                          {sourceName}
+                        </h3>
+                        {event.memory_count !== undefined && event.memory_count > 0 && (
+                          <span className="text-sm text-neutral-500">
+                            {event.memory_count} {event.memory_count === 1 ? "memory" : "memories"}
+                          </span>
+                        )}
+                      </div>
+                      {truncatedPreview && (
+                        <p className="text-sm text-neutral-600 mb-2 leading-relaxed">
+                          {truncatedPreview}
                         </p>
                       )}
                       <p className="text-xs text-neutral-400">
