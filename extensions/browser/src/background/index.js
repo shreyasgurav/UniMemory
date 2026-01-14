@@ -69,6 +69,8 @@ async function ingestChat(chatData) {
     throw new Error('Not authenticated');
   }
   
+  console.log('[UniMemory] Ingesting chat with', chatData.messages.length, 'messages');
+  
   const response = await fetch(`${API_BASE_URL}/ingest/chat`, {
     method: 'POST',
     headers: {
@@ -89,10 +91,15 @@ async function ingestChat(chatData) {
   
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
+    console.error('[UniMemory] Ingest failed:', error);
     throw new Error(error.detail || 'Failed to save chat');
   }
   
-  return await response.json();
+  const result = await response.json();
+  console.log('[UniMemory] Ingest response:', result);
+  console.log('[UniMemory] Stored:', result.stored, 'memories, Skipped:', result.skipped, 'Source ID:', result.source_id);
+  
+  return result;
 }
 
 // ============ Message Handlers ============
