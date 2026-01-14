@@ -256,6 +256,9 @@ async def store_extracted_memories(
                 source_id=source_uuid
             )
             session.add(source_link)
+        
+        # Flush to ensure UUIDs are properly handled before commit
+        await session.flush()
     
     await session.commit()
     
