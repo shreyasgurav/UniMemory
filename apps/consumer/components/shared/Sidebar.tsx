@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { MessageSquare, Brain, Activity, PlugZap, Settings } from "lucide-react";
+import { MessageSquare, History, Activity, Link2, Settings } from "lucide-react";
 import { useRouter, usePathname } from "next/navigation";
 import { User } from "firebase/auth";
 import Image from "next/image";
@@ -38,7 +38,7 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
     {
       id: "memories",
       path: "/memories",
-      icon: <Brain className="w-4 h-4" strokeWidth={1.5} />,
+      icon: <History className="w-4 h-4" strokeWidth={1.5} />,
       label: "Memories"
     },
     {
@@ -50,7 +50,7 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
     {
       id: "connectors",
       path: "/connectors",
-      icon: <PlugZap className="w-4 h-4" strokeWidth={1.5} />,
+      icon: <Link2 className="w-4 h-4" strokeWidth={1.5} />,
       label: "Connectors"
     },
     {
@@ -71,7 +71,8 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
             alt="UniMemory"
             width={112}
             height={28}
-            className="h-7 w-auto"
+            style={{ height: 'auto', width: 'auto' }}
+            className="h-7"
             priority
           />
         </button>

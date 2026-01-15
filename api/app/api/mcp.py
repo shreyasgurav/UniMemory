@@ -82,6 +82,8 @@ class MCPTokenResponse(BaseModel):
     last_used_at: Optional[datetime] = None
     usage_count: int
     created_at: datetime
+    token: Optional[str] = None  # The actual token value
+    mcp_url: Optional[str] = None  # MCP endpoint URL
 
 
 class MCPTokenCreatedResponse(BaseModel):
@@ -154,6 +156,7 @@ async def create_mcp_token(
         client_type=client_type,
         token_hash=token_hash,
         token_prefix=token_prefix,
+        token_value=token,  # Store token for user retrieval
         is_active=True,
     )
     
@@ -187,12 +190,15 @@ async def create_mcp_token(
     )
 
 
+MCP_URL = "https://unimemory.up.railway.app/api/v1/mcp"
+
+
 @router.get("/consumer/mcp/tokens", response_model=MCPTokenListResponse)
 async def list_mcp_tokens(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db)
 ):
-    """List all MCP tokens for the current user"""
+    """List all MCP tokens for the current user with token values for display"""
     result = await session.execute(
         select(MCPToken)
         .where(MCPToken.user_id == user.id)
@@ -210,6 +216,8 @@ async def list_mcp_tokens(
                 last_used_at=t.last_used_at,
                 usage_count=t.usage_count,
                 created_at=t.created_at,
+                token=t.token_value,  # Include stored token
+                mcp_url=MCP_URL,
             )
             for t in tokens
         ]

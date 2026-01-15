@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Send, Brain, FileText, Sparkles, ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowUp, FileText, Sparkles, ChevronDown, ChevronUp, Brain } from "lucide-react";
 import { auth } from "@/lib/firebase";
 
 interface Message {
@@ -99,65 +99,49 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-white">
+    <div className="h-screen flex flex-col bg-neutral-50">
       {/* Header */}
       <div className="px-6 py-4">
-        <h1 className="text-lg font-semibold text-neutral-900">Chat</h1>
+        <h1 className="text-2xl font-semibold text-neutral-900">Chat</h1>
       </div>
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-6 py-6">
-        {messages.length === 0 ? (
-          <div className="h-full flex items-center justify-center">
-            <div className="text-center max-w-md">
-              <div className="w-16 h-16 bg-neutral-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <Brain className="w-8 h-8 text-neutral-400" />
-              </div>
-              <h2 className="text-xl font-semibold text-neutral-900 mb-2">
-                Chat with your memories
-              </h2>
-              <p className="text-neutral-500 text-sm">
-                Ask questions about anything you&apos;ve saved. Your memories will provide context for
-                every response.
-              </p>
+        <div className="max-w-3xl mx-auto space-y-6">
+          {messages.map((message) => (
+            <MessageBubble key={message.id} message={message} />
+          ))}
+          {loading && (
+            <div className="flex items-center gap-2 text-neutral-500">
+              <div className="w-2 h-2 bg-neutral-400 rounded-full animate-bounce" />
+              <div className="w-2 h-2 bg-neutral-400 rounded-full animate-bounce delay-100" />
+              <div className="w-2 h-2 bg-neutral-400 rounded-full animate-bounce delay-200" />
             </div>
-          </div>
-        ) : (
-          <div className="max-w-3xl mx-auto space-y-6">
-            {messages.map((message) => (
-              <MessageBubble key={message.id} message={message} />
-            ))}
-            {loading && (
-              <div className="flex items-center gap-2 text-neutral-500">
-                <div className="w-2 h-2 bg-neutral-400 rounded-full animate-bounce" />
-                <div className="w-2 h-2 bg-neutral-400 rounded-full animate-bounce delay-100" />
-                <div className="w-2 h-2 bg-neutral-400 rounded-full animate-bounce delay-200" />
-              </div>
-            )}
-            <div ref={messagesEndRef} />
-          </div>
-        )}
+          )}
+          <div ref={messagesEndRef} />
+        </div>
       </div>
 
       {/* Input */}
-      <div className="border-t border-neutral-100 px-6 py-4">
+      <div className="px-6 py-4">
         <div className="max-w-3xl mx-auto">
-          <div className="relative">
+          <div className="relative bg-white rounded-full shadow-sm h-12">
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="Ask anything about your memories..."
-              className="w-full px-4 py-3 pr-12 border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent resize-none text-sm"
+              placeholder="What can I do for you?"
+              className="w-full h-12 bg-transparent px-5 py-0 pr-14 rounded-full focus:outline-none focus:ring-0 border-0 resize-none text-sm text-neutral-800 placeholder-neutral-500 leading-[48px]"
               rows={1}
-              style={{ minHeight: "48px", maxHeight: "200px" }}
+              style={{ maxHeight: "200px" }}
             />
             <button
               onClick={handleSend}
               disabled={!input.trim() || loading}
-              className="absolute right-2 bottom-2 w-8 h-8 bg-neutral-900 text-white rounded-lg flex items-center justify-center hover:bg-neutral-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              className="absolute top-1/2 -translate-y-1/2 right-2 w-9 h-9 rounded-full bg-neutral-800 text-white border border-neutral-800 flex items-center justify-center hover:bg-neutral-700 disabled:opacity-50 disabled:cursor-not-allowed shadow"
+              aria-label="Send"
             >
-              <Send className="w-4 h-4" />
+              <ArrowUp className="w-4 h-4" />
             </button>
           </div>
         </div>

@@ -14,9 +14,10 @@ import json
 import os
 import logging
 import hashlib
+import secrets
 
 from app.db.database import get_db
-from app.db.models import User, APIKey
+from app.db.models import User, APIKey, MCPToken
 from app.core.security import verify_api_key
 from app.core.cache import (
     get_cached_api_key, set_cached_api_key, invalidate_api_key_cache,
@@ -88,12 +89,68 @@ async def verify_firebase_token(token: str) -> dict:
         )
 
 
+# MCP client types to auto-generate tokens for
+MCP_CLIENT_TYPES = [
+    ("cursor", "Cursor"),
+    ("claude", "Claude Desktop"),
+    ("windsurf", "Windsurf"),
+    ("cline", "Cline"),
+]
+
+
+def generate_mcp_token() -> tuple[str, str, str]:
+    """Generate a new MCP token, returns (token, hash, prefix)"""
+    token = f"um_mcp_{secrets.token_urlsafe(32)}"
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    token_prefix = token[:12]
+    return token, token_hash, token_prefix
+
+
+async def create_mcp_tokens_for_user(user_id: str, session: AsyncSession) -> list[MCPToken]:
+    """
+    Create MCP tokens for all supported clients for a user.
+    Returns list of created tokens.
+    """
+    created_tokens = []
+    
+    for client_type, display_name in MCP_CLIENT_TYPES:
+        # Check if token already exists for this client
+        stmt = select(MCPToken).where(
+            MCPToken.user_id == user_id,
+            MCPToken.client_type == client_type
+        )
+        result = await session.execute(stmt)
+        existing = result.scalar_one_or_none()
+        
+        if not existing:
+            token, token_hash, token_prefix = generate_mcp_token()
+            mcp_token = MCPToken(
+                user_id=user_id,
+                name=display_name,
+                client_type=client_type,
+                token_hash=token_hash,
+                token_prefix=token_prefix,
+                token_value=token,  # Store token for user retrieval
+                is_active=True,
+            )
+            session.add(mcp_token)
+            created_tokens.append(mcp_token)
+    
+    if created_tokens:
+        await session.commit()
+        for t in created_tokens:
+            await session.refresh(t)
+    
+    return created_tokens
+
+
 async def get_or_create_user(
     firebase_data: dict,
     session: AsyncSession
 ) -> User:
     """
     Get existing user or create new one from Firebase data.
+    Also ensures MCP tokens exist for all supported clients.
     """
     firebase_uid = firebase_data.get("uid")
     
@@ -113,6 +170,10 @@ async def get_or_create_user(
         if firebase_data.get("picture") and user.avatar_url != firebase_data.get("picture"):
             user.avatar_url = firebase_data.get("picture")
         await session.commit()
+        
+        # Ensure MCP tokens exist for this user
+        await create_mcp_tokens_for_user(str(user.id), session)
+        
         return user
     
     # Create new user
@@ -126,6 +187,9 @@ async def get_or_create_user(
     session.add(user)
     await session.commit()
     await session.refresh(user)
+    
+    # Create MCP tokens for all supported clients
+    await create_mcp_tokens_for_user(str(user.id), session)
     
     return user
 

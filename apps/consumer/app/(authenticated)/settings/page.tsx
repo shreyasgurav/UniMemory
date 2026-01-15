@@ -57,12 +57,16 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="p-8 max-w-2xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold text-neutral-900">Settings</h1>
+    <div className="h-screen flex flex-col bg-neutral-50">
+      <div className="px-8 py-6">
+        <div className="max-w-2xl mx-auto">
+          <h1 className="text-2xl font-semibold text-neutral-900">Settings</h1>
+        </div>
       </div>
 
       {/* Memory Ingestion */}
+      <div className="flex-1 overflow-y-auto px-8 pb-8">
+        <div className="max-w-2xl mx-auto">
       <div className="bg-white border border-gray-100 rounded-2xl p-6 mb-6">
         <div className="flex items-start gap-4">
           <div className="w-10 h-10 rounded-xl bg-green-50 text-green-600 flex items-center justify-center">
@@ -123,6 +127,8 @@ export default function SettingsPage() {
               </li>
             </ul>
           </div>
+        </div>
+      </div>
         </div>
       </div>
     </div>

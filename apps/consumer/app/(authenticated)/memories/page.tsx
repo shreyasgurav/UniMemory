@@ -120,9 +120,9 @@ export default function MemoriesPage() {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-white">
+    <div className="h-screen flex flex-col bg-neutral-50">
       {/* Header */}
-      <div className="border-b border-neutral-100 px-8 py-6">
+      <div className="px-8 py-6">
         <h1 className="text-2xl font-semibold text-neutral-900">Memories</h1>
       </div>
 
@@ -132,11 +132,7 @@ export default function MemoriesPage() {
           {loading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="bg-white rounded-xl p-5">
-                  <div className="h-5 bg-neutral-100 rounded w-3/4 animate-pulse mb-3" />
-                  <div className="h-4 bg-neutral-100 rounded w-full animate-pulse mb-2" />
-                  <div className="h-4 bg-neutral-100 rounded w-2/3 animate-pulse" />
-                </div>
+                <div key={i} className="bg-neutral-200 rounded-xl h-32 animate-pulse" />
               ))}
             </div>
           ) : (

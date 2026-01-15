@@ -319,8 +319,9 @@ class MCPToken(Base):
     # Token identification
     name = Column(String(100), nullable=False)  # "Cursor", "Claude Desktop", etc.
     client_type = Column(String(50), nullable=False)  # cursor, claude, vscode, windsurf, custom
-    token_hash = Column(String(255), nullable=False)  # Hashed token
+    token_hash = Column(String(255), nullable=False)  # Hashed token for validation
     token_prefix = Column(String(20), index=True)  # First chars for identification
+    token_value = Column(String(255), nullable=True)  # Stored token for user retrieval
     
     # Status
     is_active = Column(Boolean, default=True, index=True)

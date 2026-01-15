@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { auth } from "@/lib/firebase";
 
 interface ActivityEvent {
@@ -19,12 +19,9 @@ interface ActivityEvent {
 export default function ActivityPage() {
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    loadActivity();
-  }, []);
-
-  const loadActivity = async () => {
+  const loadActivity = useCallback(async () => {
     setLoading(true);
     try {
       const token = await auth.currentUser?.getIdToken();
@@ -46,7 +43,17 @@ export default function ActivityPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadActivity();
+  }, [loadActivity]);
+
+  useEffect(() => {
+    if (!loading && events.length > 0 && scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+    }
+  }, [loading, events.length]);
 
   const getSourceName = (event: ActivityEvent) => {
     // MCP activity
@@ -110,6 +117,30 @@ export default function ActivityPage() {
         />
       );
     }
+    if (name.includes("windsurf")) {
+      return (
+        <img 
+          src="https://www.codeium.com/favicon.ico" 
+          alt="Windsurf"
+          className="w-8 h-8 rounded-lg"
+          onError={(e) => {
+            e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2309B6A2'%3E%3Crect width='24' height='24' rx='4'/%3E%3C/svg%3E";
+          }}
+        />
+      );
+    }
+    if (name.includes("chrome")) {
+      return (
+        <img 
+          src="https://www.google.com/chrome/static/images/chrome-logo.svg" 
+          alt="Chrome Extension"
+          className="w-8 h-8 rounded-lg"
+          onError={(e) => {
+            e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%234285F4'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3C/svg%3E";
+          }}
+        />
+      );
+    }
     return (
       <div className="w-8 h-8 rounded-lg bg-neutral-200 flex items-center justify-center text-neutral-600 font-semibold text-xs">
         {sourceName.charAt(0).toUpperCase()}
@@ -118,26 +149,30 @@ export default function ActivityPage() {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-white">
+    <div className="h-screen flex flex-col bg-neutral-50">
       {/* Header */}
-      <div className="border-b border-neutral-100 px-8 py-6">
+      <div className="px-8 py-6">
         <h1 className="text-2xl font-semibold text-neutral-900">Activity</h1>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-8 bg-neutral-50">
-        <div className="max-w-2xl mx-auto">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-8 bg-neutral-50">
+        <div className="w-full flex justify-center pl-0 md:pl-56 lg:pl-64">
+          <div className="w-full max-w-2xl">
           {loading ? (
             <div className="space-y-0">
               {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="flex gap-4 pb-8">
-                  <div className="flex flex-col items-center">
-                    <div className="w-8 h-8 rounded-lg bg-neutral-200 animate-pulse" />
-                    {i < 4 && <div className="w-px flex-1 bg-neutral-200 mt-2" />}
+                <div key={i} className="flex gap-4 relative">
+                  <div className="flex flex-col items-center relative">
+                    <div className="w-8 h-8 rounded-lg bg-neutral-200 animate-pulse relative z-10" />
+                    {i < 4 && (
+                      <div className="absolute top-8 left-1/2 -translate-x-1/2 w-px bg-neutral-200 animate-pulse" style={{ height: 'calc(100% + 2rem)' }} />
+                    )}
                   </div>
-                  <div className="flex-1">
+                  <div className="flex-1 pb-8">
                     <div className="h-5 bg-neutral-200 rounded w-1/3 animate-pulse mb-2" />
-                    <div className="h-4 bg-neutral-200 rounded w-1/2 animate-pulse" />
+                    <div className="h-4 bg-neutral-200 rounded w-2/3 animate-pulse mb-2" />
+                    <div className="h-3 bg-neutral-200 rounded w-1/4 animate-pulse" />
                   </div>
                 </div>
               ))}
@@ -151,25 +186,27 @@ export default function ActivityPage() {
             </div>
           ) : (
             <div className="space-y-0">
-              {(events || []).map((event, index) => {
+              {([...events]
+                .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+              ).map((event, index, arr) => {
                 const sourceName = getSourceName(event);
                 const rawPreview = event.details || event.raw_preview || "";
                 const truncatedPreview = rawPreview.length > 100 ? rawPreview.substring(0, 100) + "..." : rawPreview;
                 
                 return (
-                  <div key={event.id} className="flex gap-4 pb-8 last:pb-0">
+                  <div key={event.id} className="flex gap-4 relative">
                     {/* Timeline Node */}
-                    <div className="flex flex-col items-center">
-                      <div className="relative">
+                    <div className="flex flex-col items-center relative">
+                      <div className="relative z-10">
                         {getSourceLogo(sourceName)}
                       </div>
-                      {index < events.length - 1 && (
-                        <div className="w-px flex-1 bg-neutral-200 mt-2" />
+                      {index < arr.length - 1 && (
+                        <div className="absolute top-8 left-1/2 -translate-x-1/2 w-px bg-neutral-200" style={{ height: 'calc(100% + 2rem)' }} />
                       )}
                     </div>
 
                     {/* Content */}
-                    <div className="flex-1">
+                    <div className="flex-1 pb-8">
                       <div className="flex items-baseline gap-2 mb-1">
                         <h3 className="text-base font-semibold text-neutral-900">
                           {sourceName}
@@ -201,6 +238,7 @@ export default function ActivityPage() {
               })}
             </div>
           )}
+          </div>
         </div>
       </div>
     </div>
