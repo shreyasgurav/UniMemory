@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth, signInWithGoogle, handleRedirectResult } from "@/lib/firebase";
-import { Brain, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -37,35 +37,34 @@ export default function LoginPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-white flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-neutral-400" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="max-w-md w-full">
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-neutral-900 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <Brain className="w-8 h-8 text-white" />
+    <div className="min-h-screen flex">
+      {/* Left Side - Login Form */}
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-white">
+        <div className="max-w-md w-full">
+          {/* Logo */}
+          <div className="mb-12">
+            <img 
+              src="/Unimemory Name Logo NoBG.png" 
+              alt="UniMemory" 
+              className="h-8 w-auto"
+            />
           </div>
-          <h1 className="text-2xl font-semibold text-neutral-900">UniMemory</h1>
-          <p className="text-neutral-500 mt-2">Your personal memory layer</p>
-        </div>
 
-        <div className="bg-white border border-gray-100 rounded-2xl p-8">
-          <h2 className="text-lg font-semibold text-neutral-900 text-center mb-2">
-            Sign in to continue
-          </h2>
-          <p className="text-sm text-neutral-500 text-center mb-6">
-            Access your memories, sources, and search
-          </p>
+          {/* Separator Line */}
+          <div className="w-16 h-px bg-neutral-200 mb-12"></div>
 
+          {/* Sign In Button */}
           <button
             onClick={handleSignIn}
             disabled={signingIn}
-            className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-white border border-neutral-200 rounded-xl text-neutral-700 font-medium hover:bg-neutral-50 transition-colors disabled:opacity-50"
+            className="w-full flex items-center justify-center gap-3 px-6 py-3.5 bg-white border border-neutral-200 rounded-xl text-neutral-700 font-medium hover:bg-neutral-50 transition-colors disabled:opacity-50 shadow-sm"
           >
             {signingIn ? (
               <Loader2 className="w-5 h-5 animate-spin" />
@@ -77,13 +76,28 @@ export default function LoginPage() {
                 <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
               </svg>
             )}
-            {signingIn ? "Signing in..." : "Continue with Google"}
+            {signingIn ? "Signing in..." : "Sign in with Google"}
           </button>
-        </div>
 
-        <p className="text-xs text-neutral-400 text-center mt-6">
-          By signing in, you agree to our Terms of Service and Privacy Policy
-        </p>
+          {/* Terms */}
+          <p className="text-xs text-neutral-400 mt-8">
+            By continuing, you agree to our Terms of Service and Privacy Policy
+          </p>
+        </div>
+      </div>
+
+      {/* Right Side - Decorative Background */}
+      <div className="hidden lg:block lg:w-1/2 relative overflow-hidden bg-gradient-to-br from-blue-600 via-purple-600 to-pink-500">
+        <div className="absolute inset-0 bg-black/20"></div>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="text-white text-center px-12">
+            <h2 className="text-4xl font-bold mb-4">Your personal memory layer</h2>
+            <p className="text-lg text-white/90">Save, search, and recall anything with AI-powered memory</p>
+          </div>
+        </div>
+        {/* Decorative Elements */}
+        <div className="absolute top-20 left-20 w-64 h-64 bg-white/10 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-20 right-20 w-96 h-96 bg-white/10 rounded-full blur-3xl"></div>
       </div>
     </div>
   );
