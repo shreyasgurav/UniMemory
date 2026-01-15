@@ -98,26 +98,69 @@ export default function MemoriesPage() {
 
   const getPlatformName = (source: Source) => {
     const metadata = (source as any).source_metadata || {};
-    return metadata.platform || source.source_app || "Unknown";
+    
+    // Use platform from metadata if available
+    if (metadata.platform) return metadata.platform;
+    
+    // Use domain from metadata if available
+    if (metadata.domain) return metadata.domain;
+    
+    // Extract from URL if available
+    if (metadata.url) {
+      try {
+        const hostname = new URL(metadata.url).hostname;
+        const parts = hostname.split('.');
+        const domain = parts.length > 1 ? parts[parts.length - 2] : parts[0];
+        return domain.charAt(0).toUpperCase() + domain.slice(1);
+      } catch {}
+    }
+    
+    return source.source_app || "Unknown";
   };
 
-  const getPlatformFavicon = (platformName: string) => {
+  const getPlatformFavicon = (source: Source) => {
+    const metadata = (source as any).source_metadata || {};
+    
+    // First, try to use favicon from source_metadata
+    if (metadata.favicon) {
+      return metadata.favicon;
+    }
+    
+    // Second, try to construct favicon URL from metadata URL
+    if (metadata.url) {
+      try {
+        const urlObj = new URL(metadata.url);
+        return `${urlObj.origin}/favicon.ico`;
+      } catch {}
+    }
+    
+    // Fallback to hardcoded favicons for known platforms
+    const platformName = getPlatformName(source);
     const name = platformName.toLowerCase();
-    if (name.includes("chatgpt") || name.includes("openai")) {
-      return "https://chat.openai.com/favicon.ico";
+    
+    const knownFavicons: Record<string, string> = {
+      chatgpt: "https://chat.openai.com/favicon.ico",
+      openai: "https://chat.openai.com/favicon.ico",
+      claude: "https://claude.ai/favicon.ico",
+      gemini: "https://gemini.google.com/favicon.ico",
+      bard: "https://gemini.google.com/favicon.ico",
+      perplexity: "https://www.perplexity.ai/favicon.ico",
+      "you.com": "https://you.com/favicon.ico",
+      github: "https://github.com/favicon.ico",
+      stackoverflow: "https://stackoverflow.com/favicon.ico",
+      reddit: "https://www.reddit.com/favicon.ico",
+      twitter: "https://twitter.com/favicon.ico",
+      linkedin: "https://linkedin.com/favicon.ico",
+      medium: "https://medium.com/favicon.ico",
+      notion: "https://notion.so/favicon.ico",
+    };
+    
+    for (const [key, url] of Object.entries(knownFavicons)) {
+      if (name.includes(key)) {
+        return url;
+      }
     }
-    if (name.includes("claude")) {
-      return "https://claude.ai/favicon.ico";
-    }
-    if (name.includes("gemini") || name.includes("bard")) {
-      return "https://gemini.google.com/favicon.ico";
-    }
-    if (name.includes("perplexity")) {
-      return "https://www.perplexity.ai/favicon.ico";
-    }
-    if (name.includes("you.com")) {
-      return "https://you.com/favicon.ico";
-    }
+    
     return null;
   };
 
@@ -183,7 +226,7 @@ export default function MemoriesPage() {
                 <>
                   {sources.map((source) => {
                     const platformName = getPlatformName(source);
-                    const favicon = getPlatformFavicon(platformName);
+                    const favicon = getPlatformFavicon(source);
                     const title = getSourceTitle(source);
                     
                     return (

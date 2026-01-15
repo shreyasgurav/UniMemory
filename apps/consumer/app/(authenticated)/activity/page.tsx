@@ -17,6 +17,12 @@ interface ActivityEvent {
   title?: string;
   url?: string;
   platform?: string;
+  source_metadata?: {
+    favicon?: string;
+    domain?: string;
+    hostname?: string;
+    [key: string]: any;
+  };
 }
 
 export default function ActivityPage() {
@@ -77,6 +83,21 @@ export default function ActivityPage() {
       return event.platform;
     }
     
+    // Use domain from source_metadata if available
+    if (event.source_metadata?.domain) {
+      return event.source_metadata.domain;
+    }
+    
+    // Extract from URL if available
+    if (event.url) {
+      try {
+        const hostname = new URL(event.url).hostname;
+        const parts = hostname.split('.');
+        const domain = parts.length > 1 ? parts[parts.length - 2] : parts[0];
+        return domain.charAt(0).toUpperCase() + domain.slice(1);
+      } catch {}
+    }
+    
     // Legacy source detection
     const sourceApp = event.source_app || event.source || "";
     if (sourceApp.includes("chatgpt") || sourceApp.includes("chat")) return "ChatGPT";
@@ -87,68 +108,90 @@ export default function ActivityPage() {
     return "Unknown";
   };
 
-  const getSourceLogo = (sourceName: string) => {
+  const getSourceLogo = (event: ActivityEvent) => {
+    const sourceName = getSourceName(event);
+    
+    // First, try to use favicon from source_metadata
+    if (event.source_metadata?.favicon) {
+      return (
+        <img 
+          src={event.source_metadata.favicon} 
+          alt={sourceName}
+          className="w-8 h-8 rounded-lg object-cover"
+          onError={(e) => {
+            // Fallback to letter avatar
+            const target = e.currentTarget;
+            target.style.display = 'none';
+            const parent = target.parentElement;
+            if (parent) {
+              parent.innerHTML = `<div class="w-8 h-8 rounded-lg bg-neutral-200 flex items-center justify-center text-neutral-600 font-semibold text-xs">${sourceName.charAt(0).toUpperCase()}</div>`;
+            }
+          }}
+        />
+      );
+    }
+    
+    // Second, try to construct favicon URL from event URL
+    if (event.url) {
+      try {
+        const urlObj = new URL(event.url);
+        const faviconUrl = `${urlObj.origin}/favicon.ico`;
+        return (
+          <img 
+            src={faviconUrl} 
+            alt={sourceName}
+            className="w-8 h-8 rounded-lg object-cover"
+            onError={(e) => {
+              // Fallback to letter avatar
+              const target = e.currentTarget;
+              target.style.display = 'none';
+              const parent = target.parentElement;
+              if (parent) {
+                parent.innerHTML = `<div class="w-8 h-8 rounded-lg bg-neutral-200 flex items-center justify-center text-neutral-600 font-semibold text-xs">${sourceName.charAt(0).toUpperCase()}</div>`;
+              }
+            }}
+          />
+        );
+      } catch {}
+    }
+    
+    // Fallback to hardcoded favicons for known platforms
     const name = sourceName.toLowerCase();
-    if (name.includes("chatgpt")) {
-      return (
-        <img 
-          src="https://chat.openai.com/favicon.ico" 
-          alt="ChatGPT"
-          className="w-8 h-8 rounded-lg"
-          onError={(e) => {
-            e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2310A37F'%3E%3Crect width='24' height='24' rx='4'/%3E%3C/svg%3E";
-          }}
-        />
-      );
+    const knownFavicons: Record<string, string> = {
+      chatgpt: "https://chat.openai.com/favicon.ico",
+      claude: "https://claude.ai/favicon.ico",
+      cursor: "https://cursor.sh/favicon.ico",
+      windsurf: "https://www.codeium.com/favicon.ico",
+      github: "https://github.com/favicon.ico",
+      stackoverflow: "https://stackoverflow.com/favicon.ico",
+      reddit: "https://www.reddit.com/favicon.ico",
+      twitter: "https://twitter.com/favicon.ico",
+      linkedin: "https://linkedin.com/favicon.ico",
+      medium: "https://medium.com/favicon.ico",
+      notion: "https://notion.so/favicon.ico",
+    };
+    
+    for (const [key, url] of Object.entries(knownFavicons)) {
+      if (name.includes(key)) {
+        return (
+          <img 
+            src={url} 
+            alt={sourceName}
+            className="w-8 h-8 rounded-lg object-cover"
+            onError={(e) => {
+              const target = e.currentTarget;
+              target.style.display = 'none';
+              const parent = target.parentElement;
+              if (parent) {
+                parent.innerHTML = `<div class="w-8 h-8 rounded-lg bg-neutral-200 flex items-center justify-center text-neutral-600 font-semibold text-xs">${sourceName.charAt(0).toUpperCase()}</div>`;
+              }
+            }}
+          />
+        );
+      }
     }
-    if (name.includes("claude")) {
-      return (
-        <img 
-          src="https://claude.ai/favicon.ico" 
-          alt="Claude"
-          className="w-8 h-8 rounded-lg"
-          onError={(e) => {
-            e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23CC9B7A'%3E%3Crect width='24' height='24' rx='4'/%3E%3C/svg%3E";
-          }}
-        />
-      );
-    }
-    if (name.includes("cursor")) {
-      return (
-        <img 
-          src="https://cursor.sh/favicon.ico" 
-          alt="Cursor"
-          className="w-8 h-8 rounded-lg"
-          onError={(e) => {
-            e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23000000'%3E%3Crect width='24' height='24' rx='4'/%3E%3C/svg%3E";
-          }}
-        />
-      );
-    }
-    if (name.includes("windsurf")) {
-      return (
-        <img 
-          src="https://www.codeium.com/favicon.ico" 
-          alt="Windsurf"
-          className="w-8 h-8 rounded-lg"
-          onError={(e) => {
-            e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2309B6A2'%3E%3Crect width='24' height='24' rx='4'/%3E%3C/svg%3E";
-          }}
-        />
-      );
-    }
-    if (name.includes("chrome")) {
-      return (
-        <img 
-          src="https://www.google.com/chrome/static/images/chrome-logo.svg" 
-          alt="Chrome Extension"
-          className="w-8 h-8 rounded-lg"
-          onError={(e) => {
-            e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%234285F4'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3C/svg%3E";
-          }}
-        />
-      );
-    }
+    
+    // Final fallback: letter avatar
     return (
       <div className="w-8 h-8 rounded-lg bg-neutral-200 flex items-center justify-center text-neutral-600 font-semibold text-xs">
         {sourceName.charAt(0).toUpperCase()}
@@ -206,7 +249,7 @@ export default function ActivityPage() {
                     {/* Timeline Node */}
                     <div className="flex flex-col items-center relative">
                       <div className="relative z-10">
-                        {getSourceLogo(sourceName)}
+                        {getSourceLogo(event)}
                       </div>
                       {index < arr.length - 1 && (
                         <div className="absolute top-8 left-1/2 -translate-x-1/2 w-px bg-neutral-200" style={{ height: 'calc(100% + 2rem)' }} />

@@ -175,17 +175,49 @@
   }
   
   function getPageMetadata() {
+    const hostname = window.location.hostname;
+    const favicon = getFaviconUrl();
+    const domain = getDomainName(hostname);
+    
     return {
       url: window.location.href,
       title: document.title,
       platform: detectPlatform(),
+      favicon: favicon,
+      domain: domain,
+      hostname: hostname,
       timestamp: new Date().toISOString()
     };
+  }
+  
+  function getFaviconUrl() {
+    // Try to find favicon from link tags
+    const iconLink = document.querySelector('link[rel="icon"]') || 
+                     document.querySelector('link[rel="shortcut icon"]') ||
+                     document.querySelector('link[rel="apple-touch-icon"]');
+    
+    if (iconLink && iconLink.href) {
+      return iconLink.href;
+    }
+    
+    // Fallback to default favicon location
+    const origin = window.location.origin;
+    return `${origin}/favicon.ico`;
+  }
+  
+  function getDomainName(hostname) {
+    // Extract readable domain name (e.g., github.com -> GitHub)
+    const parts = hostname.split('.');
+    const domain = parts.length > 1 ? parts[parts.length - 2] : parts[0];
+    
+    // Capitalize first letter
+    return domain.charAt(0).toUpperCase() + domain.slice(1);
   }
   
   function detectPlatform() {
     const url = window.location.hostname;
     
+    // Known AI platforms
     if (url.includes('openai.com') || url.includes('chatgpt.com')) return 'ChatGPT';
     if (url.includes('claude.ai')) return 'Claude';
     if (url.includes('gemini.google.com') || url.includes('bard.google.com')) return 'Gemini';
@@ -195,7 +227,18 @@
     if (url.includes('character.ai')) return 'Character.AI';
     if (url.includes('huggingface.co')) return 'HuggingFace';
     
-    return 'Unknown AI Chat';
+    // Other known platforms
+    if (url.includes('github.com')) return 'GitHub';
+    if (url.includes('stackoverflow.com')) return 'Stack Overflow';
+    if (url.includes('reddit.com')) return 'Reddit';
+    if (url.includes('twitter.com') || url.includes('x.com')) return 'X (Twitter)';
+    if (url.includes('linkedin.com')) return 'LinkedIn';
+    if (url.includes('medium.com')) return 'Medium';
+    if (url.includes('notion.so')) return 'Notion';
+    if (url.includes('docs.google.com')) return 'Google Docs';
+    
+    // Use domain name as fallback
+    return getDomainName(url);
   }
   
   // ============ Save Functionality ============
