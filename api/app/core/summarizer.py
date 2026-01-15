@@ -24,13 +24,14 @@ class SourceSummarizer:
             max_retries=settings.OPENAI_MAX_RETRIES,
         )
     
-    async def summarize_text(self, text: str, source_type: str = "text") -> tuple[str, int]:
+    async def summarize_text(self, text: str, source_type: str = "text", metadata: dict = None) -> tuple[str, int]:
         """
         Generate a concise summary of raw content.
         
         Args:
             text: Raw content to summarize
             source_type: Type of source (text, chat, document, web, code)
+            metadata: Optional metadata with platform, url, title info
         
         Returns:
             Tuple of (summary, tokens_used)
@@ -39,15 +40,32 @@ class SourceSummarizer:
         max_chars = 8000
         truncated = text[:max_chars]
         
-        system_prompt = f"""You are a summarization assistant. Create a concise, information-dense summary of the {source_type} content.
+        # Detect if this is a conversation or a web page
+        is_conversation = self._is_conversation_content(truncated, metadata)
+        
+        if is_conversation:
+            system_prompt = f"""You are a summarization assistant. Create a concise summary of this conversation.
 
 Focus on:
-- Key facts, decisions, and insights
-- Important context and relationships
-- Actionable items or conclusions
+- Main topics discussed
+- Key decisions or conclusions reached
+- Important questions asked and answered
+- Action items or next steps
 - Technical details if relevant
 
 Keep it under 200 words but capture all essential meaning."""
+        else:
+            # Web page, document, or other content
+            content_type = self._detect_content_type(metadata)
+            system_prompt = f"""You are a summarization assistant. Create a concise summary of this {content_type}.
+
+Focus on:
+- Main purpose and key information
+- Important facts, data, or insights
+- Relevant technical details
+- Notable features or highlights
+
+Keep it under 200 words. Be factual and descriptive, not conversational."""
         
         try:
             response = await asyncio.wait_for(
@@ -107,18 +125,67 @@ Keep it under 200 words but capture all essential meaning."""
             logger.error(f"Embedding error: {e}")
             return None
     
-    async def summarize_and_embed(self, text: str, source_type: str = "text") -> tuple[str, Optional[list[float]], int]:
+    def _is_conversation_content(self, text: str, metadata: dict = None) -> bool:
+        """Detect if content is a conversation vs a web page"""
+        if not metadata:
+            # Check for conversation patterns in text
+            conversation_indicators = [
+                '"role":',  # JSON chat format
+                'user:',
+                'assistant:',
+                'Human:',
+                'AI:',
+            ]
+            return any(indicator in text[:500] for indicator in conversation_indicators)
+        
+        # Check metadata for conversation indicators
+        platform = (metadata.get('platform') or '').lower()
+        url = (metadata.get('url') or '').lower()
+        
+        conversation_platforms = ['chatgpt', 'claude', 'gemini', 'poe', 'perplexity', 'character']
+        return any(plat in platform or plat in url for plat in conversation_platforms)
+    
+    def _detect_content_type(self, metadata: dict = None) -> str:
+        """Detect the type of content from metadata"""
+        if not metadata:
+            return "content"
+        
+        platform = (metadata.get('platform') or '').lower()
+        url = (metadata.get('url') or '').lower()
+        hostname = (metadata.get('hostname') or '').lower()
+        
+        if 'github' in platform or 'github' in hostname:
+            return "GitHub page"
+        if 'stackoverflow' in hostname:
+            return "Stack Overflow page"
+        if 'reddit' in hostname:
+            return "Reddit page"
+        if 'twitter' in hostname or 'x.com' in hostname:
+            return "Twitter/X page"
+        if 'linkedin' in hostname:
+            return "LinkedIn page"
+        if 'medium' in hostname:
+            return "Medium article"
+        if 'docs.google' in hostname:
+            return "Google Docs document"
+        if 'notion' in hostname:
+            return "Notion page"
+        
+        return "web page"
+    
+    async def summarize_and_embed(self, text: str, source_type: str = "text", metadata: dict = None) -> tuple[str, Optional[list[float]], int]:
         """
         Generate summary and embedding in one call.
         
         Args:
             text: Raw content
             source_type: Type of source
+            metadata: Optional metadata with platform, url, title info
         
         Returns:
             Tuple of (summary, embedding, tokens_used)
         """
-        summary, tokens = await self.summarize_text(text, source_type)
+        summary, tokens = await self.summarize_text(text, source_type, metadata)
         embedding = await self.embed_text(summary)
         
         return summary, embedding, tokens

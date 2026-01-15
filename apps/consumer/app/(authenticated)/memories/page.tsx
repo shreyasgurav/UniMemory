@@ -70,6 +70,15 @@ export default function MemoriesPage() {
   }, [loadData]);
 
   const loadSourceDetail = async (sourceId: string) => {
+    // Set loading state immediately to show popup
+    const loadingSource = sources.find(s => s.id === sourceId);
+    if (loadingSource) {
+      setSelectedSource({
+        ...loadingSource,
+        memories: []
+      } as SourceDetail);
+    }
+    
     try {
       const token = await auth.currentUser?.getIdToken();
       if (!token) return;
@@ -81,6 +90,7 @@ export default function MemoriesPage() {
       setSelectedSource(data);
     } catch (error) {
       console.error("Failed to load source detail:", error);
+      setSelectedSource(null);
     }
   };
 

@@ -468,7 +468,12 @@ async def ingest_chat(
     #     )
     
     # Step 2: Create Source record with raw chat + summary + embedding
-    summary, summary_embedding, summary_tokens = await summarizer.summarize_and_embed(conversation, "chat")
+    # Pass metadata to help summarizer detect if this is a conversation or web page
+    summary, summary_embedding, summary_tokens = await summarizer.summarize_and_embed(
+        conversation, 
+        "chat",
+        metadata=request.source_metadata
+    )
     total_tokens += summary_tokens
     
     # Get or create end_user
@@ -498,7 +503,8 @@ async def ingest_chat(
     await session.flush()
     
     # Step 3: Extract memories
-    extraction = await extractor.extract_memories(conversation)
+    # Pass metadata to help extractor detect if this is a conversation or web page
+    extraction = await extractor.extract_memories(conversation, metadata=request.source_metadata)
     total_tokens += extraction.tokens_used
     
     if not extraction.memories:

@@ -127,15 +127,23 @@ Return JSON:
                 tokens_used=0
             )
     
-    async def extract_memories(self, text: str) -> ExtractionResult:
+    async def extract_memories(self, text: str, metadata: dict = None) -> ExtractionResult:
         """
         Extract structured memories from text
         
+        Args:
+            text: Raw content to extract from
+            metadata: Optional metadata with platform, url, title info
+        
         Returns ExtractionResult with strict schema and token tracking
         """
-        system_prompt = """You extract structured memories from user input.
+        # Detect if this is a conversation or web page
+        is_conversation = self._is_conversation_content(text, metadata)
+        
+        if is_conversation:
+            system_prompt = """You extract structured memories from a conversation.
 
-For each meaningful fact, preference, goal, or insight, create a memory.
+For each meaningful fact, preference, goal, or insight mentioned by the user, create a memory.
 
 Memory types:
 - fact: Personal facts ("User's name is John", "User lives in SF")
@@ -145,7 +153,7 @@ Memory types:
 - event: Events ("Meeting tomorrow at 3pm", "Deadline is Friday")
 - skill: Skills ("User knows Python", "User is good at design")
 - project: Projects ("User is building Cortex app", "Working on X feature")
-- insight: General insights
+- insight: General insights from the conversation
 - belief: Beliefs or values
 - instruction: How user wants things done
 
@@ -161,7 +169,34 @@ Return JSON object with memories array:
   ]
 }
 
-Extract at most 5 memories. Focus on the most important facts."""
+Extract at most 5 memories. Focus on the most important facts about the user."""
+        else:
+            # Web page or document
+            content_type = self._detect_content_type(metadata)
+            system_prompt = f"""You extract key information from a {content_type}.
+
+For each important fact, insight, or piece of information, create a memory.
+
+Memory types:
+- fact: Key facts or data points
+- insight: Important insights or takeaways
+- reference: Useful references or resources
+- technical: Technical details or specifications
+- project: Project-related information
+
+Return JSON object with memories array:
+{{
+  "memories": [
+  {{
+    "content": "Extracted fact/insight",
+    "type": "fact",
+    "confidence": 0.9,
+    "tags": ["tag1", "tag2"]
+    }}
+  ]
+}}
+
+Extract at most 5 memories. Focus on the most important and useful information from this {content_type}."""
         
         try:
             # Truncate input to prevent token overflow
@@ -229,6 +264,55 @@ Extract at most 5 memories. Focus on the most important facts."""
         except Exception as e:
             logger.error(f"Memory extraction failed: {e}")
             return ExtractionResult(memories=[], tokens_used=0, was_worth_remembering=True)
+
+
+    def _is_conversation_content(self, text: str, metadata: dict = None) -> bool:
+        """Detect if content is a conversation vs a web page"""
+        if not metadata:
+            # Check for conversation patterns in text
+            conversation_indicators = [
+                '"role":',  # JSON chat format
+                'user:',
+                'assistant:',
+                'Human:',
+                'AI:',
+            ]
+            return any(indicator in text[:500] for indicator in conversation_indicators)
+        
+        # Check metadata for conversation indicators
+        platform = (metadata.get('platform') or '').lower()
+        url = (metadata.get('url') or '').lower()
+        
+        conversation_platforms = ['chatgpt', 'claude', 'gemini', 'poe', 'perplexity', 'character']
+        return any(plat in platform or plat in url for plat in conversation_platforms)
+    
+    def _detect_content_type(self, metadata: dict = None) -> str:
+        """Detect the type of content from metadata"""
+        if not metadata:
+            return "content"
+        
+        platform = (metadata.get('platform') or '').lower()
+        url = (metadata.get('url') or '').lower()
+        hostname = (metadata.get('hostname') or '').lower()
+        
+        if 'github' in platform or 'github' in hostname:
+            return "GitHub page"
+        if 'stackoverflow' in hostname:
+            return "Stack Overflow page"
+        if 'reddit' in hostname:
+            return "Reddit page"
+        if 'twitter' in hostname or 'x.com' in hostname:
+            return "Twitter/X page"
+        if 'linkedin' in hostname:
+            return "LinkedIn page"
+        if 'medium' in hostname:
+            return "Medium article"
+        if 'docs.google' in hostname:
+            return "Google Docs document"
+        if 'notion' in hostname:
+            return "Notion page"
+        
+        return "web page"
 
 
 # Singleton instance
