@@ -23,6 +23,17 @@
       "js": ["src/content/universal.js"],
       "css": ["src/styles/extension.css"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://chat.openai.com/*",
+        "https://chatgpt.com/*",
+        "https://claude.ai/*",
+        "https://gemini.google.com/*",
+        "https://bard.google.com/*"
+      ],
+      "js": ["src/content/memory-inject.js"],
+      "run_at": "document_idle"
     }
   ],
   "action": {
@@ -37,5 +48,17 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/unimemory-logo.png"],
+      "matches": [
+        "https://chat.openai.com/*",
+        "https://chatgpt.com/*",
+        "https://claude.ai/*",
+        "https://gemini.google.com/*",
+        "https://bard.google.com/*"
+      ]
+    }
+  ]
 }

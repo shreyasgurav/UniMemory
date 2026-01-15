@@ -62,6 +62,46 @@ async function refreshSession(firebaseToken) {
   }
 }
 
+async function searchMemories(query, limit = 5) {
+  let session = await getSession();
+  
+  if (!session) {
+    throw new Error('Not authenticated');
+  }
+  
+  console.log('[UniMemory] Searching memories for:', query.substring(0, 50) + '...');
+  
+  const response = await fetch(`${API_BASE_URL}/consumer/search`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${session.token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      query: query,
+      limit: limit
+    })
+  });
+  
+  // If 401 Unauthorized, session might be expired
+  if (response.status === 401) {
+    await clearSession();
+    console.error('[UniMemory] Session expired, please log in again');
+    throw new Error('Not authenticated');
+  }
+  
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    console.error('[UniMemory] Search failed:', error);
+    throw new Error(error.detail || 'Failed to search memories');
+  }
+  
+  const result = await response.json();
+  console.log('[UniMemory] Search returned', result.results?.length || 0, 'memories');
+  
+  return result;
+}
+
 async function ingestChat(chatData) {
   let session = await getSession();
   
@@ -155,6 +195,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         
         case 'SAVE_CHAT': {
           const result = await ingestChat(message.data);
+          sendResponse({ success: true, data: result });
+          break;
+        }
+        
+        case 'SEARCH_MEMORIES': {
+          const result = await searchMemories(message.query, message.limit || 5);
           sendResponse({ success: true, data: result });
           break;
         }

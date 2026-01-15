@@ -414,6 +414,81 @@ async def update_settings(
     )
 
 
+# ============ Search Endpoints ============
+
+class ConsumerSearchRequest(BaseModel):
+    query: str
+    limit: Optional[int] = 5
+
+
+class ConsumerSearchResult(BaseModel):
+    id: str
+    content: str
+    tags: List[str]
+    salience: float
+    created_at: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class ConsumerSearchResponse(BaseModel):
+    results: List[ConsumerSearchResult]
+    total: int
+    query: str
+
+
+@router.post("/consumer/search", response_model=ConsumerSearchResponse)
+async def consumer_search(
+    request: ConsumerSearchRequest,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Search for relevant memories (Consumer API)
+    
+    Used by browser extension to retrieve memories for context injection.
+    Returns memories matching the query, ranked by relevance.
+    """
+    from app.core.search import hybrid_search
+    
+    if not request.query or not request.query.strip():
+        raise HTTPException(status_code=400, detail="Query cannot be empty")
+    
+    owner_id = str(user.id)
+    
+    try:
+        results = await hybrid_search(
+            session=session,
+            query=request.query,
+            limit=request.limit or 5,
+            user_id=None,
+            min_salience=0.0,
+            filters={"owner_id": owner_id, "debug": False}
+        )
+        
+        search_results = []
+        for result in results:
+            mem = result["memory"]
+            search_results.append(ConsumerSearchResult(
+                id=str(mem.id),
+                content=mem.content,
+                tags=mem.tags or [],
+                salience=mem.salience,
+                created_at=mem.created_at.isoformat() if mem.created_at else None
+            ))
+        
+        return ConsumerSearchResponse(
+            results=search_results,
+            total=len(search_results),
+            query=request.query
+        )
+        
+    except Exception as e:
+        logger.error(f"Consumer search failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+
+
 # ============ Chat Context Endpoints ============
 
 class ChatContextRequest(BaseModel):
