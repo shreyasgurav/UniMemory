@@ -164,7 +164,7 @@
     btn.style.cssText = `
       position: absolute;
       right: 90px;
-      bottom: 12px;
+      bottom: 10px;
       width: 36px;
       height: 36px;
       border-radius: 9999px;
@@ -177,6 +177,8 @@
       justify-content: center;
       color: #666;
       transition: all 0.2s ease;
+      outline: none;
+      box-shadow: none;
     `;
 
     btn.addEventListener('mouseenter', () => {
@@ -316,15 +318,17 @@ ${memoryText}
       bottom: 80px;
       left: 50%;
       transform: translateX(-50%);
-      background: #333;
+      background: #1a1a1a;
       color: white;
-      padding: 12px 24px;
-      border-radius: 8px;
-      font-size: 14px;
-      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      padding: 10px 20px;
+      border-radius: 9999px;
+      font-size: 13px;
+      font-weight: 500;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       z-index: 99999;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
       animation: unimemory-toast-in 0.3s ease;
+      backdrop-filter: blur(10px);
     `;
 
     document.body.appendChild(toast);
