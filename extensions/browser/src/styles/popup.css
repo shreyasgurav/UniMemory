@@ -13,6 +13,10 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: #ffffff;
   color: #171717;
+  border: none;
+  box-shadow: none;
+  border-radius: 20px;
+  overflow: hidden;
 }
 
 #app {
@@ -60,7 +64,7 @@ body {
   height: 56px;
   margin: 0 auto 20px;
   background: #171717;
-  border-radius: 14px;
+  border-radius: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -93,7 +97,7 @@ body {
   gap: 8px;
   padding: 12px 20px;
   border: none;
-  border-radius: 10px;
+  border-radius: 14px;
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
@@ -154,7 +158,7 @@ body {
   padding: 0;
   background: transparent;
   border: none;
-  border-radius: 8px;
+  border-radius: 12px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -236,8 +240,8 @@ body {
   margin-bottom: 20px;
   padding: 16px;
   background: #f7fafc;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  border: none;
 }
 
 .page-info h3 {
@@ -265,14 +269,14 @@ body {
 .save-button-container .btn {
   width: auto;
   padding: 10px 24px;
-  border-radius: 10px;
+  border-radius: 14px;
 }
 
 /* Status Message */
 .status-message {
   margin-top: 16px;
   padding: 12px;
-  border-radius: 8px;
+  border-radius: 14px;
   font-size: 13px;
   text-align: center;
 }
@@ -325,8 +329,8 @@ body {
   justify-content: space-between;
   padding: 14px;
   background: #f7fafc;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  border: none;
 }
 
 .setting-info {
@@ -353,7 +357,7 @@ body {
   gap: 12px;
   padding: 12px;
   background: #f7fafc;
-  border-radius: 12px;
+  border-radius: 16px;
   margin-bottom: 12px;
 }
 
