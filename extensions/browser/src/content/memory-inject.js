@@ -160,13 +160,36 @@
 
     const btn = createButton();
     
-    // Position button (moved left to avoid dictate button)
+    // Platform-specific positioning and sizing
+    let positionStyle = '';
+    let buttonSize = '36px';
+    
+    if (currentPlatform === 'claude') {
+      // Claude: position on left side after + and clock icons, smaller size
+      positionStyle = `
+        left: 100px;
+        bottom: 10px;
+      `;
+      buttonSize = '32px';
+    } else if (currentPlatform === 'gemini') {
+      // Gemini: position on right side near tools section
+      positionStyle = `
+        right: 120px;
+        bottom: 10px;
+      `;
+    } else {
+      // ChatGPT: position on right side before dictate button
+      positionStyle = `
+        right: 90px;
+        bottom: 10px;
+      `;
+    }
+    
     btn.style.cssText = `
       position: absolute;
-      right: 90px;
-      bottom: 10px;
-      width: 36px;
-      height: 36px;
+      ${positionStyle}
+      width: ${buttonSize};
+      height: ${buttonSize};
       border-radius: 9999px;
       border: none;
       background: transparent;
