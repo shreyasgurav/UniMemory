@@ -109,7 +109,8 @@ def generate_mcp_token() -> tuple[str, str, str]:
 async def create_mcp_tokens_for_user(user_id: str, session: AsyncSession) -> list[MCPToken]:
     """
     Create MCP tokens for all supported clients for a user.
-    Returns list of created tokens.
+    Also backfills token_value for existing tokens that don't have it.
+    Returns list of created/updated tokens.
     """
     created_tokens = []
     
@@ -122,7 +123,16 @@ async def create_mcp_tokens_for_user(user_id: str, session: AsyncSession) -> lis
         result = await session.execute(stmt)
         existing = result.scalar_one_or_none()
         
-        if not existing:
+        if existing:
+            # Backfill token_value if it's missing
+            if not existing.token_value:
+                token, token_hash, token_prefix = generate_mcp_token()
+                existing.token_hash = token_hash
+                existing.token_prefix = token_prefix
+                existing.token_value = token
+                created_tokens.append(existing)
+        else:
+            # Create new token
             token, token_hash, token_prefix = generate_mcp_token()
             mcp_token = MCPToken(
                 user_id=user_id,
