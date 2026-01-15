@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { X } from "lucide-react";
+import { Trash2, X } from "lucide-react";
 import { auth } from "@/lib/firebase";
 
 interface Source {
@@ -83,8 +83,15 @@ export default function MemoriesPage() {
   };
 
   const getSourceTitle = (source: Source) => {
+    // Use title if available
     if (source.title) return source.title;
-    if (source.type === "chat") return "ChatGPT";
+    
+    // Try to get platform from source metadata
+    const metadata = (source as any).source_metadata || {};
+    if (metadata.platform) return metadata.platform;
+    
+    // Fallback to type
+    if (source.type === "chat") return "Chat";
     return source.type.charAt(0).toUpperCase() + source.type.slice(1);
   };
 
@@ -136,7 +143,7 @@ export default function MemoriesPage() {
               ))}
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="columns-1 md:columns-2 lg:columns-3 gap-4 space-y-4">
               {sources.length === 0 && memories.length === 0 ? (
                 <div className="col-span-full bg-white rounded-xl p-16 text-center">
                   <p className="text-neutral-700 font-medium text-lg">No memories yet</p>
@@ -147,45 +154,58 @@ export default function MemoriesPage() {
               ) : (
                 <>
                   {sources.map((source) => (
-                    <div key={source.id} className="bg-white rounded-xl p-5 hover:shadow-md transition-all relative group">
-                      <button
-                        onClick={() => setDeleteConfirm({ type: 'source', id: source.id })}
-                        className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-neutral-400 hover:text-neutral-600"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => loadSourceDetail(source.id)}
-                        className="text-left w-full"
-                      >
-                        <h3 className="text-neutral-900 font-semibold mb-2 text-base">
-                          {getSourceTitle(source)}
-                        </h3>
-                        <p className="text-neutral-600 text-sm mb-2 line-clamp-3 leading-relaxed">
-                          {source.summary || "No summary available"}
-                        </p>
-                        <div className="text-xs text-neutral-400">
-                          {new Date(source.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                        </div>
-                      </button>
+                    <div key={source.id} className="break-inside-avoid mb-4">
+                      <div className="bg-white rounded-xl p-5 hover:shadow-lg transition-all relative group border border-neutral-100">
+                        <button
+                          onClick={() => setDeleteConfirm({ type: 'source', id: source.id })}
+                          className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-neutral-400 hover:text-red-500"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => loadSourceDetail(source.id)}
+                          className="text-left w-full"
+                        >
+                          <h3 className="text-neutral-900 font-semibold mb-2 text-base pr-8">
+                            {getSourceTitle(source)}
+                          </h3>
+                          <p className="text-neutral-600 text-sm mb-3 leading-relaxed line-clamp-4">
+                            {source.summary || "No summary available"}
+                          </p>
+                          <div className="flex items-center gap-2 text-xs text-neutral-400">
+                            <span>{new Date(source.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                            {source.memory_count !== undefined && (
+                              <>
+                                <span>•</span>
+                                <span>{source.memory_count} {source.memory_count === 1 ? 'memory' : 'memories'}</span>
+                              </>
+                            )}
+                          </div>
+                        </button>
+                      </div>
                     </div>
                   ))}
                   {memories.map((memory) => (
-                    <div
-                      key={memory.id}
-                      className="bg-white rounded-xl p-5 hover:shadow-md transition-all relative group"
-                    >
-                      <button
-                        onClick={() => setDeleteConfirm({ type: 'memory', id: memory.id })}
-                        className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-neutral-400 hover:text-neutral-600"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                      <p className="text-neutral-900 text-sm font-medium mb-3 leading-relaxed pr-6">
-                        {memory.content}
-                      </p>
-                      <div className="text-xs text-neutral-400">
-                        {new Date(memory.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    <div key={memory.id} className="break-inside-avoid mb-4">
+                      <div className="bg-white rounded-xl p-5 hover:shadow-lg transition-all relative group border border-neutral-100">
+                        <button
+                          onClick={() => setDeleteConfirm({ type: 'memory', id: memory.id })}
+                          className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-neutral-400 hover:text-red-500"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                        <p className="text-neutral-900 text-sm font-medium mb-3 leading-relaxed pr-8 line-clamp-6">
+                          {memory.content}
+                        </p>
+                        <div className="flex items-center gap-2 text-xs text-neutral-400">
+                          <span>{new Date(memory.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                          {memory.sector && (
+                            <>
+                              <span>•</span>
+                              <span className="capitalize">{memory.sector}</span>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))}
