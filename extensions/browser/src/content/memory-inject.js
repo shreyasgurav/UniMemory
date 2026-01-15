@@ -106,6 +106,30 @@
     
     btn.appendChild(img);
     btn.className = 'unimemory-inject-button';
+    
+    // Create tooltip
+    const tooltip = document.createElement('div');
+    tooltip.className = 'unimemory-tooltip';
+    tooltip.textContent = 'Add memories';
+    tooltip.style.cssText = `
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 50%;
+      transform: translateX(-50%) scale(0.9);
+      background: #1f1f1f;
+      color: white;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      white-space: nowrap;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.2s ease;
+      z-index: 10000;
+    `;
+    btn.appendChild(tooltip);
+    
     return btn;
   }
 
@@ -157,13 +181,23 @@
 
     btn.addEventListener('mouseenter', () => {
       if (!isLoading) {
-        btn.style.opacity = '0.7';
+        btn.style.background = 'rgba(0, 0, 0, 0.1)';
+        const tooltip = btn.querySelector('.unimemory-tooltip');
+        if (tooltip) {
+          tooltip.style.opacity = '1';
+          tooltip.style.transform = 'translateX(-50%) scale(1)';
+        }
       }
     });
 
     btn.addEventListener('mouseleave', () => {
       if (!isLoading) {
-        btn.style.opacity = '1';
+        btn.style.background = 'transparent';
+        const tooltip = btn.querySelector('.unimemory-tooltip');
+        if (tooltip) {
+          tooltip.style.opacity = '0';
+          tooltip.style.transform = 'translateX(-50%) scale(0.9)';
+        }
       }
     });
 
