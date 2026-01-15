@@ -165,9 +165,9 @@
       position: absolute;
       right: 90px;
       bottom: 12px;
-      width: 32px;
-      height: 32px;
-      border-radius: 8px;
+      width: 36px;
+      height: 36px;
+      border-radius: 9999px;
       border: none;
       background: transparent;
       cursor: pointer;
@@ -181,7 +181,7 @@
 
     btn.addEventListener('mouseenter', () => {
       if (!isLoading) {
-        btn.style.background = 'rgba(0, 0, 0, 0.1)';
+        btn.style.background = '#454545';
         const tooltip = btn.querySelector('.unimemory-tooltip');
         if (tooltip) {
           tooltip.style.opacity = '1';
