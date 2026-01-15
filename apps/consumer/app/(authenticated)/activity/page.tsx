@@ -198,7 +198,8 @@ export default function ActivityPage() {
                 .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
               ).map((event, index, arr) => {
                 const sourceName = getSourceName(event);
-                const rawPreview = event.raw_preview || "";
+                const rawPreview = event.details || event.raw_preview || "";
+                const truncatedPreview = rawPreview.length > 100 ? rawPreview.substring(0, 100) + "..." : rawPreview;
                 
                 return (
                   <div key={event.id} className="flex gap-4 relative">
@@ -218,11 +219,6 @@ export default function ActivityPage() {
                         <h3 className="text-base font-semibold text-neutral-900">
                           {sourceName}
                         </h3>
-                        {event.memory_count !== undefined && event.memory_count > 0 && (
-                          <span className="text-sm text-neutral-500">
-                            {event.memory_count} {event.memory_count === 1 ? "memory" : "memories"}
-                          </span>
-                        )}
                       </div>
                       {event.title && (
                         <p className="text-sm font-medium text-neutral-700 mb-1">
@@ -240,9 +236,9 @@ export default function ActivityPage() {
                           )}
                         </p>
                       )}
-                      {rawPreview && (
-                        <p className="text-sm text-neutral-600 mb-2 leading-relaxed line-clamp-2">
-                          {rawPreview}
+                      {truncatedPreview && (
+                        <p className="text-sm text-neutral-600 mb-2 leading-relaxed">
+                          {truncatedPreview}
                         </p>
                       )}
                       <p className="text-xs text-neutral-400">

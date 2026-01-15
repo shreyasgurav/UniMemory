@@ -511,20 +511,8 @@ async def get_activity_feed(
         url = metadata.get("url")
         title = source.title or metadata.get("title")
         
-        # Extract raw content preview
-        raw_preview = ""
-        if source.raw_content:
-            if isinstance(source.raw_content, dict):
-                # For chat sources, extract first message content
-                if "messages" in source.raw_content and source.raw_content["messages"]:
-                    first_msg = source.raw_content["messages"][0]
-                    if isinstance(first_msg, dict) and "content" in first_msg:
-                        raw_preview = first_msg["content"]
-                # For other structured content, try to get text
-                elif "text" in source.raw_content:
-                    raw_preview = source.raw_content["text"]
-            elif isinstance(source.raw_content, str):
-                raw_preview = source.raw_content
+        # Build details string (do not include title in details per UX request)
+        details = f"Saved {mem_count} memories"
         
         events.append(ActivityEvent(
             id=str(source.id),
@@ -532,13 +520,12 @@ async def get_activity_feed(
             source=source.source_app or "unknown",
             agent=None,
             memory_count=mem_count,
-            details=None,
+            details=details,
             tool_name=None,
             created_at=str(source.created_at),
             title=title,
             url=url,
-            platform=platform,
-            raw_preview=raw_preview
+            platform=platform
         ))
     
     # Get processing logs
