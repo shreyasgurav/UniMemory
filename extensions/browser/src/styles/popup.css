@@ -132,10 +132,20 @@ body {
   background: #edf2f7;
 }
 
+.btn-danger {
+  background: #fc8181;
+  color: white;
+  border: 1px solid #f56565;
+}
+
+.btn-danger:hover {
+  background: #f56565;
+}
+
 .btn-small {
   padding: 8px 16px;
   font-size: 13px;
-  width: 100%;
+  flex: 1;
 }
 
 .btn-icon {
@@ -167,24 +177,19 @@ body {
 .header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   padding: 16px 20px;
-  border-bottom: 1px solid #e2e8f0;
 }
 
 .logo-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 18px;
-  font-weight: 600;
-  color: #1a202c;
+  justify-content: center;
 }
 
-.logo-header svg {
-  width: 24px;
+.logo-image {
   height: 24px;
-  color: #4a5568;
+  width: auto;
 }
 
 /* Tabs */
@@ -231,7 +236,7 @@ body {
   margin-bottom: 20px;
   padding: 16px;
   background: #f7fafc;
-  border-radius: 10px;
+  border-radius: 12px;
   border: 1px solid #e2e8f0;
 }
 
@@ -250,33 +255,17 @@ body {
   white-space: nowrap;
 }
 
-/* Project Selector */
-.project-selector {
-  margin-bottom: 20px;
+/* Save Button Container */
+.save-button-container {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 20px;
 }
 
-.project-selector label {
-  display: block;
-  font-size: 13px;
-  font-weight: 500;
-  color: #4a5568;
-  margin-bottom: 8px;
-}
-
-.project-selector select {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  font-size: 14px;
-  color: #2d3748;
-  background: white;
-  cursor: pointer;
-}
-
-.project-selector select:focus {
-  outline: none;
-  border-color: #4a5568;
+.save-button-container .btn {
+  width: auto;
+  padding: 10px 24px;
+  border-radius: 10px;
 }
 
 /* Status Message */
@@ -336,7 +325,7 @@ body {
   justify-content: space-between;
   padding: 14px;
   background: #f7fafc;
-  border-radius: 10px;
+  border-radius: 12px;
   border: 1px solid #e2e8f0;
 }
 
@@ -364,8 +353,13 @@ body {
   gap: 12px;
   padding: 12px;
   background: #f7fafc;
-  border-radius: 10px;
+  border-radius: 12px;
   margin-bottom: 12px;
+}
+
+.settings-buttons {
+  display: flex;
+  gap: 8px;
 }
 
 .avatar-small {
