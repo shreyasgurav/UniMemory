@@ -7,7 +7,9 @@ NO API keys - uses Firebase auth only.
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 import os
-from fastapi import APIRouter, Depends, HTTPException
+import jwt
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, update, or_, and_
 from pydantic import BaseModel, Field
@@ -20,6 +22,84 @@ from app.core.embeddings import get_embedding_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# Security scheme for consumer session tokens
+consumer_security = HTTPBearer(auto_error=False)
+
+
+async def verify_consumer_session_token(
+    credentials: HTTPAuthorizationCredentials = Depends(consumer_security),
+    session: AsyncSession = Depends(get_db)
+) -> User:
+    """
+    Verify consumer session token (JWT) from Chrome extension.
+    
+    This is different from Firebase auth - the extension exchanges a Firebase token
+    for a short-lived consumer session token, which is then used for API calls.
+    """
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header required"
+        )
+    
+    token = credentials.credentials
+    secret_key = os.environ.get("JWT_SECRET_KEY", "unimemory-consumer-secret-key")
+    
+    try:
+        # Decode and verify JWT
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
+        
+        # Check token type
+        if payload.get("type") != "consumer_session":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token type"
+            )
+        
+        # Get user from database
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token payload"
+            )
+        
+        result = await session.execute(
+            select(User).where(User.id == user_id)
+        )
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found"
+            )
+        
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="User account is deactivated"
+            )
+        
+        return user
+        
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session token expired"
+        )
+    except jwt.InvalidTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid session token"
+        )
+    except Exception as e:
+        logger.error(f"Session token verification failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token verification failed"
+        )
 
 
 # ============ Response Models ============
@@ -441,7 +521,7 @@ class ConsumerSearchResponse(BaseModel):
 @router.post("/consumer/search", response_model=ConsumerSearchResponse)
 async def consumer_search(
     request: ConsumerSearchRequest,
-    user: User = Depends(get_current_user),
+    user: User = Depends(verify_consumer_session_token),
     session: AsyncSession = Depends(get_db)
 ):
     """

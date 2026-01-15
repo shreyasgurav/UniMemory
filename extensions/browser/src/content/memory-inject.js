@@ -107,19 +107,19 @@
     btn.appendChild(img);
     btn.className = 'unimemory-inject-button';
     
-    // Create tooltip
+    // Create tooltip (placed below the button)
     const tooltip = document.createElement('div');
     tooltip.className = 'unimemory-tooltip';
     tooltip.textContent = 'Add memories';
     tooltip.style.cssText = `
       position: absolute;
-      bottom: calc(100% + 8px);
+      top: calc(100% + 8px);
       left: 50%;
       transform: translateX(-50%) scale(0.9);
-      background: #1f1f1f;
+      background: #000;
       color: white;
       padding: 6px 12px;
-      border-radius: 6px;
+      border-radius: 9999px;
       font-size: 12px;
       font-family: -apple-system, BlinkMacSystemFont, sans-serif;
       white-space: nowrap;
