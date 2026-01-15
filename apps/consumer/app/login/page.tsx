@@ -46,7 +46,7 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex">
       {/* Left Side - Login Form */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-white">
+      <div className="w-full lg:w-3/5 flex items-center justify-center p-8 bg-white">
         <div className="max-w-md w-full">
           {/* Logo */}
           <div className="mb-12">
@@ -81,91 +81,18 @@ export default function LoginPage() {
 
           {/* Terms */}
           <p className="text-xs text-neutral-400 mt-8">
-            By continuing, you agree to our Terms of Service and Privacy Policy
+            Unified Memory for all your AI applications.
           </p>
         </div>
       </div>
 
-      {/* Right Side - Orbital Design */}
-      <div className="hidden lg:block lg:w-1/2 relative overflow-hidden bg-black">
-        <div className="absolute inset-0 flex items-center justify-center">
-          {/* Orbital Rings */}
-          <div className="relative w-[600px] h-[600px]">
-            {/* Ring 1 - Innermost */}
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-[200px] h-[200px] rounded-full border border-neutral-800"></div>
-            </div>
-            
-            {/* Ring 2 */}
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-[350px] h-[350px] rounded-full border border-neutral-800"></div>
-            </div>
-            
-            {/* Ring 3 */}
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-[500px] h-[500px] rounded-full border border-neutral-800"></div>
-            </div>
-            
-            {/* Ring 4 - Outermost */}
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-[600px] h-[600px] rounded-full border border-neutral-800"></div>
-            </div>
-
-            {/* Center - UniMemory Logo */}
-            <div className="absolute inset-0 flex items-center justify-center z-20">
-              <div className="w-36 h-36 bg-neutral-900 rounded-full flex items-center justify-center border-2 border-neutral-700 shadow-2xl">
-                <img 
-                  src="/unimemory-white.png" 
-                  alt="UniMemory" 
-                  className="w-24 h-auto"
-                />
-              </div>
-            </div>
-
-            {/* AI Company Logos on Orbits */}
-            {/* Ring 2 - 2 logos (radius 175px) */}
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-              <div className="absolute w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-lg" style={{ transform: 'translate(0px, -175px) translate(-50%, -50%)' }}>
-                <img src="https://chat.openai.com/favicon.ico" alt="ChatGPT" className="w-9 h-9 object-contain" />
-              </div>
-              <div className="absolute w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-lg" style={{ transform: 'translate(0px, 175px) translate(-50%, -50%)' }}>
-                <img src="https://claude.ai/favicon.ico" alt="Claude" className="w-9 h-9 object-contain" />
-              </div>
-            </div>
-
-            {/* Ring 3 - 4 logos (radius 250px) */}
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-              <div className="absolute w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-lg" style={{ transform: 'translate(0px, -250px) translate(-50%, -50%)' }}>
-                <img src="https://gemini.google.com/favicon.ico" alt="Gemini" className="w-9 h-9 object-contain" />
-              </div>
-              <div className="absolute w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-lg" style={{ transform: 'translate(250px, 0px) translate(-50%, -50%)' }}>
-                <img src="https://www.perplexity.ai/favicon.ico" alt="Perplexity" className="w-9 h-9 object-contain" />
-              </div>
-              <div className="absolute w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-lg" style={{ transform: 'translate(0px, 250px) translate(-50%, -50%)' }}>
-                <img src="https://you.com/favicon.ico" alt="You.com" className="w-9 h-9 object-contain" />
-              </div>
-              <div className="absolute w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-lg" style={{ transform: 'translate(-250px, 0px) translate(-50%, -50%)' }}>
-                <img src="https://www.anthropic.com/favicon.ico" alt="Anthropic" className="w-9 h-9 object-contain" />
-              </div>
-            </div>
-
-            {/* Ring 4 - 4 logos (radius 300px) */}
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-              <div className="absolute w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-lg" style={{ transform: 'translate(212px, -212px) translate(-50%, -50%)' }}>
-                <img src="https://huggingface.co/favicon.ico" alt="HuggingFace" className="w-9 h-9 object-contain" />
-              </div>
-              <div className="absolute w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-lg" style={{ transform: 'translate(212px, 212px) translate(-50%, -50%)' }}>
-                <img src="https://poe.com/favicon.ico" alt="Poe" className="w-9 h-9 object-contain" />
-              </div>
-              <div className="absolute w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-lg" style={{ transform: 'translate(-212px, 212px) translate(-50%, -50%)' }}>
-                <img src="https://character.ai/favicon.ico" alt="Character.AI" className="w-9 h-9 object-contain" />
-              </div>
-              <div className="absolute w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-lg" style={{ transform: 'translate(-212px, -212px) translate(-50%, -50%)' }}>
-                <img src="https://mistral.ai/favicon.ico" alt="Mistral" className="w-9 h-9 object-contain" />
-              </div>
-            </div>
-          </div>
-        </div>
+      {/* Right Side - Static Image */}
+      <div className="hidden lg:block lg:w-2/5 relative overflow-hidden bg-black">
+        <img 
+          src="/Unimemory-LoginPage-Image.png" 
+          alt="UniMemory Login Visual" 
+          className="absolute inset-0 w-full h-full object-contain object-right"
+        />
       </div>
     </div>
   );
