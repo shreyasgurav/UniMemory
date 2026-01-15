@@ -247,8 +247,11 @@ export default function MemoriesPage() {
                       <div key={source.id} className="break-inside-avoid mb-4">
                         <div className="bg-white rounded-xl p-5 hover:shadow-lg transition-all relative group border border-neutral-100">
                           <button
-                            onClick={() => setDeleteConfirm({ type: 'source', id: source.id })}
-                            className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-neutral-400 hover:text-red-500"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteConfirm({ type: 'source', id: source.id });
+                            }}
+                            className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-neutral-400 hover:text-red-500 z-10"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -296,8 +299,11 @@ export default function MemoriesPage() {
                     <div key={memory.id} className="break-inside-avoid mb-4">
                       <div className="bg-white rounded-xl p-5 hover:shadow-lg transition-all relative group border border-neutral-100">
                         <button
-                          onClick={() => setDeleteConfirm({ type: 'memory', id: memory.id })}
-                          className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-neutral-400 hover:text-red-500"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteConfirm({ type: 'memory', id: memory.id });
+                          }}
+                          className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-neutral-400 hover:text-red-500 z-10"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
