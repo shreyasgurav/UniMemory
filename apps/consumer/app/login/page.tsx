@@ -86,18 +86,86 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* Right Side - Decorative Background */}
-      <div className="hidden lg:block lg:w-1/2 relative overflow-hidden bg-gradient-to-br from-blue-600 via-purple-600 to-pink-500">
-        <div className="absolute inset-0 bg-black/20"></div>
+      {/* Right Side - Orbital Design */}
+      <div className="hidden lg:block lg:w-1/2 relative overflow-hidden bg-black">
         <div className="absolute inset-0 flex items-center justify-center">
-          <div className="text-white text-center px-12">
-            <h2 className="text-4xl font-bold mb-4">Your personal memory layer</h2>
-            <p className="text-lg text-white/90">Save, search, and recall anything with AI-powered memory</p>
+          {/* Orbital Rings */}
+          <div className="relative w-[600px] h-[600px]">
+            {/* Ring 1 - Innermost */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="w-[200px] h-[200px] rounded-full border border-neutral-800"></div>
+            </div>
+            
+            {/* Ring 2 */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="w-[350px] h-[350px] rounded-full border border-neutral-800"></div>
+            </div>
+            
+            {/* Ring 3 */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="w-[500px] h-[500px] rounded-full border border-neutral-800"></div>
+            </div>
+            
+            {/* Ring 4 - Outermost */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="w-[600px] h-[600px] rounded-full border border-neutral-800"></div>
+            </div>
+
+            {/* Center - UniMemory Logo */}
+            <div className="absolute inset-0 flex items-center justify-center z-20">
+              <div className="w-36 h-36 bg-neutral-900 rounded-full flex items-center justify-center border-2 border-neutral-700 shadow-2xl">
+                <img 
+                  src="/unimemory-white.png" 
+                  alt="UniMemory" 
+                  className="w-24 h-auto"
+                />
+              </div>
+            </div>
+
+            {/* AI Company Logos on Orbits */}
+            {/* Ring 2 - 2 logos (radius 175px) */}
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+              <div className="absolute w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-lg" style={{ transform: 'translate(0px, -175px) translate(-50%, -50%)' }}>
+                <img src="https://chat.openai.com/favicon.ico" alt="ChatGPT" className="w-9 h-9 object-contain" />
+              </div>
+              <div className="absolute w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-lg" style={{ transform: 'translate(0px, 175px) translate(-50%, -50%)' }}>
+                <img src="https://claude.ai/favicon.ico" alt="Claude" className="w-9 h-9 object-contain" />
+              </div>
+            </div>
+
+            {/* Ring 3 - 4 logos (radius 250px) */}
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+              <div className="absolute w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-lg" style={{ transform: 'translate(0px, -250px) translate(-50%, -50%)' }}>
+                <img src="https://gemini.google.com/favicon.ico" alt="Gemini" className="w-9 h-9 object-contain" />
+              </div>
+              <div className="absolute w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-lg" style={{ transform: 'translate(250px, 0px) translate(-50%, -50%)' }}>
+                <img src="https://www.perplexity.ai/favicon.ico" alt="Perplexity" className="w-9 h-9 object-contain" />
+              </div>
+              <div className="absolute w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-lg" style={{ transform: 'translate(0px, 250px) translate(-50%, -50%)' }}>
+                <img src="https://you.com/favicon.ico" alt="You.com" className="w-9 h-9 object-contain" />
+              </div>
+              <div className="absolute w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-lg" style={{ transform: 'translate(-250px, 0px) translate(-50%, -50%)' }}>
+                <img src="https://www.anthropic.com/favicon.ico" alt="Anthropic" className="w-9 h-9 object-contain" />
+              </div>
+            </div>
+
+            {/* Ring 4 - 4 logos (radius 300px) */}
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+              <div className="absolute w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-lg" style={{ transform: 'translate(212px, -212px) translate(-50%, -50%)' }}>
+                <img src="https://huggingface.co/favicon.ico" alt="HuggingFace" className="w-9 h-9 object-contain" />
+              </div>
+              <div className="absolute w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-lg" style={{ transform: 'translate(212px, 212px) translate(-50%, -50%)' }}>
+                <img src="https://poe.com/favicon.ico" alt="Poe" className="w-9 h-9 object-contain" />
+              </div>
+              <div className="absolute w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-lg" style={{ transform: 'translate(-212px, 212px) translate(-50%, -50%)' }}>
+                <img src="https://character.ai/favicon.ico" alt="Character.AI" className="w-9 h-9 object-contain" />
+              </div>
+              <div className="absolute w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-lg" style={{ transform: 'translate(-212px, -212px) translate(-50%, -50%)' }}>
+                <img src="https://mistral.ai/favicon.ico" alt="Mistral" className="w-9 h-9 object-contain" />
+              </div>
+            </div>
           </div>
         </div>
-        {/* Decorative Elements */}
-        <div className="absolute top-20 left-20 w-64 h-64 bg-white/10 rounded-full blur-3xl"></div>
-        <div className="absolute bottom-20 right-20 w-96 h-96 bg-white/10 rounded-full blur-3xl"></div>
       </div>
     </div>
   );
