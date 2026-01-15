@@ -198,8 +198,7 @@ export default function ActivityPage() {
                 .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
               ).map((event, index, arr) => {
                 const sourceName = getSourceName(event);
-                const rawPreview = event.details || event.raw_preview || "";
-                const truncatedPreview = rawPreview.length > 100 ? rawPreview.substring(0, 100) + "..." : rawPreview;
+                const rawPreview = event.raw_preview || "";
                 
                 return (
                   <div key={event.id} className="flex gap-4 relative">
@@ -241,9 +240,9 @@ export default function ActivityPage() {
                           )}
                         </p>
                       )}
-                      {truncatedPreview && (
-                        <p className="text-sm text-neutral-600 mb-2 leading-relaxed">
-                          {truncatedPreview}
+                      {rawPreview && (
+                        <p className="text-sm text-neutral-600 mb-2 leading-relaxed line-clamp-2">
+                          {rawPreview}
                         </p>
                       )}
                       <p className="text-xs text-neutral-400">
