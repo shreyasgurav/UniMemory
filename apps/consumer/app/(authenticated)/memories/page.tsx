@@ -12,6 +12,8 @@ interface Source {
   raw_content: any;
   created_at: string;
   memory_count?: number;
+  source_app?: string;
+  source_metadata?: any;
 }
 
 interface Memory {
@@ -83,16 +85,40 @@ export default function MemoriesPage() {
   };
 
   const getSourceTitle = (source: Source) => {
-    // Use title if available
+    // Prioritize actual title from source or metadata
     if (source.title) return source.title;
     
-    // Try to get platform from source metadata
-    const metadata = (source as any).source_metadata || {};
-    if (metadata.platform) return metadata.platform;
+    const metadata = source.source_metadata || {};
+    if (metadata.title) return metadata.title;
     
-    // Fallback to type
-    if (source.type === "chat") return "Chat";
-    return source.type.charAt(0).toUpperCase() + source.type.slice(1);
+    // Fallback to generic label (not platform name)
+    if (source.type === "chat") return "Untitled Chat";
+    return "Untitled " + source.type.charAt(0).toUpperCase() + source.type.slice(1);
+  };
+
+  const getPlatformName = (source: Source) => {
+    const metadata = (source as any).source_metadata || {};
+    return metadata.platform || source.source_app || "Unknown";
+  };
+
+  const getPlatformFavicon = (platformName: string) => {
+    const name = platformName.toLowerCase();
+    if (name.includes("chatgpt") || name.includes("openai")) {
+      return "https://chat.openai.com/favicon.ico";
+    }
+    if (name.includes("claude")) {
+      return "https://claude.ai/favicon.ico";
+    }
+    if (name.includes("gemini") || name.includes("bard")) {
+      return "https://gemini.google.com/favicon.ico";
+    }
+    if (name.includes("perplexity")) {
+      return "https://www.perplexity.ai/favicon.ico";
+    }
+    if (name.includes("you.com")) {
+      return "https://you.com/favicon.ico";
+    }
+    return null;
   };
 
   const handleDelete = async () => {
@@ -137,9 +163,11 @@ export default function MemoriesPage() {
       <div className="flex-1 overflow-y-auto p-8 bg-neutral-50">
         <div className="max-w-6xl mx-auto">
           {loading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="columns-1 md:columns-2 lg:columns-3 gap-4 space-y-4">
               {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="bg-neutral-200 rounded-xl h-32 animate-pulse" />
+                <div key={i} className="break-inside-avoid mb-4">
+                  <div className="bg-neutral-200 rounded-xl animate-pulse" style={{ height: `${120 + Math.random() * 80}px` }} />
+                </div>
               ))}
             </div>
           ) : (
@@ -153,38 +181,60 @@ export default function MemoriesPage() {
                 </div>
               ) : (
                 <>
-                  {sources.map((source) => (
-                    <div key={source.id} className="break-inside-avoid mb-4">
-                      <div className="bg-white rounded-xl p-5 hover:shadow-lg transition-all relative group border border-neutral-100">
-                        <button
-                          onClick={() => setDeleteConfirm({ type: 'source', id: source.id })}
-                          className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-neutral-400 hover:text-red-500"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => loadSourceDetail(source.id)}
-                          className="text-left w-full"
-                        >
-                          <h3 className="text-neutral-900 font-semibold mb-2 text-base pr-8">
-                            {getSourceTitle(source)}
-                          </h3>
-                          <p className="text-neutral-600 text-sm mb-3 leading-relaxed line-clamp-4">
-                            {source.summary || "No summary available"}
-                          </p>
-                          <div className="flex items-center gap-2 text-xs text-neutral-400">
-                            <span>{new Date(source.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                            {source.memory_count !== undefined && (
-                              <>
-                                <span>•</span>
-                                <span>{source.memory_count} {source.memory_count === 1 ? 'memory' : 'memories'}</span>
-                              </>
-                            )}
-                          </div>
-                        </button>
+                  {sources.map((source) => {
+                    const platformName = getPlatformName(source);
+                    const favicon = getPlatformFavicon(platformName);
+                    const title = getSourceTitle(source);
+                    
+                    return (
+                      <div key={source.id} className="break-inside-avoid mb-4">
+                        <div className="bg-white rounded-xl p-5 hover:shadow-lg transition-all relative group border border-neutral-100">
+                          <button
+                            onClick={() => setDeleteConfirm({ type: 'source', id: source.id })}
+                            className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-neutral-400 hover:text-red-500"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => loadSourceDetail(source.id)}
+                            className="text-left w-full"
+                          >
+                            <div className="flex items-center gap-2 mb-2">
+                              {favicon ? (
+                                <img 
+                                  src={favicon} 
+                                  alt={platformName}
+                                  className="w-5 h-5 rounded"
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = 'none';
+                                  }}
+                                />
+                              ) : (
+                                <div className="w-5 h-5 rounded bg-neutral-200 flex items-center justify-center text-neutral-600 text-xs font-semibold">
+                                  {platformName.charAt(0).toUpperCase()}
+                                </div>
+                              )}
+                              <h3 className="text-neutral-900 font-semibold text-base pr-8 flex-1">
+                                {title}
+                              </h3>
+                            </div>
+                            <p className="text-neutral-600 text-sm mb-3 leading-relaxed line-clamp-4">
+                              {source.summary || "No summary available"}
+                            </p>
+                            <div className="flex items-center gap-2 text-xs text-neutral-400">
+                              <span>{new Date(source.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                              {source.memory_count !== undefined && (
+                                <>
+                                  <span>•</span>
+                                  <span>{source.memory_count} {source.memory_count === 1 ? 'memory' : 'memories'}</span>
+                                </>
+                              )}
+                            </div>
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                   {memories.map((memory) => (
                     <div key={memory.id} className="break-inside-avoid mb-4">
                       <div className="bg-white rounded-xl p-5 hover:shadow-lg transition-all relative group border border-neutral-100">
