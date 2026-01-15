@@ -34,6 +34,7 @@ export default function MemoriesPage() {
   const [memories, setMemories] = useState<Memory[]>([]);
   const [selectedSource, setSelectedSource] = useState<SourceDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingSourceDetail, setLoadingSourceDetail] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'source' | 'memory', id: string } | null>(null);
 
   const loadData = useCallback(async () => {
@@ -70,13 +71,14 @@ export default function MemoriesPage() {
   }, [loadData]);
 
   const loadSourceDetail = async (sourceId: string) => {
-    // Set loading state immediately to show popup
+    // Set loading state immediately to show popup with skeleton
     const loadingSource = sources.find(s => s.id === sourceId);
     if (loadingSource) {
       setSelectedSource({
         ...loadingSource,
         memories: []
       } as SourceDetail);
+      setLoadingSourceDetail(true);
     }
     
     try {
@@ -91,6 +93,8 @@ export default function MemoriesPage() {
     } catch (error) {
       console.error("Failed to load source detail:", error);
       setSelectedSource(null);
+    } finally {
+      setLoadingSourceDetail(false);
     }
   };
 
@@ -338,64 +342,116 @@ export default function MemoriesPage() {
 
             {/* Modal Content - Split View */}
             <div className="flex-1 overflow-hidden flex">
-              {/* Left: Raw Content */}
-              <div className="w-1/2 overflow-y-auto bg-white">
-                <div className="p-6">
-                  {selectedSource.type === "chat" && selectedSource.raw_content.messages ? (
-                    <div className="space-y-6">
-                      {selectedSource.raw_content.messages.map((msg: any, idx: number) => (
+              {loadingSourceDetail ? (
+                // Skeleton Loading State
+                <>
+                  {/* Left: Raw Content Skeleton */}
+                  <div className="w-1/2 overflow-y-auto bg-white">
+                    <div className="p-6 space-y-6">
+                      {Array.from({ length: 4 }).map((_, idx) => (
                         <div key={idx}>
-                          <div className="font-semibold text-neutral-900 mb-2 text-xs uppercase tracking-wide">
-                            {msg.role}
-                          </div>
-                          <div className="text-neutral-700 leading-relaxed whitespace-pre-wrap">
-                            {msg.content}
+                          <div className="h-3 w-16 bg-neutral-200 rounded animate-pulse mb-2"></div>
+                          <div className="space-y-2">
+                            <div className="h-4 bg-neutral-200 rounded animate-pulse w-full"></div>
+                            <div className="h-4 bg-neutral-200 rounded animate-pulse w-5/6"></div>
+                            <div className="h-4 bg-neutral-200 rounded animate-pulse w-4/6"></div>
                           </div>
                         </div>
                       ))}
                     </div>
-                  ) : (
-                    <pre className="whitespace-pre-wrap font-mono text-xs text-neutral-600">
-                      {JSON.stringify(selectedSource.raw_content, null, 2)}
-                    </pre>
-                  )}
-                </div>
-              </div>
+                  </div>
 
-              {/* Right: Summary + Memories */}
-              <div className="w-1/2 overflow-y-auto bg-neutral-100">
-                <div className="p-6 space-y-6">
-                  {/* Summary */}
-                  {selectedSource.summary && (
-                    <div>
-                      <h3 className="text-sm font-semibold text-neutral-900 mb-3">
-                        Summary
-                      </h3>
-                      <p className="text-sm text-neutral-700 leading-relaxed">
-                        {selectedSource.summary}
-                      </p>
+                  {/* Right: Summary + Memories Skeleton */}
+                  <div className="w-1/2 overflow-y-auto bg-neutral-100">
+                    <div className="p-6 space-y-6">
+                      {/* Summary Skeleton */}
+                      <div>
+                        <div className="h-4 w-20 bg-neutral-300 rounded animate-pulse mb-3"></div>
+                        <div className="space-y-2">
+                          <div className="h-3 bg-neutral-300 rounded animate-pulse w-full"></div>
+                          <div className="h-3 bg-neutral-300 rounded animate-pulse w-full"></div>
+                          <div className="h-3 bg-neutral-300 rounded animate-pulse w-4/5"></div>
+                        </div>
+                      </div>
+
+                      {/* Memories Skeleton */}
+                      <div>
+                        <div className="h-4 w-32 bg-neutral-300 rounded animate-pulse mb-3"></div>
+                        <div className="space-y-4">
+                          {Array.from({ length: 3 }).map((_, idx) => (
+                            <div key={idx} className="space-y-2">
+                              <div className="h-3 bg-neutral-300 rounded animate-pulse w-full"></div>
+                              <div className="h-3 bg-neutral-300 rounded animate-pulse w-5/6"></div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     </div>
-                  )}
-
-                  {/* Extracted Memories */}
-                  <div>
-                    <h3 className="text-sm font-semibold text-neutral-900 mb-3">
-                      Memories ({selectedSource.memories.length})
-                    </h3>
-                    <div className="space-y-4">
-                      {selectedSource.memories.length === 0 ? (
-                        <p className="text-sm text-neutral-500">No memories extracted</p>
+                  </div>
+                </>
+              ) : (
+                // Actual Content
+                <>
+                  {/* Left: Raw Content */}
+                  <div className="w-1/2 overflow-y-auto bg-white">
+                    <div className="p-6">
+                      {selectedSource.type === "chat" && selectedSource.raw_content.messages ? (
+                        <div className="space-y-6">
+                          {selectedSource.raw_content.messages.map((msg: any, idx: number) => (
+                            <div key={idx}>
+                              <div className="font-semibold text-neutral-900 mb-2 text-xs uppercase tracking-wide">
+                                {msg.role}
+                              </div>
+                              <div className="text-neutral-700 leading-relaxed whitespace-pre-wrap">
+                                {msg.content}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       ) : (
-                        selectedSource.memories.map((memory) => (
-                          <p key={memory.id} className="text-sm text-neutral-700 leading-relaxed">
-                            {memory.content}
-                          </p>
-                        ))
+                        <pre className="whitespace-pre-wrap font-mono text-xs text-neutral-600">
+                          {JSON.stringify(selectedSource.raw_content, null, 2)}
+                        </pre>
                       )}
                     </div>
                   </div>
-                </div>
-              </div>
+
+                  {/* Right: Summary + Memories */}
+                  <div className="w-1/2 overflow-y-auto bg-neutral-100">
+                    <div className="p-6 space-y-6">
+                      {/* Summary */}
+                      {selectedSource.summary && (
+                        <div>
+                          <h3 className="text-sm font-semibold text-neutral-900 mb-3">
+                            Summary
+                          </h3>
+                          <p className="text-sm text-neutral-700 leading-relaxed">
+                            {selectedSource.summary}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Extracted Memories */}
+                      <div>
+                        <h3 className="text-sm font-semibold text-neutral-900 mb-3">
+                          Memories ({selectedSource.memories.length})
+                        </h3>
+                        <div className="space-y-4">
+                          {selectedSource.memories.length === 0 ? (
+                            <p className="text-sm text-neutral-500">No memories extracted</p>
+                          ) : (
+                            selectedSource.memories.map((memory) => (
+                              <p key={memory.id} className="text-sm text-neutral-700 leading-relaxed">
+                                {memory.content}
+                              </p>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
