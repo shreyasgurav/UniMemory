@@ -336,6 +336,52 @@ async def delete_memory(
     return {"success": True}
 
 
+@router.delete("/consumer/sources/{source_id}")
+async def delete_source(
+    source_id: str,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db)
+):
+    """Delete a source and all its associated memories"""
+    result = await session.execute(
+        select(Source)
+        .where(Source.id == source_id)
+        .where(Source.owner_id == str(user.id))
+    )
+    source = result.scalar_one_or_none()
+    
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+    
+    # Soft delete all memories associated with this source
+    await session.execute(
+        select(Memory)
+        .where(Memory.id.in_(
+            select(MemorySource.memory_id)
+            .where(MemorySource.source_id == source_id)
+        ))
+        .where(Memory.owner_id == str(user.id))
+    )
+    
+    # Update memories to set is_active = False
+    from sqlalchemy import update
+    await session.execute(
+        update(Memory)
+        .where(Memory.id.in_(
+            select(MemorySource.memory_id)
+            .where(MemorySource.source_id == source_id)
+        ))
+        .where(Memory.owner_id == str(user.id))
+        .values(is_active=False)
+    )
+    
+    # Delete the source
+    await session.delete(source)
+    await session.commit()
+    
+    return {"success": True}
+
+
 # ============ Settings Endpoints ============
 
 @router.get("/consumer/settings", response_model=UserSettingsResponse)
