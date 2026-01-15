@@ -463,6 +463,10 @@ class ActivityEvent(BaseModel):
     details: Optional[str]
     tool_name: Optional[str]  # For MCP: search_memory, get_memory_context, get_source
     created_at: str
+    # Source metadata for better display
+    title: Optional[str] = None  # Chat/page title
+    url: Optional[str] = None  # Source URL
+    platform: Optional[str] = None  # "ChatGPT", "Claude", etc.
 
 
 class ActivityFeedResponse(BaseModel):
@@ -501,15 +505,30 @@ async def get_activity_feed(
         )
         mem_count = mem_count_result.scalar() or 0
         
+        # Extract metadata for display
+        metadata = source.source_metadata or {}
+        platform = metadata.get("platform") or source.source_app or "unknown"
+        url = metadata.get("url")
+        title = source.title or metadata.get("title")
+        
+        # Build details string
+        if title:
+            details = f"Saved '{title}' - {mem_count} memories"
+        else:
+            details = f"{mem_count} memories extracted from {source.type}"
+        
         events.append(ActivityEvent(
             id=str(source.id),
             type="source_created",
             source=source.source_app or "unknown",
             agent=None,
             memory_count=mem_count,
-            details=f"{mem_count} memories extracted from {source.type}",
+            details=details,
             tool_name=None,
-            created_at=str(source.created_at)
+            created_at=str(source.created_at),
+            title=title,
+            url=url,
+            platform=platform
         ))
     
     # Get processing logs

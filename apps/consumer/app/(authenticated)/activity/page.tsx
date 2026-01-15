@@ -14,6 +14,9 @@ interface ActivityEvent {
   raw_preview?: string;
   tool_name?: string;
   created_at: string;
+  title?: string;
+  url?: string;
+  platform?: string;
 }
 
 export default function ActivityPage() {
@@ -67,6 +70,11 @@ export default function ActivityPage() {
         gemini: "Gemini CLI"
       };
       return agentMap[event.agent] || event.agent;
+    }
+    
+    // Use platform field from backend if available
+    if (event.platform) {
+      return event.platform;
     }
     
     // Legacy source detection
@@ -217,6 +225,22 @@ export default function ActivityPage() {
                           </span>
                         )}
                       </div>
+                      {event.title && (
+                        <p className="text-sm font-medium text-neutral-700 mb-1">
+                          {event.url ? (
+                            <a 
+                              href={event.url} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="hover:text-neutral-900 hover:underline"
+                            >
+                              {event.title}
+                            </a>
+                          ) : (
+                            event.title
+                          )}
+                        </p>
+                      )}
                       {truncatedPreview && (
                         <p className="text-sm text-neutral-600 mb-2 leading-relaxed">
                           {truncatedPreview}
