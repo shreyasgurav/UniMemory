@@ -49,6 +49,7 @@ export default function ConnectorsPage() {
   const [loading, setLoading] = useState(true);
   const [selectedClient, setSelectedClient] = useState<MCPToken | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [installMethod, setInstallMethod] = useState<"one-click" | "manual">("one-click");
 
   const loadTokens = useCallback(async () => {
     try {
@@ -298,12 +299,15 @@ export default function ConnectorsPage() {
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between mb-6">
                 <h2 className="text-xl font-semibold text-neutral-900">
                   Connect {selectedClient.name}
                 </h2>
                 <button
-                  onClick={() => setSelectedClient(null)}
+                  onClick={() => {
+                    setSelectedClient(null);
+                    setInstallMethod("one-click");
+                  }}
                   className="text-neutral-400 hover:text-neutral-600"
                 >
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -312,73 +316,85 @@ export default function ConnectorsPage() {
                 </button>
               </div>
 
-              <p className="text-sm text-neutral-600 mb-6">
-                Use the configuration below to connect {selectedClient.name} to your UniMemory account.
-              </p>
-
-              {/* Cursor One-Click Install */}
-              {selectedClient.client_type === "cursor" && selectedClient.token && selectedClient.mcp_url && (
-                <div className="mb-6">
-                  <h3 className="text-sm font-semibold text-neutral-900 mb-3">One-Click Install</h3>
-                  <div className="bg-neutral-50 rounded-lg p-6 text-center">
-                    <p className="text-sm text-neutral-600 mb-4">
-                      Click the button below to automatically install and configure UniMemory in Cursor
-                    </p>
-                    <a
-                      href={`cursor://anysphere.cursor-deeplink/mcp/install?name=unimemory&config=${btoa(JSON.stringify({ url: selectedClient.mcp_url, headers: { Authorization: `Bearer ${selectedClient.token}` } }))}`}
-                      className="inline-flex items-center gap-2 px-6 py-3 rounded-lg text-sm font-medium text-white bg-neutral-900 hover:bg-neutral-800 transition-colors"
-                    >
-                      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M12 2L2 7v10c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-10-5z"/>
-                      </svg>
-                      Add to Cursor
-                    </a>
-                  </div>
-                  <div className="my-6 flex items-center gap-4">
-                    <div className="flex-1 h-px bg-neutral-200" />
-                    <span className="text-xs text-neutral-500">OR</span>
-                    <div className="flex-1 h-px bg-neutral-200" />
-                  </div>
+              {/* Toggle Tabs - Only show for Cursor */}
+              {selectedClient.client_type === "cursor" && (
+                <div className="flex gap-2 mb-6">
+                  <button
+                    onClick={() => setInstallMethod("one-click")}
+                    className={`flex-1 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                      installMethod === "one-click"
+                        ? "bg-neutral-900 text-white"
+                        : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+                    }`}
+                  >
+                    One Click Install
+                  </button>
+                  <button
+                    onClick={() => setInstallMethod("manual")}
+                    className={`flex-1 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                      installMethod === "manual"
+                        ? "bg-neutral-900 text-white"
+                        : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+                    }`}
+                  >
+                    Manual Config
+                  </button>
                 </div>
               )}
 
-              {/* Configuration */}
-              {selectedClient.token && selectedClient.mcp_url && (
+              {/* Content */}
+              {selectedClient.token && selectedClient.mcp_url ? (
                 <div>
-                  <h3 className="text-sm font-semibold text-neutral-900 mb-2">
-                    {selectedClient.client_type === "windsurf" || selectedClient.client_type === "claude" 
-                      ? "Terminal Command" 
-                      : "Manual Configuration"}
-                  </h3>
-                  <p className="text-sm text-neutral-600 mb-3">
-                    {selectedClient.client_type === "windsurf" || selectedClient.client_type === "claude"
-                      ? `Copy and run this command in your terminal, then restart ${selectedClient.name}`
-                      : `Copy this JSON configuration and add it to your ${selectedClient.name} MCP config file`
-                    }
-                  </p>
-                  <div className="bg-neutral-900 rounded-lg p-4 relative">
-                    <button
-                      onClick={() => {
-                        const config = selectedClient.client_type === "windsurf" || selectedClient.client_type === "claude"
-                          ? getTerminalCommand(selectedClient.client_type, selectedClient.token!, selectedClient.mcp_url!)
-                          : getJsonConfig(selectedClient.token!, selectedClient.mcp_url!);
-                        copyToClipboard(config, selectedClient.id);
-                      }}
-                      className="absolute top-3 right-3 text-neutral-400 hover:text-white"
-                    >
-                      {copied === selectedClient.id ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                    </button>
-                    <pre className="text-sm text-neutral-300 whitespace-pre-wrap overflow-x-auto font-mono pr-10">
-                      {selectedClient.client_type === "windsurf" || selectedClient.client_type === "claude"
-                        ? getTerminalCommand(selectedClient.client_type, selectedClient.token!, selectedClient.mcp_url!)
-                        : getJsonConfig(selectedClient.token!, selectedClient.mcp_url!)
-                      }
-                    </pre>
-                  </div>
-                </div>
-              )}
+                  {/* Cursor One-Click Install */}
+                  {selectedClient.client_type === "cursor" && installMethod === "one-click" && (
+                    <div className="bg-neutral-50 rounded-lg p-8 text-center">
+                      <p className="text-sm text-neutral-600 mb-6">
+                        Click the button below to automatically install and configure UniMemory in Cursor
+                      </p>
+                      <a
+                        href={`cursor://anysphere.cursor-deeplink/mcp/install?name=unimemory&config=${btoa(JSON.stringify({ url: selectedClient.mcp_url, headers: { Authorization: `Bearer ${selectedClient.token}` } }))}`}
+                        className="inline-flex items-center gap-2 px-6 py-3 rounded-lg text-sm font-medium text-white bg-neutral-900 hover:bg-neutral-800 transition-colors"
+                      >
+                        <img 
+                          src="https://cursor.sh/favicon.ico" 
+                          alt="Cursor"
+                          className="w-5 h-5"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                          }}
+                        />
+                        Add to Cursor
+                      </a>
+                    </div>
+                  )}
 
-              {(!selectedClient.token || !selectedClient.mcp_url) && (
+                  {/* Manual Configuration */}
+                  {((selectedClient.client_type === "cursor" && installMethod === "manual") || 
+                    selectedClient.client_type !== "cursor") && (
+                    <div>
+                      <div className="bg-neutral-900 rounded-lg p-4 relative">
+                        <button
+                          onClick={() => {
+                            const config = selectedClient.client_type === "windsurf" || selectedClient.client_type === "claude"
+                              ? getTerminalCommand(selectedClient.client_type, selectedClient.token!, selectedClient.mcp_url!)
+                              : getJsonConfig(selectedClient.token!, selectedClient.mcp_url!);
+                            copyToClipboard(config, selectedClient.id);
+                          }}
+                          className="absolute top-3 right-3 text-neutral-400 hover:text-white"
+                        >
+                          {copied === selectedClient.id ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                        </button>
+                        <pre className="text-sm text-neutral-300 whitespace-pre-wrap overflow-x-auto font-mono pr-10">
+                          {selectedClient.client_type === "windsurf" || selectedClient.client_type === "claude"
+                            ? getTerminalCommand(selectedClient.client_type, selectedClient.token!, selectedClient.mcp_url!)
+                            : getJsonConfig(selectedClient.token!, selectedClient.mcp_url!)
+                          }
+                        </pre>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
                 <div className="text-center py-8">
                   <p className="text-sm text-neutral-500">
                     Configuration not available. Please refresh the page and try again.
@@ -386,10 +402,14 @@ export default function ConnectorsPage() {
                 </div>
               )}
 
-              <div className="mt-6">
+              {/* Done Button - Bottom Right */}
+              <div className="mt-6 flex justify-end">
                 <button
-                  onClick={() => setSelectedClient(null)}
-                  className="w-full px-4 py-2.5 rounded-lg text-sm font-medium text-white bg-neutral-900 hover:bg-neutral-800 transition-colors"
+                  onClick={() => {
+                    setSelectedClient(null);
+                    setInstallMethod("one-click");
+                  }}
+                  className="px-4 py-2 rounded-lg text-sm font-medium text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 transition-colors"
                 >
                   Done
                 </button>
