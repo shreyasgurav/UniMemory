@@ -201,11 +201,14 @@
   // ============ Save Functionality ============
   
   async function saveCurrentPage() {
+    // Show loading toast
+    showToast('Saving memory...', 'loading');
+    
     try {
       const messages = extractMessages();
       
       if (messages.length === 0) {
-        showNotification('No chat messages found on this page', 'error');
+        showToast('No chat messages found on this page', 'error');
         return;
       }
       
@@ -224,23 +227,25 @@
       });
       
       if (response.success) {
-        showNotification(`Saved ${messages.length} messages to UniMemory`, 'success');
+        const memoryCount = response.data?.stored || 0;
+        const title = metadata.title || 'Chat';
+        showToast(`Saved "${title}" - ${memoryCount} ${memoryCount === 1 ? 'memory' : 'memories'} extracted`, 'success');
       } else {
         if (response.error === 'Not authenticated' || response.error?.includes('Session expired')) {
-          showNotification('Session expired. Please log in again.', 'error');
+          showToast('Session expired. Please log in again.', 'error');
           chrome.runtime.sendMessage({ type: 'LOGIN' });
         } else {
-          showNotification(response.error || 'Failed to save', 'error');
+          showToast(response.error || 'Failed to save memory', 'error');
         }
       }
     } catch (error) {
       console.error('Failed to save page:', error);
-      const errorMsg = error.message || 'Failed to save page';
+      const errorMsg = error.message || 'Failed to save memory';
       if (errorMsg.includes('Session expired') || errorMsg.includes('Not authenticated')) {
-        showNotification('Session expired. Please log in again.', 'error');
+        showToast('Session expired. Please log in again.', 'error');
         chrome.runtime.sendMessage({ type: 'LOGIN' });
       } else {
-        showNotification(errorMsg, 'error');
+        showToast(errorMsg, 'error');
       }
     }
   }
@@ -248,15 +253,42 @@
   // ============ UI Notifications ============
   
   function showNotification(message, type = 'info') {
-    const existing = document.querySelector('.unimemory-notification');
+    showToast(message, type);
+  }
+  
+  function showToast(message, type = 'info') {
+    // Remove existing toast
+    const existing = document.querySelector('.unimemory-toast');
     if (existing) existing.remove();
     
-    const notification = document.createElement('div');
-    notification.className = `unimemory-notification unimemory-notification-${type}`;
-    notification.textContent = message;
-    document.body.appendChild(notification);
+    // Create toast container
+    const toast = document.createElement('div');
+    toast.className = `unimemory-toast unimemory-toast-${type}`;
     
-    setTimeout(() => notification.remove(), 3000);
+    // Add icon based on type
+    let icon = '';
+    if (type === 'loading') {
+      icon = '<div class="unimemory-toast-spinner"></div>';
+    } else if (type === 'success') {
+      icon = '<svg class="unimemory-toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>';
+    } else if (type === 'error') {
+      icon = '<svg class="unimemory-toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>';
+    }
+    
+    toast.innerHTML = `
+      ${icon}
+      <span class="unimemory-toast-message">${message}</span>
+    `;
+    
+    document.body.appendChild(toast);
+    
+    // Auto-remove after 5 seconds (except for loading)
+    if (type !== 'loading') {
+      setTimeout(() => {
+        toast.classList.add('unimemory-toast-fade-out');
+        setTimeout(() => toast.remove(), 300);
+      }, 5000);
+    }
   }
   
   // ============ Message Listener ============
@@ -285,9 +317,9 @@
           firebaseToken: data.token,
         });
         if (res && res.success) {
-          showNotification('UniMemory extension connected', 'success');
+          showToast('UniMemory extension connected', 'success');
         } else {
-          showNotification('Failed to connect UniMemory extension', 'error');
+          showToast('Failed to connect UniMemory extension', 'error');
         }
       }
     } catch (e) {

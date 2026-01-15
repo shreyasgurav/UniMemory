@@ -140,9 +140,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   
   // Save current page
   saveCurrentPageBtn.addEventListener('click', async () => {
-    saveCurrentPageBtn.disabled = true;
-    saveCurrentPageBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" stroke-dasharray="60" stroke-dashoffset="20"/></svg> Saving...';
-    
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       
@@ -151,20 +148,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
       
-      // Send message to content script to save the page
-      const response = await chrome.tabs.sendMessage(tab.id, { type: 'SAVE_CURRENT_PAGE' });
+      // Close popup immediately
+      window.close();
       
-      if (response && response.success) {
-        showStatus('Page saved successfully!', 'success');
-      } else {
-        showStatus('Failed to save page', 'error');
-      }
+      // Send message to content script to save the page
+      // The content script will show toast notifications
+      await chrome.tabs.sendMessage(tab.id, { type: 'SAVE_CURRENT_PAGE' });
     } catch (error) {
       console.error('Failed to save page:', error);
       showStatus('Failed to save page', 'error');
-    } finally {
-      saveCurrentPageBtn.disabled = false;
-      saveCurrentPageBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17,21 17,13 7,13 7,21"/><polyline points="7,3 7,8 15,8"/></svg> Save Current Page';
     }
   });
   

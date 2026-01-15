@@ -3,44 +3,153 @@
  * Universal styles for all pages
  */
 
-/* Notification Toast */
-.unimemory-notification {
+/* UniMemory Extension Styles */
+
+/* Toast Notifications */
+.unimemory-toast {
   position: fixed;
-  bottom: 24px;
-  right: 24px;
-  z-index: 999999;
-  padding: 12px 20px;
-  background: #171717;
-  color: white;
-  border-radius: 10px;
+  top: 20px;
+  right: 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  border-radius: 50px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-size: 14px;
   font-weight: 500;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  animation: unimemory-slideIn 0.3s ease;
+  z-index: 999999;
+  animation: toastSlideIn 0.3s ease;
+  max-width: 400px;
+}
+
+.unimemory-toast-loading {
+  background: white;
+  color: #171717;
+  border: 1px solid #e5e5e5;
+}
+
+.unimemory-toast-success {
+  background: white;
+  color: #171717;
+  border: 1px solid #e5e5e5;
+}
+
+.unimemory-toast-error {
+  background: white;
+  color: #171717;
+  border: 1px solid #e5e5e5;
+}
+
+.unimemory-toast-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.unimemory-toast-success .unimemory-toast-icon {
+  color: #10b981;
+}
+
+.unimemory-toast-error .unimemory-toast-icon {
+  color: #ef4444;
+}
+
+.unimemory-toast-message {
+  flex: 1;
+  line-height: 1.4;
+}
+
+.unimemory-toast-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #e5e5e5;
+  border-top-color: #171717;
+  border-radius: 50%;
+  animation: toastSpin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+.unimemory-toast-fade-out {
+  animation: toastFadeOut 0.3s ease forwards;
+}
+
+@keyframes toastSlideIn {
+  from {
+    transform: translateX(400px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes toastFadeOut {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(400px);
+    opacity: 0;
+  }
+}
+
+@keyframes toastSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* Legacy notification support */
+.unimemory-notification {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 16px 24px;
+  border-radius: 12px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 999999;
+  animation: slideIn 0.3s ease;
 }
 
 .unimemory-notification-success {
-  background: #16a34a;
+  background: #10b981;
+  color: white;
 }
 
 .unimemory-notification-error {
-  background: #dc2626;
+  background: #ef4444;
+  color: white;
 }
 
-@keyframes unimemory-slideIn {
+.unimemory-notification-info {
+  background: #3b82f6;
+  color: white;
+}
+
+@keyframes slideIn {
   from {
+    transform: translateX(400px);
     opacity: 0;
-    transform: translateY(10px);
   }
   to {
+    transform: translateX(0);
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
 /* Mobile Responsiveness */
 @media (max-width: 768px) {
+  .unimemory-toast {
+    right: 16px;
+    left: 16px;
+    max-width: none;
+  }
+  
   .unimemory-notification {
     bottom: 16px;
     right: 16px;
