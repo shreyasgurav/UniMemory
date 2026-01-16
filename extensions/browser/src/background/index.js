@@ -159,53 +159,44 @@ async function ingestPrompt(prompt, platform) {
     return { success: false, reason: 'not_authenticated' };
   }
   
-  console.log('[UniMemory] Ingesting prompt from', platform, ':', prompt.substring(0, 50) + '...');
+  console.log('[UniMemory] Creating atomic memory from', platform, ':', prompt.substring(0, 50) + '...');
   
-  // Prepare chat data in the format expected by the ingest API
-  const chatData = {
-    messages: [
-      {
-        role: 'user',
-        content: prompt
-      }
-    ],
-    source_metadata: {
-      platform: platform,
-      url: 'extension',
-      title: `${platform} prompt`,
-      timestamp: new Date().toISOString()
-    }
+  // Create atomic memory directly (no source, no extraction)
+  const memoryData = {
+    content: prompt,
+    platform: platform,
+    tags: []
   };
   
   try {
-    const response = await fetch(`${API_BASE_URL}/ingest/chat`, {
+    const response = await fetch(`${API_BASE_URL}/consumer/memories/atomic`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${session.token}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(chatData)
+      body: JSON.stringify(memoryData)
     });
     
     // If 401 Unauthorized, session might be expired
     if (response.status === 401) {
       await clearSession();
-      console.error('[UniMemory] Session expired during ingestion');
+      console.error('[UniMemory] Session expired during memory creation');
       return { success: false, reason: 'session_expired' };
     }
     
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      console.error('[UniMemory] Ingestion failed:', error);
+      console.error('[UniMemory] Memory creation failed:', error);
       return { success: false, reason: 'api_error', error };
     }
     
     const result = await response.json();
-    console.log('[UniMemory] Prompt ingested successfully, extracted', result.memories_count || 0, 'memories');
+    console.log('[UniMemory] Atomic memory created:', result.id, result.was_deduplicated ? '(deduplicated)' : '(new)');
     
     return { success: true, data: result };
   } catch (error) {
-    console.error('[UniMemory] Ingestion error:', error);
+    console.error('[UniMemory] Memory creation error:', error);
     return { success: false, reason: 'network_error', error: error.message };
   }
 }
