@@ -277,40 +277,66 @@ async def hybrid_search(
     if min_salience > 0:
         stmt = stmt.where(Memory.salience >= min_salience)
     
-    # Use pgvector cosine distance (pass list directly, not Vector wrapper)
-    stmt = stmt.order_by(Memory.embedding.cosine_distance(query_embedding)).limit(limit * 3)
+    # Use pgvector cosine distance - reduced fetch size for performance
+    # Fetch limit * 1.5 instead of limit * 3 to reduce DB load
+    fetch_limit = min(limit * 2, 30)  # Cap at 30 for performance
+    stmt = stmt.order_by(Memory.embedding.cosine_distance(query_embedding)).limit(fetch_limit)
     
     result = await session.execute(stmt)
     vector_results = result.scalars().all()
     
-    # Calculate average similarity for confidence check
-    similarities = []
-    candidate_ids = []
-    for mem in vector_results:
-        if mem.embedding is not None:
-            # Convert pgvector Vector to list if needed (handle numpy arrays)
-            try:
-                if hasattr(mem.embedding, 'tolist'):
-                    embedding_list = mem.embedding.tolist()
-                elif hasattr(mem.embedding, '__iter__') and not isinstance(mem.embedding, str):
-                    embedding_list = list(mem.embedding)
-                else:
-                    embedding_list = mem.embedding
-                
-                sim = cosine_similarity(query_embedding, embedding_list)
-                similarities.append(sim)
-                candidate_ids.append(mem.id)
-            except Exception:
-                candidate_ids.append(mem.id)  # Still add to candidates even if similarity fails
+    # Quick path: if we have enough high-quality results, skip expensive processing
+    if len(vector_results) >= limit:
+        # Calculate similarities for top results only
+        similarities = []
+        candidate_ids = []
+        for mem in vector_results[:limit]:
+            if mem.embedding is not None:
+                try:
+                    if hasattr(mem.embedding, 'tolist'):
+                        embedding_list = mem.embedding.tolist()
+                    elif hasattr(mem.embedding, '__iter__') and not isinstance(mem.embedding, str):
+                        embedding_list = list(mem.embedding)
+                    else:
+                        embedding_list = mem.embedding
+                    
+                    sim = cosine_similarity(query_embedding, embedding_list)
+                    similarities.append(sim)
+                    candidate_ids.append(mem.id)
+                except Exception:
+                    candidate_ids.append(mem.id)
+        
+        avg_similarity = sum(similarities) / len(similarities) if similarities else 0.0
+        high_confidence = avg_similarity >= 0.5  # Lowered threshold for faster path
+    else:
+        # Calculate all similarities if we don't have enough results
+        similarities = []
+        candidate_ids = []
+        for mem in vector_results:
+            if mem.embedding is not None:
+                try:
+                    if hasattr(mem.embedding, 'tolist'):
+                        embedding_list = mem.embedding.tolist()
+                    elif hasattr(mem.embedding, '__iter__') and not isinstance(mem.embedding, str):
+                        embedding_list = list(mem.embedding)
+                    else:
+                        embedding_list = mem.embedding
+                    
+                    sim = cosine_similarity(query_embedding, embedding_list)
+                    similarities.append(sim)
+                    candidate_ids.append(mem.id)
+                except Exception:
+                    candidate_ids.append(mem.id)
+        
+        avg_similarity = sum(similarities) / len(similarities) if similarities else 0.0
+        high_confidence = avg_similarity >= 0.55
     
-    avg_similarity = sum(similarities) / len(similarities) if similarities else 0.0
-    high_confidence = avg_similarity >= 0.55
-    
-    # Step 5: Waypoint expansion (if low confidence)
+    # Step 5: Waypoint expansion (ONLY if low confidence AND few results)
+    # Skip for most queries to improve performance
     waypoint_expansion = {}
-    if not high_confidence and candidate_ids:
+    if not high_confidence and len(candidate_ids) < limit and candidate_ids:
         waypoint_expansion = await expand_via_waypoints(
-            session, candidate_ids[:10], max_expansion=limit * 2
+            session, candidate_ids[:5], max_expansion=limit  # Reduced from limit*2
         )
         candidate_ids.extend(waypoint_expansion.keys())
     

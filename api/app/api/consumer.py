@@ -8,6 +8,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 import os
 import jwt
+import time
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +27,42 @@ router = APIRouter()
 # Security scheme for consumer session tokens
 consumer_security = HTTPBearer(auto_error=False)
 
+# In-memory user cache for verified tokens (avoids DB lookup on every request)
+_user_cache: Dict[str, tuple] = {}  # token_hash -> (user_data, timestamp)
+_USER_CACHE_TTL = 300  # 5 minutes
+_USER_CACHE_MAX_SIZE = 200
+
+
+def _get_token_hash(token: str) -> str:
+    """Get short hash of token for cache key"""
+    import hashlib
+    return hashlib.md5(token.encode()).hexdigest()[:16]
+
+
+def _get_cached_user(token: str) -> Optional[dict]:
+    """Get cached user data if not expired"""
+    token_hash = _get_token_hash(token)
+    if token_hash in _user_cache:
+        user_data, timestamp = _user_cache[token_hash]
+        if time.time() - timestamp < _USER_CACHE_TTL:
+            return user_data
+        else:
+            del _user_cache[token_hash]
+    return None
+
+
+def _cache_user(token: str, user_data: dict):
+    """Cache user data"""
+    token_hash = _get_token_hash(token)
+    _user_cache[token_hash] = (user_data, time.time())
+    
+    # Evict old entries if over limit
+    if len(_user_cache) > _USER_CACHE_MAX_SIZE:
+        sorted_keys = sorted(_user_cache.keys(), 
+                           key=lambda k: _user_cache[k][1])
+        for k in sorted_keys[:_USER_CACHE_MAX_SIZE // 10]:
+            del _user_cache[k]
+
 
 async def verify_consumer_session_token(
     credentials: HTTPAuthorizationCredentials = Depends(consumer_security),
@@ -33,9 +70,7 @@ async def verify_consumer_session_token(
 ) -> User:
     """
     Verify consumer session token (JWT) from Chrome extension.
-    
-    This is different from Firebase auth - the extension exchanges a Firebase token
-    for a short-lived consumer session token, which is then used for API calls.
+    Uses caching to avoid DB lookup on every request.
     """
     if not credentials:
         raise HTTPException(
@@ -47,7 +82,7 @@ async def verify_consumer_session_token(
     secret_key = os.environ.get("JWT_SECRET_KEY", "unimemory-consumer-secret-key")
     
     try:
-        # Decode and verify JWT
+        # Decode and verify JWT first (fast, no DB)
         payload = jwt.decode(token, secret_key, algorithms=["HS256"])
         
         # Check token type
@@ -57,7 +92,6 @@ async def verify_consumer_session_token(
                 detail="Invalid token type"
             )
         
-        # Get user from database
         user_id = payload.get("sub")
         if not user_id:
             raise HTTPException(
@@ -65,6 +99,18 @@ async def verify_consumer_session_token(
                 detail="Invalid token payload"
             )
         
+        # Check cache first (avoids DB lookup)
+        cached = _get_cached_user(token)
+        if cached:
+            # Return cached user as a simple object
+            user = User()
+            user.id = cached["id"]
+            user.email = cached.get("email")
+            user.display_name = cached.get("display_name")
+            user.is_active = cached.get("is_active", True)
+            return user
+        
+        # Cache miss - fetch from database
         result = await session.execute(
             select(User).where(User.id == user_id)
         )
@@ -82,6 +128,14 @@ async def verify_consumer_session_token(
                 detail="User account is deactivated"
             )
         
+        # Cache user data for future requests
+        _cache_user(token, {
+            "id": str(user.id),
+            "email": user.email,
+            "display_name": user.display_name,
+            "is_active": user.is_active
+        })
+        
         return user
         
     except jwt.ExpiredSignatureError:
@@ -94,6 +148,8 @@ async def verify_consumer_session_token(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid session token"
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Session token verification failed: {e}")
         raise HTTPException(
@@ -518,6 +574,19 @@ class ConsumerSearchResponse(BaseModel):
     query: str
 
 
+# Search result cache for consumer queries
+_search_cache: Dict[str, tuple] = {}
+_SEARCH_CACHE_TTL = 120  # 2 minutes
+_SEARCH_CACHE_MAX_SIZE = 100
+
+
+def _get_search_cache_key(owner_id: str, query: str, limit: int) -> str:
+    """Generate cache key for search results"""
+    import hashlib
+    key_data = f"{owner_id}:{query.strip().lower()[:100]}:{limit}"
+    return hashlib.md5(key_data.encode()).hexdigest()[:16]
+
+
 @router.post("/consumer/search", response_model=ConsumerSearchResponse)
 async def consumer_search(
     request: ConsumerSearchRequest,
@@ -529,6 +598,7 @@ async def consumer_search(
     
     Used by browser extension to retrieve memories for context injection.
     Returns memories matching the query, ranked by relevance.
+    Uses caching to speed up repeated queries.
     """
     from app.core.search import hybrid_search
     
@@ -536,12 +606,27 @@ async def consumer_search(
         raise HTTPException(status_code=400, detail="Query cannot be empty")
     
     owner_id = str(user.id)
+    limit = request.limit or 5
+    
+    # Check search cache first
+    cache_key = _get_search_cache_key(owner_id, request.query, limit)
+    if cache_key in _search_cache:
+        cached_results, timestamp = _search_cache[cache_key]
+        if time.time() - timestamp < _SEARCH_CACHE_TTL:
+            logger.debug(f"Search cache hit for query: {request.query[:30]}...")
+            return ConsumerSearchResponse(
+                results=cached_results,
+                total=len(cached_results),
+                query=request.query
+            )
+        else:
+            del _search_cache[cache_key]
     
     try:
         results = await hybrid_search(
             session=session,
             query=request.query,
-            limit=request.limit or 5,
+            limit=limit,
             user_id=None,
             min_salience=0.0,
             filters={"owner_id": owner_id, "debug": False}
@@ -557,6 +642,16 @@ async def consumer_search(
                 salience=mem.salience,
                 created_at=mem.created_at.isoformat() if mem.created_at else None
             ))
+        
+        # Cache the results
+        _search_cache[cache_key] = (search_results, time.time())
+        
+        # Evict old cache entries if over limit
+        if len(_search_cache) > _SEARCH_CACHE_MAX_SIZE:
+            sorted_keys = sorted(_search_cache.keys(), 
+                               key=lambda k: _search_cache[k][1])
+            for k in sorted_keys[:_SEARCH_CACHE_MAX_SIZE // 10]:
+                del _search_cache[k]
         
         return ConsumerSearchResponse(
             results=search_results,

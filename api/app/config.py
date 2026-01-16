@@ -17,11 +17,11 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/unimemory"
     
-    # Connection Pool (production-tuned)
-    DB_POOL_SIZE: int = 20  # Increased from 10
-    DB_MAX_OVERFLOW: int = 40  # Increased from 20
-    DB_POOL_TIMEOUT: int = 30  # Seconds to wait for connection
-    DB_POOL_RECYCLE: int = 1800  # Recycle connections after 30 min
+    # Connection Pool (production-tuned for Railway)
+    DB_POOL_SIZE: int = 10  # Reduced for Railway's connection limits
+    DB_MAX_OVERFLOW: int = 20  # Allow burst connections
+    DB_POOL_TIMEOUT: int = 20  # Faster timeout to fail fast
+    DB_POOL_RECYCLE: int = 900  # Recycle connections every 15 min (Railway stability)
     
     # PostgreSQL + pgvector
     DB_HOST: str = "localhost"
@@ -39,8 +39,8 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = "gpt-4o-mini"
     EMBEDDING_MODEL: str = "text-embedding-3-small"
     EMBEDDING_DIM: int = 1536
-    OPENAI_TIMEOUT: int = 30  # Seconds timeout for OpenAI calls
-    OPENAI_MAX_RETRIES: int = 3  # Retry failed OpenAI calls
+    OPENAI_TIMEOUT: int = 15  # Reduced timeout for faster failure (embeddings are fast)
+    OPENAI_MAX_RETRIES: int = 2  # Reduced retries to fail faster
     
     # Auth
     SECRET_KEY: str = "your-secret-key-change-in-production"

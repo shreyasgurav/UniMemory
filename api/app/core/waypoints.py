@@ -19,15 +19,16 @@ async def create_waypoint_for_memory(
     new_memory_id: str,
     new_embedding: List[float],
     user_id: str,
-    limit: int = 1000
+    limit: int = 10  # Reduced from 1000 - only check top 10 similar memories
 ) -> Optional[Waypoint]:
     """
     Find most similar existing memory and create a waypoint link
     
-    Mirrors the Mac app's createWaypointForNewMemory logic
+    OPTIMIZED: Uses pgvector cosine distance to find top similar memories
+    instead of iterating through all memories
     """
     try:
-        # Get existing memories with embeddings (exclude the new one)
+        # Use pgvector to find top similar memories directly (MUCH faster)
         stmt = select(Memory).where(
             and_(
                 Memory.id != new_memory_id,
@@ -35,12 +36,12 @@ async def create_waypoint_for_memory(
                 Memory.is_active == True,
                 Memory.user_id == user_id
             )
-        ).order_by(Memory.salience.desc()).limit(limit)
+        ).order_by(Memory.embedding.cosine_distance(new_embedding)).limit(limit)
         
         result = await session.execute(stmt)
-        existing_memories = result.scalars().all()
+        similar_memories = result.scalars().all()
         
-        if not existing_memories:
+        if not similar_memories:
             # No existing memories, create self-link
             waypoint = Waypoint(
                 id=str(uuid.uuid4()),
@@ -64,29 +65,19 @@ async def create_waypoint_for_memory(
                 return 0.0
             return dot / (norm_a * norm_b)
         
-        # Find best match by cosine similarity
-        best_target_id = None
-        best_similarity = -1.0
+        # Get the most similar memory (first result from ordered query)
+        best_mem = similar_memories[0]
+        best_target_id = str(best_mem.id)
         
-        for mem in existing_memories:
-            if mem.embedding is None or mem.id == new_memory_id:
-                continue
-            
-            # Convert embedding to list (handle numpy arrays from pgvector)
-            try:
-                if hasattr(mem.embedding, 'tolist'):
-                    mem_embedding = mem.embedding.tolist()
-                else:
-                    mem_embedding = list(mem.embedding)
-            except Exception:
-                continue
-            
-            # Calculate cosine similarity
-            similarity = cosine_similarity(new_embedding, mem_embedding)
-            
-            if similarity > best_similarity:
-                best_similarity = similarity
-                best_target_id = str(mem.id)
+        # Calculate actual similarity for weight
+        try:
+            if hasattr(best_mem.embedding, 'tolist'):
+                mem_embedding = best_mem.embedding.tolist()
+            else:
+                mem_embedding = list(best_mem.embedding)
+            best_similarity = cosine_similarity(new_embedding, mem_embedding)
+        except Exception:
+            best_similarity = 0.6  # Default if calculation fails
         
         # Create waypoint if similarity is above threshold
         if best_target_id and best_similarity >= MIN_SIMILARITY_THRESHOLD:
