@@ -48,6 +48,7 @@ export default function ConnectorsPage() {
   const [tokens, setTokens] = useState<MCPToken[]>([]);
   const [selectedClient, setSelectedClient] = useState<MCPToken | null>(null);
   const [selectedClientLoading, setSelectedClientLoading] = useState(false);
+  const [selectedClientInfo, setSelectedClientInfo] = useState<MCPClient | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [installMethod, setInstallMethod] = useState<"one-click" | "manual">("one-click");
 
@@ -77,6 +78,11 @@ export default function ConnectorsPage() {
   }, []);
 
   const handleClientClick = async (client: MCPClient) => {
+    // Open modal immediately with client info
+    setSelectedClientInfo(client);
+    setSelectedClient(null);
+    
+    // Then fetch the token data
     const clientToken = await loadTokenForClient(client.id);
     if (clientToken) {
       setSelectedClient(clientToken);
@@ -265,17 +271,18 @@ export default function ConnectorsPage() {
       </div>
 
       {/* Configuration Modal */}
-      {selectedClient && (
+      {selectedClientInfo && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-xl font-semibold text-neutral-900">
-                  Connect {selectedClient.name}
+                  Connect {selectedClientInfo.name}
                 </h2>
                 <button
                   onClick={() => {
                     setSelectedClient(null);
+                    setSelectedClientInfo(null);
                     setInstallMethod("one-click");
                   }}
                   className="text-neutral-400 hover:text-neutral-600"
@@ -287,7 +294,7 @@ export default function ConnectorsPage() {
               </div>
 
               {/* Toggle Tabs - Only show for Cursor */}
-              {selectedClient.client_type === "cursor" && (
+              {selectedClientInfo.id === "cursor" && (
                 <div className="flex gap-2 mb-6">
                   <button
                     onClick={() => setInstallMethod("one-click")}
@@ -319,7 +326,7 @@ export default function ConnectorsPage() {
                   <div className="bg-neutral-100 rounded-lg h-32 animate-pulse" />
                   <div className="bg-neutral-100 rounded-lg h-48 animate-pulse" />
                 </div>
-              ) : selectedClient.token && selectedClient.mcp_url ? (
+              ) : selectedClient && selectedClient.token && selectedClient.mcp_url ? (
                 <div>
                   {/* Cursor One-Click Install */}
                   {selectedClient.client_type === "cursor" && installMethod === "one-click" && (
@@ -351,6 +358,7 @@ export default function ConnectorsPage() {
                       <div className="bg-neutral-900 rounded-lg p-4 relative">
                         <button
                           onClick={() => {
+                            if (!selectedClient) return;
                             const config = selectedClient.client_type === "windsurf" || selectedClient.client_type === "claude"
                               ? getTerminalCommand(selectedClient.client_type, selectedClient.token!, selectedClient.mcp_url!)
                               : getJsonConfig(selectedClient.token!, selectedClient.mcp_url!);
@@ -383,6 +391,7 @@ export default function ConnectorsPage() {
                 <button
                   onClick={() => {
                     setSelectedClient(null);
+                    setSelectedClientInfo(null);
                     setInstallMethod("one-click");
                   }}
                   className="px-4 py-2 rounded-lg text-sm font-medium text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 transition-colors"
