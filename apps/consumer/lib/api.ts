@@ -118,20 +118,3 @@ export const searchMemories = async (token: string, query: string, limit: number
     body: { query, top_k: limit },
   });
 };
-
-// Settings API
-export interface UserSettings {
-  ingest_enabled: boolean;
-}
-
-export const getSettings = async (token: string) => {
-  return request<UserSettings>("/consumer/settings", { token });
-};
-
-export const updateSettings = async (token: string, settings: Partial<UserSettings>) => {
-  return request<UserSettings>("/consumer/settings", {
-    token,
-    method: "PATCH",
-    body: settings,
-  });
-};

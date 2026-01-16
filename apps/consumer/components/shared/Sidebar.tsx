@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { History, Activity, Link2, Settings } from "lucide-react";
+import { History, Activity, Link2 } from "lucide-react";
 import { useRouter, usePathname } from "next/navigation";
 import { User } from "firebase/auth";
 import Image from "next/image";
@@ -22,9 +22,7 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
       ? "activity"
       : pathname?.includes("/connectors")
         ? "connectors"
-        : pathname?.includes("/settings")
-          ? "settings"
-          : "memories";
+        : "memories";
 
   const navItems = [
     {
@@ -44,12 +42,6 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
       path: "/connectors",
       icon: <Link2 className="w-4 h-4" strokeWidth={1.5} />,
       label: "Connectors"
-    },
-    {
-      id: "settings",
-      path: "/settings",
-      icon: <Settings className="w-4 h-4" strokeWidth={1.5} />,
-      label: "Settings"
     },
   ];
 
