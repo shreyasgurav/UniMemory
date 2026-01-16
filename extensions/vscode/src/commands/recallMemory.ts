@@ -123,9 +123,25 @@ export async function recallMemoryCommand(
     } else {
       statusBar.setReady();
     }
-  } catch (error: any) {
-    vscode.window.showErrorMessage(`Failed to recall memories: ${error.message}`);
-    statusBar.setError(error.message);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to recall memories';
+    console.log('[UniMemory] Error recalling memories:', error);
+    
+    // If session expired, offer to login
+    if (message.includes('Session expired') || message.includes('Not authenticated')) {
+      const action = await vscode.window.showErrorMessage(
+        'Session expired. Please login to UniMemory.',
+        'Login'
+      );
+      if (action === 'Login') {
+        vscode.commands.executeCommand('unimemory.login');
+      }
+    } else {
+      vscode.window.showErrorMessage(`Failed to recall memories: ${message}`);
+    }
+    
+    statusBar.setError('Recall failed');
+    statusBar.setAuthenticated(false);
   }
 }
 
