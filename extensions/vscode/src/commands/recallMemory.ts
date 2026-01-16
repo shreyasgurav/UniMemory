@@ -16,12 +16,10 @@ export async function recallMemoryCommand(
   const editor = vscode.window.activeTextEditor;
   
   if (!editor) {
-    console.log('[UniMemory] No active editor found');
-    vscode.window.showWarningMessage('No active editor found');
-    return;
+    console.log('[UniMemory] No active editor found - will prompt for query');
+  } else {
+    console.log('[UniMemory] Active editor found:', editor.document.fileName);
   }
-  
-  console.log('[UniMemory] Active editor found:', editor.document.fileName);
 
   // Check authentication
   const isAuth = await client.isAuthenticated();
@@ -39,24 +37,27 @@ export async function recallMemoryCommand(
     return;
   }
 
-  // Get query text: selection or current line
+  // Get query text: from editor selection, current line, or prompt
   let query = '';
-  const selection = editor.selection;
-  console.log('[UniMemory] Selection:', selection.isEmpty ? 'empty' : 'has text');
   
-  if (!selection.isEmpty) {
-    query = editor.document.getText(selection);
-  } else {
-    // Use current line as query
-    const currentLine = editor.document.lineAt(selection.active.line);
-    query = currentLine.text.trim();
+  if (editor) {
+    const selection = editor.selection;
+    console.log('[UniMemory] Selection:', selection.isEmpty ? 'empty' : 'has text');
+    
+    if (!selection.isEmpty) {
+      query = editor.document.getText(selection);
+    } else {
+      // Use current line as query
+      const currentLine = editor.document.lineAt(selection.active.line);
+      query = currentLine.text.trim();
+    }
   }
 
   if (!query) {
-    // Prompt user for query
+    // Prompt user for query (works for sidebar chat too)
     query = await vscode.window.showInputBox({
-      prompt: 'Enter search query for memories',
-      placeHolder: 'What are you looking for?'
+      prompt: 'What do you want to recall from your memories?',
+      placeHolder: 'e.g., authentication flow, database schema, API endpoints'
     }) || '';
   }
 
@@ -86,27 +87,29 @@ export async function recallMemoryCommand(
     const memoriesText = formatMemoriesForInjection(result.results);
     
     // Show preview and ask for confirmation
+    const hasEditor = !!editor;
+    const actions = hasEditor 
+      ? ['Insert Above Cursor', 'Insert as Comment', 'Copy to Clipboard', 'View Details']
+      : ['Copy to Clipboard', 'View Details'];
+    
     const action = await vscode.window.showInformationMessage(
       `Found ${result.results.length} related memories`,
-      'Insert Above Cursor',
-      'Insert as Comment',
-      'Copy to Clipboard',
-      'Preview'
+      ...actions
     );
 
-    if (action === 'Insert Above Cursor') {
+    if (action === 'Insert Above Cursor' && editor) {
       await insertMemoriesAboveCursor(editor, memoriesText);
-      statusBar.showSuccess(`${result.results.length} memories recalled`);
-    } else if (action === 'Insert as Comment') {
+      statusBar.showSuccess(`Inserted ${result.results.length} memories`);
+    } else if (action === 'Insert as Comment' && editor) {
       const languageId = editor.document.languageId;
       const commentedText = wrapAsComment(memoriesText, languageId);
       await insertMemoriesAboveCursor(editor, commentedText);
-      statusBar.showSuccess(`${result.results.length} memories recalled`);
+      statusBar.showSuccess(`Inserted ${result.results.length} memories as comments`);
     } else if (action === 'Copy to Clipboard') {
       await vscode.env.clipboard.writeText(memoriesText);
       vscode.window.showInformationMessage('Memories copied to clipboard');
       statusBar.setReady();
-    } else if (action === 'Preview') {
+    } else if (action === 'View Details') {
       // Show in output channel
       const outputChannel = vscode.window.createOutputChannel('UniMemory');
       outputChannel.clear();
