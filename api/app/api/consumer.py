@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 import logging
 
 from app.db.database import get_db
-from app.db.models import Source, Memory, MemorySource, User, ProcessingLog, MCPActivity
+from app.db.models import Source, Memory, MemorySource, User, ProcessingLog, MCPActivity, Waypoint
 from app.api.auth import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -679,6 +679,86 @@ async def consumer_search(
     except Exception as e:
         logger.error(f"Consumer search failed: {e}")
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+
+
+# ============ Memory Graph Endpoints ============
+
+class GraphNode(BaseModel):
+    id: str
+    content: str
+    sector: Optional[str]
+    salience: float
+    created_at: str
+
+class GraphEdge(BaseModel):
+    source: str
+    target: str
+    weight: float
+
+class MemoryGraphResponse(BaseModel):
+    nodes: List[GraphNode]
+    edges: List[GraphEdge]
+
+
+@router.get("/consumer/graph", response_model=MemoryGraphResponse)
+async def get_memory_graph(
+    limit: int = 100,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Get memory graph data for visualization.
+    Returns nodes (memories) and edges (waypoints) for the current user.
+    """
+    owner_id = str(user.id)
+    
+    # Fetch memories
+    memories_result = await session.execute(
+        select(Memory)
+        .where(Memory.owner_id == owner_id, Memory.is_active == True)
+        .order_by(Memory.salience.desc())
+        .limit(limit)
+    )
+    memories = memories_result.scalars().all()
+    
+    if not memories:
+        return MemoryGraphResponse(nodes=[], edges=[])
+    
+    memory_ids = [str(m.id) for m in memories]
+    
+    # Fetch waypoints between these memories
+    waypoints_result = await session.execute(
+        select(Waypoint)
+        .where(
+            Waypoint.src_id.in_(memory_ids),
+            Waypoint.dst_id.in_(memory_ids)
+        )
+    )
+    waypoints = waypoints_result.scalars().all()
+    
+    # Build nodes
+    nodes = [
+        GraphNode(
+            id=str(m.id),
+            content=m.content[:200] if m.content else "",
+            sector=m.sector,
+            salience=m.salience or 0.5,
+            created_at=m.created_at.isoformat() if m.created_at else ""
+        )
+        for m in memories
+    ]
+    
+    # Build edges
+    edges = [
+        GraphEdge(
+            source=str(w.src_id),
+            target=str(w.dst_id),
+            weight=w.weight or 0.5
+        )
+        for w in waypoints
+    ]
+    
+    return MemoryGraphResponse(nodes=nodes, edges=edges)
 
 
 # ============ Chat Context Endpoints ============

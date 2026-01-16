@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Trash2, X, Loader2 } from "lucide-react";
+import { Trash2, X, Loader2, Network } from "lucide-react";
 import { auth } from "@/lib/firebase";
+import MemoryGraph from "@/components/MemoryGraph";
 
 interface Source {
   id: string;
@@ -37,6 +38,7 @@ export default function MemoriesPage() {
   const [loadingSourceDetail, setLoadingSourceDetail] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'source' | 'memory', id: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [showGraph, setShowGraph] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -215,8 +217,15 @@ export default function MemoriesPage() {
   return (
     <div className="h-screen flex flex-col bg-neutral-50">
       {/* Header */}
-      <div className="px-8 py-6">
+      <div className="px-8 py-6 flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-neutral-900">Memories</h1>
+        <button
+          onClick={() => setShowGraph(true)}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-neutral-900 text-white text-sm font-medium hover:bg-neutral-800 transition-colors"
+        >
+          <Network className="w-4 h-4" />
+          Memory Graph
+        </button>
       </div>
 
       {/* Content */}
@@ -368,12 +377,12 @@ export default function MemoriesPage() {
                   </div>
 
                   {/* Right: Summary + Memories Skeleton */}
-                  <div className="w-1/2 overflow-y-auto bg-neutral-100">
+                  <div className="w-1/2 overflow-y-auto bg-white">
                     <div className="p-6 space-y-6">
                       {/* Summary Skeleton */}
                       <div>
-                        <div className="h-4 w-20 bg-neutral-300 rounded animate-pulse mb-3"></div>
-                        <div className="space-y-2">
+                        <div className="h-4 w-20 bg-neutral-200 rounded animate-pulse mb-3"></div>
+                        <div className="bg-neutral-100 rounded-xl p-4 space-y-2">
                           <div className="h-3 bg-neutral-300 rounded animate-pulse w-full"></div>
                           <div className="h-3 bg-neutral-300 rounded animate-pulse w-full"></div>
                           <div className="h-3 bg-neutral-300 rounded animate-pulse w-4/5"></div>
@@ -382,10 +391,10 @@ export default function MemoriesPage() {
 
                       {/* Memories Skeleton */}
                       <div>
-                        <div className="h-4 w-32 bg-neutral-300 rounded animate-pulse mb-3"></div>
-                        <div className="space-y-4">
+                        <div className="h-4 w-32 bg-neutral-200 rounded animate-pulse mb-3"></div>
+                        <div className="space-y-3">
                           {Array.from({ length: 3 }).map((_, idx) => (
-                            <div key={idx} className="space-y-2">
+                            <div key={idx} className="bg-neutral-100 rounded-xl p-4 space-y-2">
                               <div className="h-3 bg-neutral-300 rounded animate-pulse w-full"></div>
                               <div className="h-3 bg-neutral-300 rounded animate-pulse w-5/6"></div>
                             </div>
@@ -423,7 +432,7 @@ export default function MemoriesPage() {
                   </div>
 
                   {/* Right: Summary + Memories */}
-                  <div className="w-1/2 overflow-y-auto bg-neutral-100">
+                  <div className="w-1/2 overflow-y-auto bg-white">
                     <div className="p-6 space-y-6">
                       {/* Summary */}
                       {selectedSource.summary && (
@@ -431,9 +440,11 @@ export default function MemoriesPage() {
                           <h3 className="text-sm font-semibold text-neutral-900 mb-3">
                             Summary
                           </h3>
-                          <p className="text-sm text-neutral-700 leading-relaxed">
-                            {selectedSource.summary}
-                          </p>
+                          <div className="bg-neutral-100 rounded-xl p-4">
+                            <p className="text-sm text-neutral-700 leading-relaxed">
+                              {selectedSource.summary}
+                            </p>
+                          </div>
                         </div>
                       )}
 
@@ -442,14 +453,16 @@ export default function MemoriesPage() {
                         <h3 className="text-sm font-semibold text-neutral-900 mb-3">
                           Memories ({selectedSource.memories.length})
                         </h3>
-                        <div className="space-y-4">
+                        <div className="space-y-3">
                           {selectedSource.memories.length === 0 ? (
                             <p className="text-sm text-neutral-500">No memories extracted</p>
                           ) : (
                             selectedSource.memories.map((memory) => (
-                              <p key={memory.id} className="text-sm text-neutral-700 leading-relaxed">
-                                {memory.content}
-                              </p>
+                              <div key={memory.id} className="bg-neutral-100 rounded-xl p-4">
+                                <p className="text-sm text-neutral-700 leading-relaxed">
+                                  {memory.content}
+                                </p>
+                              </div>
                             ))
                           )}
                         </div>
@@ -497,6 +510,9 @@ export default function MemoriesPage() {
           </div>
         </div>
       )}
+
+      {/* Memory Graph Modal */}
+      <MemoryGraph isOpen={showGraph} onClose={() => setShowGraph(false)} />
     </div>
   );
 }
