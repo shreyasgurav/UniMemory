@@ -7,7 +7,6 @@
 (function() {
   'use strict';
 
-  const BUTTON_ID = 'unimemory-inject-btn';
   const MEMORIES_BLOCK_ID = 'unimemory-memories-block';
   
   // Platform-specific input selectors
@@ -95,152 +94,28 @@
     inputEl.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
-  // Create the UniMemory button
-  function createButton() {
-    const btn = document.createElement('button');
-    btn.id = BUTTON_ID;
-    btn.type = 'button';
-    btn.title = 'Add related memories from UniMemory';
-    
-    const img = document.createElement('img');
-    img.src = chrome.runtime.getURL('icons/unimemory-logo.png');
-    img.alt = 'UniMemory';
-    img.style.cssText = 'width: 20px; height: 20px; object-fit: contain;';
-    
-    btn.appendChild(img);
-    btn.className = 'unimemory-inject-button';
-    
-    // Create tooltip (placed below the button)
-    const tooltip = document.createElement('div');
-    tooltip.className = 'unimemory-tooltip';
-    tooltip.textContent = 'Add memories';
-    tooltip.style.cssText = `
-      position: absolute;
-      top: calc(100% + 8px);
-      left: 50%;
-      transform: translateX(-50%) scale(0.9);
-      background: #000;
-      color: white;
-      padding: 6px 12px;
-      border-radius: 9999px;
-      font-size: 12px;
-      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-      white-space: nowrap;
-      opacity: 0;
-      pointer-events: none;
-      transition: all 0.2s ease;
-      z-index: 10000;
-    `;
-    btn.appendChild(tooltip);
-    
-    return btn;
-  }
-
-  // Create loading spinner
-  function createSpinner() {
-    return `
-      <svg class="unimemory-spinner" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" stroke-dasharray="32" stroke-dashoffset="8">
-          <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite"/>
-        </circle>
-      </svg>
-    `;
-  }
-
-  // Inject button into the input area
-  function injectButton(inputEl) {
-    if (!inputEl) return;
-    if (document.getElementById(BUTTON_ID)) return;
-
-    const container = findInputContainer(inputEl);
-    if (!container) return;
-
-    // Make container relative for absolute positioning
-    const containerStyle = window.getComputedStyle(container);
-    if (containerStyle.position === 'static') {
-      container.style.position = 'relative';
-    }
-
-    const btn = createButton();
-    
-    // Platform-specific positioning and sizing
-    let positionStyle = '';
-    let buttonSize = '36px';
-    
-    if (currentPlatform === 'claude') {
-      // Claude: position on left side after + and clock icons, smaller size
-      positionStyle = `
-        left: 100px;
-        bottom: 10px;
-      `;
-      buttonSize = '32px';
-    } else if (currentPlatform === 'gemini') {
-      // Gemini: position on right side near tools section
-      positionStyle = `
-        right: 120px;
-        bottom: 10px;
-      `;
-    } else {
-      // ChatGPT: position on right side before dictate button
-      positionStyle = `
-        right: 90px;
-        bottom: 10px;
-      `;
-    }
-    
-    btn.style.cssText = `
-      position: absolute;
-      ${positionStyle}
-      width: ${buttonSize};
-      height: ${buttonSize};
-      border-radius: 9999px;
-      border: none;
-      background: transparent;
-      cursor: pointer;
-      z-index: 9999;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #666;
-      transition: all 0.2s ease;
-      outline: none;
-      box-shadow: none;
-    `;
-
-    btn.addEventListener('mouseenter', () => {
-      if (!isLoading) {
-        btn.style.background = '#454545';
-        const tooltip = btn.querySelector('.unimemory-tooltip');
-        if (tooltip) {
-          tooltip.style.opacity = '1';
-          tooltip.style.transform = 'translateX(-50%) scale(1)';
-        }
-      }
-    });
-
-    btn.addEventListener('mouseleave', () => {
-      if (!isLoading) {
-        btn.style.background = 'transparent';
-        const tooltip = btn.querySelector('.unimemory-tooltip');
-        if (tooltip) {
-          tooltip.style.opacity = '0';
-          tooltip.style.transform = 'translateX(-50%) scale(0.9)';
-        }
-      }
-    });
-
-    btn.addEventListener('click', (e) => {
+  // Setup keyboard shortcut listener (Cmd+\ for Mac, Ctrl+\ for Windows)
+  function setupKeyboardShortcut() {
+    document.addEventListener('keydown', async (e) => {
+      // Check for Cmd+\ (Mac) or Ctrl+\ (Windows)
+      const isShortcut = (e.metaKey || e.ctrlKey) && e.key === '\\';
+      
+      if (!isShortcut) return;
+      
       e.preventDefault();
       e.stopPropagation();
-      handleButtonClick(inputEl, btn);
+      
+      const input = findChatInput();
+      if (!input) return;
+      
+      await handleMemorySearch(input);
     });
-
-    container.appendChild(btn);
-    console.log('[UniMemory] Button injected for', currentPlatform);
+    
+    console.log('[UniMemory] Keyboard shortcut (Cmd+\\ / Ctrl+\\) enabled for', currentPlatform);
   }
 
-  // Handle button click
-  async function handleButtonClick(inputEl, btn) {
+  // Handle memory search
+  async function handleMemorySearch(inputEl) {
     if (isLoading) return;
 
     const promptText = getPromptText(inputEl);
@@ -250,8 +125,7 @@
     }
 
     isLoading = true;
-    btn.innerHTML = createSpinner();
-    btn.style.cursor = 'wait';
+    showNotification('Searching memories...', 'loading');
 
     try {
       // Search for memories via background script
@@ -286,13 +160,6 @@
       showNotification('Failed to search memories', 'error');
     } finally {
       isLoading = false;
-      const img = document.createElement('img');
-      img.src = chrome.runtime.getURL('icons/unimemory-logo.png');
-      img.alt = 'UniMemory';
-      img.style.cssText = 'width: 20px; height: 20px; object-fit: contain;';
-      btn.innerHTML = '';
-      btn.appendChild(img);
-      btn.style.cursor = 'pointer';
     }
   }
 
@@ -458,30 +325,14 @@ ${memoryText}
     currentPlatform = detectPlatform();
     if (!currentPlatform) return;
 
-    console.log('[UniMemory] Memory inject initialized for', currentPlatform);
+    console.log('[UniMemory] Initializing for', currentPlatform);
     addStyles();
 
-    // Try to inject button immediately
-    const input = findChatInput();
-    if (input) {
-      injectButton(input);
-    }
-
+    // Setup keyboard shortcut (Cmd+\ or Ctrl+\)
+    setupKeyboardShortcut();
+    
     // Start monitoring send button for automatic prompt capture
     monitorSendButton();
-
-    // Watch for DOM changes (React apps update frequently)
-    const observer = new MutationObserver(() => {
-      const input = findChatInput();
-      if (input && !document.getElementById(BUTTON_ID)) {
-        injectButton(input);
-      }
-    });
-
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true
-    });
   }
 
   // Wait for DOM ready
