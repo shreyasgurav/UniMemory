@@ -216,6 +216,20 @@ class TagsUpdateRequest(BaseModel):
     tags: List[str]
 
 
+class CreateAtomicMemoryRequest(BaseModel):
+    """Request to create a standalone atomic memory (no source)"""
+    content: str = Field(..., min_length=1, max_length=10000)
+    platform: Optional[str] = Field(None, max_length=100)
+    tags: Optional[List[str]] = Field(default_factory=list)
+
+
+class CreateAtomicMemoryResponse(BaseModel):
+    """Response for atomic memory creation"""
+    id: str
+    created_at: str
+    was_deduplicated: bool = False
+
+
 # ============ Atomic Memory Creation ============
 
 @router.post("/consumer/memories/atomic", response_model=CreateAtomicMemoryResponse)
@@ -685,20 +699,6 @@ class ConsumerSearchResponse(BaseModel):
     results: List[MemoryResponse]
     total: int
     query: str
-
-
-class CreateAtomicMemoryRequest(BaseModel):
-    """Request to create a standalone atomic memory (no source)"""
-    content: str = Field(..., min_length=1, max_length=10000)
-    platform: Optional[str] = Field(None, max_length=100)
-    tags: Optional[List[str]] = Field(default_factory=list)
-
-
-class CreateAtomicMemoryResponse(BaseModel):
-    """Response for atomic memory creation"""
-    id: str
-    created_at: str
-    was_deduplicated: bool = False
 
 
 # Search result cache for consumer queries
