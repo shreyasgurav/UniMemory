@@ -177,15 +177,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     showNotAuthenticatedState();
   });
   
-  // Import ChatGPT memories
-  const importChatGPTBtn = document.getElementById('import-chatgpt-btn');
-  if (importChatGPTBtn) {
-    importChatGPTBtn.addEventListener('click', () => {
-      chrome.tabs.create({ url: 'https://chatgpt.com/#settings/Personalization' });
-      window.close();
-    });
-  }
-  
   // Settings change handlers
   autoSaveToggle.addEventListener('change', saveSettings);
   
