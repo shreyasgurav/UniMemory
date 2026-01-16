@@ -16,6 +16,56 @@ export class AuthManager {
   }
 
   /**
+   * Exchange Firebase ID token for consumer session JWT
+   */
+  private async exchangeToken(firebaseToken: string): Promise<{
+    session_token: string;
+    expires_in: number;
+    user: { id: string; email: string; name?: string };
+  } | null> {
+    try {
+      const apiUrl = vscode.workspace.getConfiguration('unimemory').get('apiUrl') || 
+                     'https://unimemory.up.railway.app/api/v1';
+      
+      const response = await fetch(`${apiUrl}/consumer/auth/session`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${firebaseToken}`,
+          'Content-Type': 'application/json',
+          'X-Client': 'vscode-extension',
+          'X-Client-Version': '0.1.0'
+        }
+      });
+
+      if (!response.ok) {
+        console.log('[UniMemory Auth] Token exchange failed:', response.status);
+        return null;
+      }
+
+      const data = await response.json() as {
+        authenticated: boolean;
+        session_token: string;
+        expires_in: number;
+        user: { id: string; email: string; name?: string };
+      };
+
+      if (!data.authenticated || !data.session_token) {
+        console.log('[UniMemory Auth] Token exchange returned unauthenticated');
+        return null;
+      }
+
+      return {
+        session_token: data.session_token,
+        expires_in: data.expires_in,
+        user: data.user
+      };
+    } catch (error) {
+      console.log('[UniMemory Auth] Token exchange error:', error);
+      return null;
+    }
+  }
+
+  /**
    * Start login flow - opens browser and waits for callback
    */
   async login(): Promise<boolean> {
@@ -74,10 +124,19 @@ export class AuthManager {
           if (token && userJson && expiresIn) {
             const user = JSON.parse(decodeURIComponent(userJson));
             
+            // Exchange Firebase token for consumer session token
+            console.log('[UniMemory Auth] Exchanging Firebase token for session token...');
+            const sessionData = await this.exchangeToken(token);
+            
+            if (!sessionData) {
+              throw new Error('Failed to exchange token');
+            }
+            
+            console.log('[UniMemory Auth] Session token obtained, storing...');
             await this.client.setSession({
-              session_token: token,
-              user,
-              expires_in: parseInt(expiresIn, 10)
+              session_token: sessionData.session_token,
+              user: sessionData.user,
+              expires_in: sessionData.expires_in
             });
 
             // Send success response
