@@ -233,11 +233,8 @@ export default function MemoriesPage() {
           ) : (
             <div className="columns-1 md:columns-2 lg:columns-3 gap-4 space-y-4">
               {sources.length === 0 && memories.length === 0 ? (
-                <div className="col-span-full bg-white rounded-xl p-16 text-center">
-                  <p className="text-neutral-700 font-medium text-lg">No memories yet</p>
-                  <p className="text-sm text-neutral-500 mt-2">
-                    Memories will appear when you capture chats or documents
-                  </p>
+                <div className="h-[60vh] w-full flex items-center justify-center text-neutral-500">
+                  No memories available.
                 </div>
               ) : (
                 <>
