@@ -65,6 +65,11 @@ export default function ActivityPage() {
   }, [loading, events.length]);
 
   const getSourceName = (event: ActivityEvent) => {
+    // UniMemory dashboard actions (deletions, etc.)
+    if (event.source === "unimemory" || event.agent === "UniMemory") {
+      return "UniMemory";
+    }
+    
     // MCP activity
     if (event.source === "mcp" && event.agent) {
       const agentMap: Record<string, string> = {
@@ -110,6 +115,17 @@ export default function ActivityPage() {
 
   const getSourceLogo = (event: ActivityEvent) => {
     const sourceName = getSourceName(event);
+    
+    // UniMemory logo for dashboard actions
+    if (sourceName === "UniMemory") {
+      return (
+        <img 
+          src="/unimemory-logo.png" 
+          alt="UniMemory"
+          className="w-8 h-8 rounded-lg object-contain"
+        />
+      );
+    }
     
     // First, try to use favicon from source_metadata
     if (event.source_metadata?.favicon) {

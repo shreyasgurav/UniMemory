@@ -528,7 +528,8 @@ async def delete_memory(
         session=session,
         user_id=str(user.id),
         action="memory_deleted",
-        source="dashboard",
+        source="unimemory",
+        agent="UniMemory",
         memory_id=memory_id,
         details={
             "content_preview": content_preview,
@@ -574,7 +575,8 @@ async def delete_source(
         session=session,
         user_id=str(user.id),
         action="source_deleted",
-        source="dashboard",
+        source="unimemory",
+        agent="UniMemory",
         source_id=source_id,
         details={
             "title": source.title or metadata.get("title"),
