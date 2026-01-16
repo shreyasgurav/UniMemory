@@ -399,3 +399,167 @@ async def get_user_from_api_key(
     """
     user, _ = await validate_api_key(x_api_key, session)
     return user
+
+
+async def validate_api_key_optional(
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    session: AsyncSession = Depends(get_db)
+) -> Optional[Tuple[User, APIKey]]:
+    """
+    Optional API key validation - returns None if no key provided.
+    Used by unified auth to check API key first.
+    """
+    if not x_api_key:
+        return None
+    
+    try:
+        return await validate_api_key_optimized(x_api_key, session)
+    except HTTPException:
+        return None
+
+
+async def verify_session_token_optional(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    session: AsyncSession = Depends(get_db)
+) -> Optional[User]:
+    """
+    Optional session token validation - returns None if invalid.
+    Used by unified auth to check session token as fallback.
+    """
+    if not credentials:
+        return None
+    
+    token = credentials.credentials
+    secret_key = os.environ.get("JWT_SECRET_KEY", "unimemory-consumer-secret-key")
+    
+    try:
+        import jwt
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
+        
+        if payload.get("type") != "consumer_session":
+            return None
+        
+        user_id = payload.get("sub")
+        if not user_id:
+            return None
+        
+        result = await session.execute(
+            select(User).where(User.id == user_id)
+        )
+        user = result.scalar_one_or_none()
+        
+        if user and user.is_active:
+            return user
+        return None
+        
+    except Exception:
+        return None
+
+
+async def get_user_unified(
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    session: AsyncSession = Depends(get_db)
+) -> Tuple[User, Optional[APIKey]]:
+    """
+    Unified auth dependency - supports BOTH API key and session token.
+    
+    Priority:
+    1. X-API-Key header (B2B developers)
+    2. Bearer token (Consumer session from extension)
+    
+    Returns: (User, APIKey or None)
+    - If API key auth: returns (user, api_key)
+    - If session token auth: returns (user, None)
+    
+    Usage:
+        @router.post("/memories")
+        async def create_memory(user_info: tuple = Depends(get_user_unified)):
+            user, api_key = user_info
+    """
+    # Try API key first (B2B)
+    if x_api_key:
+        try:
+            user, api_key = await validate_api_key_optimized(x_api_key, session)
+            # Check rate limit
+            from app.core.cache import check_rate_limit
+            allowed, remaining, reset = await check_rate_limit(str(api_key.id))
+            if not allowed:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Rate limit exceeded",
+                    headers={
+                        "X-RateLimit-Remaining": str(remaining),
+                        "X-RateLimit-Reset": str(reset),
+                    }
+                )
+            return user, api_key
+        except HTTPException:
+            # API key provided but invalid - don't fallback, fail
+            raise
+    
+    # Try session token (Consumer extension)
+    if credentials:
+        token = credentials.credentials
+        secret_key = os.environ.get("JWT_SECRET_KEY", "unimemory-consumer-secret-key")
+        
+        try:
+            import jwt
+            payload = jwt.decode(token, secret_key, algorithms=["HS256"])
+            
+            if payload.get("type") != "consumer_session":
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid token type"
+                )
+            
+            user_id = payload.get("sub")
+            if not user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid token payload"
+                )
+            
+            result = await session.execute(
+                select(User).where(User.id == user_id)
+            )
+            user = result.scalar_one_or_none()
+            
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="User not found"
+                )
+            
+            if not user.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="User account is deactivated"
+                )
+            
+            return user, None  # No API key for session auth
+            
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Session token expired"
+            )
+        except jwt.InvalidTokenError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid session token"
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Session token verification failed: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token verification failed"
+            )
+    
+    # No auth provided
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authentication required. Provide X-API-Key header or Bearer token."
+    )

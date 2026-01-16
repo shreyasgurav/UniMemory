@@ -159,17 +159,19 @@ async function ingestPrompt(prompt, platform) {
     return { success: false, reason: 'not_authenticated' };
   }
   
-  console.log('[UniMemory] Creating atomic memory from', platform, ':', prompt.substring(0, 50) + '...');
+  console.log('[UniMemory] Creating memory from', platform, ':', prompt.substring(0, 50) + '...');
   
-  // Create atomic memory directly (no source, no extraction)
+  // Create memory via unified POST /memories endpoint
+  // Supports both API key (B2B) and session token (consumer) auth
   const memoryData = {
     content: prompt,
-    platform: platform,
+    user_id: 'consumer',  // Identifies as consumer extension user
+    app_id: platform,     // Platform where prompt was captured
     tags: []
   };
   
   try {
-    const response = await fetch(`${API_BASE_URL}/consumer/memories/atomic`, {
+    const response = await fetch(`${API_BASE_URL}/memories`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${session.token}`,
@@ -192,7 +194,7 @@ async function ingestPrompt(prompt, platform) {
     }
     
     const result = await response.json();
-    console.log('[UniMemory] Atomic memory created:', result.id, result.was_deduplicated ? '(deduplicated)' : '(new)');
+    console.log('[UniMemory] Memory created:', result.id);
     
     return { success: true, data: result };
   } catch (error) {

@@ -18,7 +18,7 @@ from app.core.embeddings import get_embedding_service
 from app.core.simhash import compute_simhash, hamming_distance
 from app.core.sector import classify_sector, get_sector_decay_lambda, calculate_initial_salience
 from app.core.waypoints import create_waypoint_for_memory
-from app.core.auth import validate_api_key, get_current_user
+from app.core.auth import validate_api_key, get_current_user, get_user_unified
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -188,7 +188,7 @@ class CoreMemoryListResponse(BaseModel):
 async def create_memory(
     request: CreateMemoryRequest,
     background_tasks: BackgroundTasks,
-    user_info: tuple = Depends(validate_api_key),
+    user_info: tuple = Depends(get_user_unified),
     session: AsyncSession = Depends(get_db)
 ):
     """
@@ -199,9 +199,11 @@ async def create_memory(
     
     For intelligent extraction from raw text/chat, use /ingest/* endpoints.
     
-    Requires X-API-Key header for authentication.
+    Authentication: X-API-Key header OR Bearer token (session).
+    - B2B developers: Use X-API-Key header
+    - Consumer extension: Use Bearer session token
     """
-    user, api_key = user_info
+    user, api_key = user_info  # api_key is None for session auth
     owner_id = str(user.id)
     
     content = request.content

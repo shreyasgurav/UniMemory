@@ -19,11 +19,6 @@ import logging
 from app.db.database import get_db
 from app.db.models import Source, Memory, MemorySource, User, ProcessingLog, MCPActivity
 from app.api.auth import get_current_user
-from app.core.embeddings import get_embedding_service
-from app.core.simhash import compute_simhash, hamming_distance
-from app.core.sector import classify_sector, get_sector_decay_lambda
-from app.core.waypoints import create_waypoint_for_memory
-import uuid
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -216,113 +211,8 @@ class TagsUpdateRequest(BaseModel):
     tags: List[str]
 
 
-class CreateAtomicMemoryRequest(BaseModel):
-    """Request to create a standalone atomic memory (no source)"""
-    content: str = Field(..., min_length=1, max_length=10000)
-    platform: Optional[str] = Field(None, max_length=100)
-    tags: Optional[List[str]] = Field(default_factory=list)
-
-
-class CreateAtomicMemoryResponse(BaseModel):
-    """Response for atomic memory creation"""
-    id: str
-    created_at: str
-    was_deduplicated: bool = False
-
-
-# ============ Atomic Memory Creation ============
-
-@router.post("/consumer/memories/atomic", response_model=CreateAtomicMemoryResponse)
-async def create_atomic_memory(
-    request: CreateAtomicMemoryRequest,
-    user: User = Depends(verify_consumer_session_token),
-    session: AsyncSession = Depends(get_db)
-):
-    """Create a standalone atomic memory without source (for individual prompts)"""
-    content = request.content.strip()
-    owner_id = str(user.id)
-    
-    # Step 1: Compute SimHash for deduplication
-    simhash = compute_simhash(content)
-    
-    # Step 2: Check for near-duplicates
-    stmt = select(Memory).where(
-        Memory.simhash.isnot(None),
-        Memory.is_active == True,
-        Memory.owner_id == owner_id
-    ).order_by(Memory.salience.desc()).limit(100)
-    
-    result = await session.execute(stmt)
-    existing_memories = result.scalars().all()
-    
-    for existing in existing_memories:
-        if existing.simhash and hamming_distance(simhash, existing.simhash) <= 3:
-            # Near-duplicate found - boost salience and return existing
-            existing.salience = min(1.0, (existing.salience or 0.5) + 0.1)
-            existing.last_seen_at = datetime.utcnow()
-            await session.commit()
-            return CreateAtomicMemoryResponse(
-                id=str(existing.id),
-                created_at=str(existing.created_at),
-                was_deduplicated=True
-            )
-    
-    # Step 3: Generate embedding
-    embedding_service = get_embedding_service()
-    try:
-        embedding, dim = await embedding_service.embed(content)
-    except Exception as e:
-        logger.error(f"Embedding generation failed: {e}")
-        raise HTTPException(status_code=500, detail="Failed to process memory")
-    
-    # Step 4: Classify sector
-    sector, _, _ = classify_sector(content)
-    
-    # Step 5: Create memory
-    memory_id = str(uuid.uuid4())
-    memory = Memory(
-        id=memory_id,
-        content=content,
-        simhash=simhash,
-        sector=sector,
-        salience=0.5,
-        decay_lambda=get_sector_decay_lambda(sector),
-        segment=0,
-        tags=request.tags or [],
-        source_app=request.platform,
-        user_id="consumer",
-        owner_id=owner_id,
-        embedding=embedding,
-        embedding_model="text-embedding-3-small",
-        is_active=True,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-        last_seen_at=datetime.utcnow()
-    )
-    
-    session.add(memory)
-    await session.commit()
-    
-    # Step 6: Create waypoint in background (non-blocking)
-    try:
-        await create_waypoint_for_memory(
-            session=session,
-            new_memory_id=memory_id,
-            new_embedding=embedding,
-            user_id="consumer"
-        )
-        await session.commit()
-    except Exception as e:
-        logger.warning(f"Waypoint creation failed (non-critical): {e}")
-    
-    return CreateAtomicMemoryResponse(
-        id=memory_id,
-        created_at=str(memory.created_at),
-        was_deduplicated=False
-    )
-
-
 # ============ Sources Endpoints ============
+# NOTE: Atomic memory creation is handled by POST /memories (unified auth)
 
 @router.get("/consumer/sources", response_model=List[SourceResponse])
 async def get_sources(
