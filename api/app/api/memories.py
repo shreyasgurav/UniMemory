@@ -12,7 +12,7 @@ import uuid
 import logging
 
 from app.db.database import get_db
-from app.db.models import Memory, Waypoint, ProcessingLog, User
+from app.db.models import Memory, Waypoint, ProcessingLog, User, ActivityLog
 from app.core.extractor import get_extractor
 from app.core.embeddings import get_embedding_service
 from app.core.simhash import compute_simhash, hamming_distance
@@ -271,7 +271,33 @@ async def create_memory(
     session.add(memory)
     await session.commit()
     
-    # Step 6: Create waypoints in background
+    # Step 6: Log activity
+    try:
+        source = "extension" if not api_key else "api"
+        agent = request.app_id or "Chrome Extension"
+        content_preview = content[:100] if content else ""
+        
+        activity = ActivityLog(
+            user_id=owner_id,
+            action="memory_created",
+            source=source,
+            agent=agent,
+            memory_id=memory_id,
+            details={
+                "content_preview": content_preview,
+                "sector": sector,
+                "salience": 0.5,
+                "tags": request.tags or []
+            },
+            description=f"Added memory: {content_preview}..."
+        )
+        session.add(activity)
+        await session.commit()
+    except Exception as e:
+        logger.error(f"Failed to log activity: {e}")
+        # Don't fail the main operation if logging fails
+    
+    # Step 7: Create waypoints in background
     from app.db.database import AsyncSessionLocal
     background_tasks.add_task(
         create_waypoints_background,

@@ -752,6 +752,24 @@ async def consumer_search(
             for k in sorted_keys[:_SEARCH_CACHE_MAX_SIZE // 10]:
                 del _search_cache[k]
         
+        # Log search activity
+        try:
+            await log_activity(
+                session=session,
+                user_id=owner_id,
+                action="memory_searched",
+                source="extension",
+                agent="Chrome Extension",
+                details={
+                    "query": request.query,
+                    "result_count": len(search_results),
+                    "limit": limit
+                },
+                description=f"Searched: '{request.query}' ({len(search_results)} results)"
+            )
+        except Exception as e:
+            logger.error(f"Failed to log search activity: {e}")
+        
         return ConsumerSearchResponse(
             results=search_results,
             total=len(search_results),
