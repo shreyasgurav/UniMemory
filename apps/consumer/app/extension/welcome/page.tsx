@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import Image from "next/image";
@@ -10,6 +10,7 @@ export const dynamic = "force-dynamic";
 
 export default function ExtensionWelcomePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [status, setStatus] = useState<"connecting" | "connected" | "error">("connecting");
 
   useEffect(() => {
@@ -20,7 +21,24 @@ export default function ExtensionWelcomePage() {
           router.push(`/login?extension=true&redirect=${redirect}`);
           return;
         }
+        
         const token = await user.getIdToken(true);
+        const callbackUrl = searchParams.get('callback');
+        
+        // VS Code extension: redirect to localhost callback
+        if (callbackUrl && callbackUrl.startsWith('http://localhost')) {
+          const userJson = encodeURIComponent(JSON.stringify({
+            id: user.uid,
+            email: user.email || '',
+            name: user.displayName || ''
+          }));
+          
+          const redirectUrl = `${callbackUrl}?token=${token}&user=${userJson}&expires_in=3600`;
+          window.location.href = redirectUrl;
+          return;
+        }
+        
+        // Chrome extension: use postMessage
         window.postMessage({ type: "UNIMEMORY_ID_TOKEN", token }, window.location.origin);
         setStatus("connected");
         setTimeout(() => {
@@ -31,7 +49,7 @@ export default function ExtensionWelcomePage() {
       }
     });
     return () => unsub();
-  }, [router]);
+  }, [router, searchParams]);
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-white">

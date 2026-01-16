@@ -69,10 +69,10 @@
     "keybindings": [
       {
         "command": "unimemory.recallMemory",
-        "key": "cmd+shift+m",
-        "mac": "cmd+shift+m",
-        "win": "ctrl+shift+m",
-        "linux": "ctrl+shift+m",
+        "key": "ctrl+\\",
+        "mac": "ctrl+\\",
+        "win": "ctrl+\\",
+        "linux": "ctrl+\\",
         "when": "editorTextFocus"
       },
       {

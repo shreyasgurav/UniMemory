@@ -37,7 +37,7 @@ export class StatusBarManager {
       this.statusBarItem.backgroundColor = undefined;
     } else {
       this.statusBarItem.text = '$(brain) UniMemory';
-      this.statusBarItem.tooltip = 'UniMemory: Ready (Cmd+Shift+M to recall memories)';
+      this.statusBarItem.tooltip = 'UniMemory: Ready (Ctrl+\\ to recall memories)';
       this.statusBarItem.command = 'unimemory.showActivity';
       this.statusBarItem.backgroundColor = undefined;
     }

@@ -6,10 +6,10 @@ Works with **Cursor**, **Windsurf**, **VS Code**, and other VS Code-based editor
 
 ## 🧠 Core Features
 
-### 1. Memory Recall (Cmd+Shift+M)
+### 1. Memory Recall (Ctrl+\)
 Inject relevant long-term memories into your current context.
 
-- Press `Cmd+Shift+M` (Mac) or `Ctrl+Shift+M` (Windows/Linux)
+- Press `Ctrl+\` (all platforms - matches Chrome extension)
 - Uses current selection or cursor line as search query
 - Retrieves relevant memories from your UniMemory
 - Insert above cursor, as comment, or copy to clipboard
@@ -66,7 +66,7 @@ See what UniMemory is doing via status bar and activity panel.
 
 | Shortcut | Action |
 |----------|--------|
-| `Cmd+Shift+M` | Recall memories |
+| `Ctrl+\` | Recall memories (matches Chrome extension) |
 | `Cmd+Shift+S` | Save selection as memory |
 
 ## 🎯 What Counts as a Memory
