@@ -85,14 +85,16 @@ export default function LoginPage() {
           </p>
         </div>
       </div>
-
+      
       {/* Right Side - Static Image */}
       <div className="hidden lg:block lg:w-2/5 relative overflow-hidden bg-black">
         <img 
-          src="/Unimemory-LoginPage-image.png" 
+          src="/Unimemory-LoginImage.png" 
           alt="UniMemory Login Visual" 
           className="absolute inset-0 w-full h-full object-contain object-right"
         />
+        {/* Gradient overlay - fade from left (high opacity) to right (low opacity) */}
+        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-transparent to-black/40"></div>
       </div>
     </div>
   );
