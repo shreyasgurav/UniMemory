@@ -26,8 +26,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Current user
   let currentUser = null;
   
-  // Check auth status
-  async function checkAuth() {
+  // Check auth status with retry logic
+  async function checkAuth(retryCount = 0) {
     try {
       const response = await chrome.runtime.sendMessage({ type: 'GET_AUTH_STATUS' });
       
@@ -38,7 +38,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         showAuthenticatedState(response.user);
         await loadCurrentPageInfo();
       } else {
-        showNotAuthenticatedState();
+        // If not authenticated and this is first check, wait a bit and retry once
+        // This handles the case where session is being set from welcome page
+        if (retryCount === 0) {
+          setTimeout(() => checkAuth(1), 500);
+        } else {
+          showNotAuthenticatedState();
+        }
       }
     } catch (error) {
       console.error('Failed to check auth:', error);
