@@ -240,54 +240,50 @@
   }
 
   // Handle button click
-  async function handleButtonClick(btn, inputEl) {
+  async function handleButtonClick(inputEl, btn) {
     if (isLoading) return;
 
     const promptText = getPromptText(inputEl);
     if (!promptText) {
-      showPopupNotification('Please type something first', 'error');
+      showNotification('Please type something first', 'info');
       return;
     }
 
     isLoading = true;
-    btn.innerHTML = '<div class="unimemory-spinner" style="width: 20px; height: 20px; border: 2px solid #ccc; border-top-color: #666; border-radius: 50%;"></div>';
+    btn.innerHTML = createSpinner();
     btn.style.cursor = 'wait';
 
-    // Show loading popup
-    const loadingPopup = showPopupNotification('Searching memories...', 'loading');
-
     try {
+      // Search for memories via background script
       const response = await chrome.runtime.sendMessage({
         type: 'SEARCH_MEMORIES',
-        query: promptText,
-        limit: 5
+        query: promptText
       });
 
-      // Remove loading popup
-      if (loadingPopup) loadingPopup.remove();
-
-      if (response.success && response.data) {
-        const memories = response.data.results || [];
-        
-        if (memories.length === 0) {
-          showPopupNotification('No relevant memories found', 'error');
+      if (!response.success) {
+        if (response.error === 'Not authenticated') {
+          showNotification('Please log in to UniMemory first', 'error');
         } else {
-          insertMemories(inputEl, promptText, memories);
-          showPopupNotification(`Added ${memories.length} ${memories.length === 1 ? 'memory' : 'memories'}`, 'success');
+          showNotification(response.error || 'Failed to search memories', 'error');
         }
-      } else {
-        showPopupNotification('Failed to search memories', 'error');
+        return;
       }
+
+      const memories = response.data?.results || [];
+      
+      if (memories.length === 0) {
+        showNotification('No related memories found', 'info');
+        return;
+      }
+
+      // Insert memories into the input
+      insertMemories(inputEl, promptText, memories);
+      
+      // Show success notification with count
+      showNotification(`Added ${memories.length} ${memories.length === 1 ? 'memory' : 'memories'}`, 'success');
     } catch (error) {
       console.error('[UniMemory] Search error:', error);
-      // Remove loading popup
-      if (loadingPopup) loadingPopup.remove();
-      
-      if (error.message === 'Not authenticated') {
-        showPopupNotification('Login to add memories', 'error');
-      } else {
-        showPopupNotification('Failed to search memories', 'error');
-      }
+      showNotification('Failed to search memories', 'error');
     } finally {
       isLoading = false;
       const img = document.createElement('img');
@@ -333,15 +329,14 @@ ${memoryText}
     }
   }
 
-  // Show popup notification (top right corner like save page popup)
-  function showPopupNotification(message, type = 'info') {
-    // Remove existing popup
+  // Show notification popup (top-right, white curvy toast matching save page style)
+  function showNotification(message, type = 'info') {
+    // Remove existing notification
     const existing = document.querySelector('.unimemory-toast');
     if (existing) existing.remove();
     
-    // Create popup container
-    const popup = document.createElement('div');
-    popup.className = `unimemory-toast unimemory-toast-${type}`;
+    const toast = document.createElement('div');
+    toast.className = `unimemory-toast unimemory-toast-${type}`;
     
     // Add icon based on type
     let icon = '';
@@ -351,29 +346,46 @@ ${memoryText}
       icon = '<svg class="unimemory-toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>';
     } else if (type === 'error') {
       icon = '<svg class="unimemory-toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>';
+    } else if (type === 'info') {
+      icon = '<svg class="unimemory-toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>';
     }
     
-    popup.innerHTML = `
+    toast.innerHTML = `
       ${icon}
       <span class="unimemory-toast-message">${message}</span>
     `;
     
-    document.body.appendChild(popup);
+    document.body.appendChild(toast);
     
-    // Auto-remove after 5 seconds (except for loading)
+    // Auto-remove after 3 seconds (except for loading)
     if (type !== 'loading') {
       setTimeout(() => {
-        popup.classList.add('unimemory-toast-fade-out');
-        setTimeout(() => popup.remove(), 300);
-      }, 5000);
+        toast.classList.add('unimemory-toast-fade-out');
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
     }
-    
-    return popup;
   }
 
-  // Styles are now loaded from extension.css globally
+  // Add minimal styles (toast styles are in extension.css)
   function addStyles() {
-    // No longer needed - using global extension.css styles
+    if (document.getElementById('unimemory-inject-styles')) return;
+
+    const style = document.createElement('style');
+    style.id = 'unimemory-inject-styles';
+    style.textContent = `
+      .unimemory-spinner {
+        animation: unimemory-spin 1s linear infinite;
+      }
+      @keyframes unimemory-spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      .unimemory-inject-button:focus {
+        outline: none;
+        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
+      }
+    `;
+    document.head.appendChild(style);
   }
 
   // Capture and ingest user prompt
