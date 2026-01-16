@@ -1,31 +1,167 @@
 {
   "name": "unimemory-vscode",
   "displayName": "UniMemory",
-  "description": "Capture code context and conversations",
+  "description": "Long-term memory capture + recall for AI-assisted development. Works with Cursor, Windsurf, and VS Code.",
   "version": "0.1.0",
+  "publisher": "unimemory",
+  "icon": "assets/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/shreyasgurav/UniMemory"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
-    "Other"
+    "Other",
+    "Machine Learning"
   ],
-  "activationEvents": [],
+  "keywords": [
+    "memory",
+    "ai",
+    "cursor",
+    "windsurf",
+    "context",
+    "rag"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "unimemory.capture",
-        "title": "UniMemory: Capture Selection"
+        "command": "unimemory.recallMemory",
+        "title": "UniMemory: Recall Memories",
+        "icon": "$(search)"
+      },
+      {
+        "command": "unimemory.saveMemory",
+        "title": "UniMemory: Save Selection as Memory",
+        "icon": "$(add)"
+      },
+      {
+        "command": "unimemory.saveChat",
+        "title": "UniMemory: Save Chat to Memory",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "unimemory.saveProjectContext",
+        "title": "UniMemory: Save Project Context",
+        "icon": "$(folder)"
+      },
+      {
+        "command": "unimemory.login",
+        "title": "UniMemory: Login",
+        "icon": "$(sign-in)"
+      },
+      {
+        "command": "unimemory.logout",
+        "title": "UniMemory: Logout",
+        "icon": "$(sign-out)"
+      },
+      {
+        "command": "unimemory.showActivity",
+        "title": "UniMemory: Show Activity",
+        "icon": "$(list-unordered)"
       }
-    ]
+    ],
+    "keybindings": [
+      {
+        "command": "unimemory.recallMemory",
+        "key": "cmd+shift+m",
+        "mac": "cmd+shift+m",
+        "win": "ctrl+shift+m",
+        "linux": "ctrl+shift+m",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "unimemory.saveMemory",
+        "key": "cmd+shift+s",
+        "mac": "cmd+shift+s",
+        "win": "ctrl+shift+alt+s",
+        "linux": "ctrl+shift+alt+s",
+        "when": "editorTextFocus && editorHasSelection"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "unimemory.recallMemory",
+          "group": "unimemory@1",
+          "when": "editorTextFocus"
+        },
+        {
+          "command": "unimemory.saveMemory",
+          "group": "unimemory@2",
+          "when": "editorHasSelection"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "unimemory.recallMemory",
+          "when": "true"
+        },
+        {
+          "command": "unimemory.saveMemory",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "unimemory.saveChat",
+          "when": "true"
+        },
+        {
+          "command": "unimemory.saveProjectContext",
+          "when": "true"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "UniMemory",
+      "properties": {
+        "unimemory.apiUrl": {
+          "type": "string",
+          "default": "https://unimemory.up.railway.app/api/v1",
+          "description": "UniMemory API URL"
+        },
+        "unimemory.appUrl": {
+          "type": "string",
+          "default": "https://unimemory-app.vercel.app",
+          "description": "UniMemory App URL for authentication"
+        },
+        "unimemory.maxMemories": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 20,
+          "description": "Maximum number of memories to recall"
+        },
+        "unimemory.showStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show UniMemory status in status bar"
+        }
+      }
+    }
   },
   "scripts": {
+    "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "package": "vsce package",
+    "publish": "vsce publish"
   },
   "devDependencies": {
     "@types/vscode": "^1.85.0",
     "@types/node": "^20",
-    "typescript": "^5"
+    "typescript": "^5",
+    "eslint": "^8",
+    "@typescript-eslint/eslint-plugin": "^6",
+    "@typescript-eslint/parser": "^6",
+    "@vscode/vsce": "^2"
+  },
+  "dependencies": {
+    "node-fetch": "^2"
   }
 }
