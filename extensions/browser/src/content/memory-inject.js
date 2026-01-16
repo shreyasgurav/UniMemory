@@ -114,6 +114,17 @@
     console.log('[UniMemory] Keyboard shortcut (Cmd+\\ / Ctrl+\\) enabled for', currentPlatform);
   }
 
+  // Listen for context menu trigger from background script
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'CONTEXT_MENU_CLICKED') {
+      const input = findChatInput();
+      if (input) {
+        handleMemorySearch(input);
+      }
+      sendResponse({ success: true });
+    }
+  });
+
   // Handle memory search
   async function handleMemorySearch(inputEl) {
     if (isLoading) return;

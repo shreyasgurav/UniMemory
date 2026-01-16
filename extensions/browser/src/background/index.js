@@ -6,6 +6,55 @@
 const API_BASE_URL = 'https://unimemory.up.railway.app/api/v1';
 const APP_URL = 'https://unimemory-app.vercel.app';
 
+// ============ Context Menu Setup ============
+
+// Create context menu on extension install/startup
+chrome.runtime.onInstalled.addListener(() => {
+  createContextMenu();
+});
+
+// Recreate context menu on startup
+chrome.runtime.onStartup.addListener(() => {
+  createContextMenu();
+});
+
+function createContextMenu() {
+  // Remove existing menu items first
+  chrome.contextMenus.removeAll(() => {
+    // Detect OS for keyboard shortcut display
+    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+    const shortcutKey = isMac ? '⌘' : 'Ctrl';
+    
+    // Create context menu item for editable fields
+    chrome.contextMenus.create({
+      id: 'unimemory-add-memories',
+      title: `Add memories from UniMemory (${shortcutKey} \\)`,
+      contexts: ['editable'],
+      documentUrlPatterns: [
+        'https://chat.openai.com/*',
+        'https://chatgpt.com/*',
+        'https://claude.ai/*',
+        'https://gemini.google.com/*',
+        'https://bard.google.com/*'
+      ]
+    });
+    
+    console.log('[UniMemory] Context menu created');
+  });
+}
+
+// Handle context menu clicks
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === 'unimemory-add-memories') {
+    // Send message to content script to trigger memory search
+    chrome.tabs.sendMessage(tab.id, {
+      type: 'CONTEXT_MENU_CLICKED'
+    }).catch(err => {
+      console.error('[UniMemory] Failed to send message to content script:', err);
+    });
+  }
+});
+
 // ============ Auth State ============
 
 async function getSession() {
