@@ -11,15 +11,24 @@ export async function recallMemoryCommand(
   client: UniMemoryClient,
   statusBar: StatusBarManager
 ): Promise<void> {
+  console.log('[UniMemory] recallMemoryCommand triggered');
+  
   const editor = vscode.window.activeTextEditor;
   
   if (!editor) {
+    console.log('[UniMemory] No active editor found');
     vscode.window.showWarningMessage('No active editor found');
     return;
   }
+  
+  console.log('[UniMemory] Active editor found:', editor.document.fileName);
 
   // Check authentication
-  if (!(await client.isAuthenticated())) {
+  const isAuth = await client.isAuthenticated();
+  console.log('[UniMemory] Authentication status:', isAuth);
+  
+  if (!isAuth) {
+    console.log('[UniMemory] Not authenticated, prompting login');
     const action = await vscode.window.showWarningMessage(
       'Please login to UniMemory first',
       'Login'
@@ -33,6 +42,7 @@ export async function recallMemoryCommand(
   // Get query text: selection or current line
   let query = '';
   const selection = editor.selection;
+  console.log('[UniMemory] Selection:', selection.isEmpty ? 'empty' : 'has text');
   
   if (!selection.isEmpty) {
     query = editor.document.getText(selection);
@@ -51,15 +61,20 @@ export async function recallMemoryCommand(
   }
 
   if (!query) {
+    console.log('[UniMemory] No query provided, aborting');
     return;
   }
+
+  console.log('[UniMemory] Query:', query);
 
   // Show loading state
   statusBar.setLoading('Searching memories...');
 
   try {
     const maxMemories = vscode.workspace.getConfiguration('unimemory').get<number>('maxMemories') || 5;
+    console.log('[UniMemory] Calling API to search memories, limit:', maxMemories);
     const result = await client.searchMemories(query, maxMemories);
+    console.log('[UniMemory] API response:', result);
     
     if (!result.results || result.results.length === 0) {
       vscode.window.showInformationMessage('No related memories found');

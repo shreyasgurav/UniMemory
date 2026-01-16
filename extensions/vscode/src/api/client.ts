@@ -104,12 +104,16 @@ export class UniMemoryClient {
     const session = await this.getSession();
     
     if (!session) {
+      console.log('[UniMemory API] No session found');
       throw new Error('Not authenticated. Please login first.');
     }
 
     const { method = 'GET', body } = options;
+    const url = `${this.getApiUrl()}${endpoint}`;
+    
+    console.log('[UniMemory API] Request:', { method, url, body });
 
-    const response = await fetch(`${this.getApiUrl()}${endpoint}`, {
+    const response = await fetch(url, {
       method,
       headers: {
         'Authorization': `Bearer ${session.token}`,
@@ -137,10 +141,13 @@ export class UniMemoryClient {
    * Search memories based on query
    */
   async searchMemories(query: string, limit: number = 5): Promise<SearchResult> {
-    return this.request<SearchResult>('/consumer/search', {
+    console.log('[UniMemory API] Searching memories:', { query, limit });
+    const result = await this.request<SearchResult>('/consumer/search', {
       method: 'POST',
       body: { query, limit }
     });
+    console.log('[UniMemory API] Search result:', result);
+    return result;
   }
 
   /**
