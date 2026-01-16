@@ -4,6 +4,7 @@ Hybrid search logic (OpenMemory HSG-style)
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 import math
+import re
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from pgvector.sqlalchemy import Vector
@@ -13,6 +14,40 @@ from app.db.models import Memory, Waypoint
 from app.core.embeddings import get_embedding_service
 from app.core.sector import classify_sector, get_sector_relationship_weight
 from app.core.simhash import canonical_token_set
+
+# Common stop words that don't add semantic value to search
+STOP_WORDS = {
+    'i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves', 'you', 'your', 'yours',
+    'yourself', 'yourselves', 'he', 'him', 'his', 'himself', 'she', 'her', 'hers',
+    'herself', 'it', 'its', 'itself', 'they', 'them', 'their', 'theirs', 'themselves',
+    'what', 'which', 'who', 'whom', 'this', 'that', 'these', 'those', 'am', 'is', 'are',
+    'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'having', 'do', 'does',
+    'did', 'doing', 'a', 'an', 'the', 'and', 'but', 'if', 'or', 'because', 'as', 'until',
+    'while', 'of', 'at', 'by', 'for', 'with', 'about', 'against', 'between', 'into',
+    'through', 'during', 'before', 'after', 'above', 'below', 'to', 'from', 'up', 'down',
+    'in', 'out', 'on', 'off', 'over', 'under', 'again', 'further', 'then', 'once'
+}
+
+
+def remove_stop_words(text: str) -> str:
+    """
+    Remove stop words from text while preserving meaningful content.
+    Only removes stop words if there are other meaningful words remaining.
+    """
+    if not text:
+        return text
+    
+    # Tokenize and filter
+    words = re.findall(r'\b\w+\b', text.lower())
+    meaningful_words = [w for w in words if w not in STOP_WORDS]
+    
+    # If all words are stop words, keep the original text
+    # This prevents empty queries
+    if not meaningful_words:
+        return text
+    
+    # Reconstruct text with meaningful words only
+    return ' '.join(meaningful_words)
 
 
 # Scoring weights (OpenMemory-style)
@@ -207,6 +242,12 @@ async def hybrid_search(
     core_query = " ".join(core_query.split()).strip()
     if not core_query:
         core_query = query_text  # Fallback to original
+    
+    # Step 1.5: Remove stop words to focus on meaningful keywords
+    # This prevents matching on common words like "I", "a", "is", etc.
+    filtered_query = remove_stop_words(core_query)
+    if filtered_query:
+        core_query = filtered_query
     
     # Step 2: Classify query sector
     query_sector, _, _ = classify_sector(core_query)
