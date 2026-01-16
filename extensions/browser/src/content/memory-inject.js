@@ -293,19 +293,30 @@ ${memoryText}
     if (!currentPlatform) return;
     
     const sendButtonSelector = PLATFORM_SELECTORS[currentPlatform].sendButton;
+    console.log('[UniMemory] Monitoring send button with selector:', sendButtonSelector);
     
     // Use event delegation on document for dynamically added buttons
     document.addEventListener('click', async (e) => {
       const sendButton = e.target.closest(sendButtonSelector);
       if (!sendButton) return;
       
+      console.log('[UniMemory] Send button clicked');
+      
       // Get the input element
       const input = findChatInput();
-      if (!input) return;
+      if (!input) {
+        console.log('[UniMemory] No input found');
+        return;
+      }
       
       // Capture the prompt text
       const promptText = getPromptText(input);
-      if (!promptText) return;
+      if (!promptText) {
+        console.log('[UniMemory] No prompt text');
+        return;
+      }
+      
+      console.log('[UniMemory] Captured prompt:', promptText.substring(0, 50) + '...');
       
       // Ingest the prompt asynchronously (don't block the send)
       setTimeout(() => {
@@ -324,6 +335,8 @@ ${memoryText}
       
       const promptText = getPromptText(input);
       if (!promptText) return;
+      
+      console.log('[UniMemory] Enter key pressed, captured:', promptText.substring(0, 50) + '...');
       
       setTimeout(() => {
         captureAndIngestPrompt(promptText);
