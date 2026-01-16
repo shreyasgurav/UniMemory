@@ -683,50 +683,87 @@ async def consumer_search(
 
 # ============ Memory Graph Endpoints ============
 
-class GraphNode(BaseModel):
+class GraphMemory(BaseModel):
     id: str
     content: str
     sector: Optional[str]
     salience: float
     created_at: str
 
+class GraphSource(BaseModel):
+    id: str
+    type: str
+    title: Optional[str]
+    summary: Optional[str]
+    created_at: str
+    memory_count: int
+    memories: List[GraphMemory]
+
 class GraphEdge(BaseModel):
     source: str
     target: str
     weight: float
+    edge_type: str  # "doc-memory", "memory-memory", "doc-doc"
 
 class MemoryGraphResponse(BaseModel):
-    nodes: List[GraphNode]
+    sources: List[GraphSource]
     edges: List[GraphEdge]
+    stats: dict
 
 
 @router.get("/consumer/graph", response_model=MemoryGraphResponse)
 async def get_memory_graph(
-    limit: int = 100,
+    limit: int = 50,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db)
 ):
     """
     Get memory graph data for visualization.
-    Returns nodes (memories) and edges (waypoints) for the current user.
+    Returns sources (documents) with their memories, plus waypoint edges.
+    Structure mirrors supermemory's DocumentWithMemories approach.
     """
     owner_id = str(user.id)
     
-    # Fetch memories
-    memories_result = await session.execute(
-        select(Memory)
-        .where(Memory.owner_id == owner_id, Memory.is_active == True)
-        .order_by(Memory.salience.desc())
+    # Fetch sources with their memory counts
+    sources_result = await session.execute(
+        select(Source)
+        .where(Source.owner_id == owner_id)
+        .order_by(Source.created_at.desc())
         .limit(limit)
     )
-    memories = memories_result.scalars().all()
+    sources = sources_result.scalars().all()
     
-    if not memories:
-        return MemoryGraphResponse(nodes=[], edges=[])
+    if not sources:
+        return MemoryGraphResponse(sources=[], edges=[], stats={"sources": 0, "memories": 0, "connections": 0})
     
-    memory_ids = [str(m.id) for m in memories]
+    source_ids = [str(s.id) for s in sources]
     
-    # Fetch waypoints between these memories
+    # Fetch memory_sources links
+    memory_sources_result = await session.execute(
+        select(MemorySource)
+        .where(MemorySource.source_id.in_(source_ids))
+    )
+    memory_sources = memory_sources_result.scalars().all()
+    
+    # Get all memory IDs linked to these sources
+    memory_ids = list(set(str(ms.memory_id) for ms in memory_sources))
+    
+    # Fetch all memories
+    memories_result = await session.execute(
+        select(Memory)
+        .where(Memory.id.in_(memory_ids), Memory.is_active == True)
+    )
+    memories = {str(m.id): m for m in memories_result.scalars().all()}
+    
+    # Build source -> memories mapping
+    source_memories_map: Dict[str, List] = {sid: [] for sid in source_ids}
+    for ms in memory_sources:
+        sid = str(ms.source_id)
+        mid = str(ms.memory_id)
+        if mid in memories and sid in source_memories_map:
+            source_memories_map[sid].append(memories[mid])
+    
+    # Fetch waypoints between memories
     waypoints_result = await session.execute(
         select(Waypoint)
         .where(
@@ -736,29 +773,64 @@ async def get_memory_graph(
     )
     waypoints = waypoints_result.scalars().all()
     
-    # Build nodes
-    nodes = [
-        GraphNode(
-            id=str(m.id),
-            content=m.content[:200] if m.content else "",
-            sector=m.sector,
-            salience=m.salience or 0.5,
-            created_at=m.created_at.isoformat() if m.created_at else ""
-        )
-        for m in memories
-    ]
+    # Build graph sources
+    graph_sources = []
+    total_memories = 0
+    for source in sources:
+        sid = str(source.id)
+        source_mems = source_memories_map.get(sid, [])
+        total_memories += len(source_mems)
+        
+        graph_sources.append(GraphSource(
+            id=sid,
+            type=source.type or "unknown",
+            title=source.source_metadata.get("title") if source.source_metadata else None,
+            summary=source.summary[:300] if source.summary else None,
+            created_at=source.created_at.isoformat() if source.created_at else "",
+            memory_count=len(source_mems),
+            memories=[
+                GraphMemory(
+                    id=str(m.id),
+                    content=m.content[:200] if m.content else "",
+                    sector=m.sector,
+                    salience=m.salience or 0.5,
+                    created_at=m.created_at.isoformat() if m.created_at else ""
+                )
+                for m in source_mems[:20]  # Limit memories per source for performance
+            ]
+        ))
     
     # Build edges
-    edges = [
-        GraphEdge(
+    edges = []
+    
+    # 1. Doc-memory edges (source to each of its memories)
+    for source in graph_sources:
+        for mem in source.memories:
+            edges.append(GraphEdge(
+                source=source.id,
+                target=mem.id,
+                weight=1.0,
+                edge_type="doc-memory"
+            ))
+    
+    # 2. Memory-memory edges (waypoints)
+    for w in waypoints:
+        edges.append(GraphEdge(
             source=str(w.src_id),
             target=str(w.dst_id),
-            weight=w.weight or 0.5
-        )
-        for w in waypoints
-    ]
+            weight=w.weight or 0.5,
+            edge_type="memory-memory"
+        ))
     
-    return MemoryGraphResponse(nodes=nodes, edges=edges)
+    return MemoryGraphResponse(
+        sources=graph_sources,
+        edges=edges,
+        stats={
+            "sources": len(graph_sources),
+            "memories": total_memories,
+            "connections": len(edges)
+        }
+    )
 
 
 # ============ Chat Context Endpoints ============
