@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Trash2, X } from "lucide-react";
+import { Trash2, X, Loader2 } from "lucide-react";
 import { auth } from "@/lib/firebase";
 
 interface Source {
@@ -31,11 +31,11 @@ interface SourceDetail extends Source {
 
 export default function MemoriesPage() {
   const [sources, setSources] = useState<Source[]>([]);
-  const [memories, setMemories] = useState<Memory[]>([]);
   const [selectedSource, setSelectedSource] = useState<SourceDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingSourceDetail, setLoadingSourceDetail] = useState(false);
-  const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'source' | 'memory', id: string } | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'source', id: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -43,22 +43,12 @@ export default function MemoriesPage() {
       const token = await auth.currentUser?.getIdToken();
       if (!token) return;
 
-      const [sourcesRes, memoriesRes] = await Promise.all([
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/consumer/sources?limit=50`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/consumer/memories?limit=50`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-      ]);
+      const sourcesRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/consumer/sources?limit=50`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       
-      const [sourcesData, memoriesData] = await Promise.all([
-        sourcesRes.json(),
-        memoriesRes.json()
-      ]);
-      
+      const sourcesData = await sourcesRes.json();
       setSources(sourcesData);
-      setMemories(memoriesData);
     } catch (error) {
       console.error("Failed to load data:", error);
     } finally {
@@ -182,6 +172,7 @@ export default function MemoriesPage() {
     if (!deleteConfirm) return;
     
     try {
+      setDeleting(true);
       const token = await auth.currentUser?.getIdToken();
       if (!token) return;
 
@@ -194,17 +185,14 @@ export default function MemoriesPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      if (deleteConfirm.type === 'source') {
-        setSources(sources.filter(s => s.id !== deleteConfirm.id));
-        if (selectedSource?.id === deleteConfirm.id) {
-          setSelectedSource(null);
-        }
-      } else {
-        setMemories(memories.filter(m => m.id !== deleteConfirm.id));
+      setSources(sources.filter(s => s.id !== deleteConfirm.id));
+      if (selectedSource?.id === deleteConfirm.id) {
+        setSelectedSource(null);
       }
     } catch (error) {
       console.error('Failed to delete:', error);
     } finally {
+      setDeleting(false);
       setDeleteConfirm(null);
     }
   };
@@ -229,7 +217,7 @@ export default function MemoriesPage() {
             </div>
           ) : (
             <div className="columns-1 md:columns-2 lg:columns-3 gap-4 space-y-4">
-              {sources.length === 0 && memories.length === 0 ? (
+              {sources.length === 0 ? (
                 <div className="col-span-full bg-white rounded-xl p-16 text-center">
                   <p className="text-neutral-700 font-medium text-lg">No memories yet</p>
                   <p className="text-sm text-neutral-500 mt-2">
@@ -237,8 +225,7 @@ export default function MemoriesPage() {
                   </p>
                 </div>
               ) : (
-                <>
-                  {sources.map((source) => {
+                sources.map((source) => {
                     const platformName = getPlatformName(source);
                     const favicon = getPlatformFavicon(source);
                     const title = getSourceTitle(source);
@@ -294,35 +281,7 @@ export default function MemoriesPage() {
                         </div>
                       </div>
                     );
-                  })}
-                  {memories.map((memory) => (
-                    <div key={memory.id} className="break-inside-avoid mb-4">
-                      <div className="bg-white rounded-xl p-5 hover:shadow-lg transition-all relative group border border-neutral-100">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDeleteConfirm({ type: 'memory', id: memory.id });
-                          }}
-                          className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-neutral-400 hover:text-red-500 z-10"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                        <p className="text-neutral-900 text-sm font-medium mb-3 leading-relaxed pr-8 line-clamp-6">
-                          {memory.content}
-                        </p>
-                        <div className="flex items-center gap-2 text-xs text-neutral-400">
-                          <span>{new Date(memory.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                          {memory.sector && (
-                            <>
-                              <span>•</span>
-                              <span className="capitalize">{memory.sector}</span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </>
+                  })
               )}
             </div>
           )}
@@ -468,7 +427,7 @@ export default function MemoriesPage() {
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl">
             <h3 className="text-lg font-semibold text-neutral-900 mb-2">
-              Delete {deleteConfirm.type === 'source' ? 'Source' : 'Memory'}?
+              Delete Source?
             </h3>
             <p className="text-sm text-neutral-600 mb-6">
               This action cannot be undone.
@@ -476,15 +435,22 @@ export default function MemoriesPage() {
             <div className="flex gap-3">
               <button
                 onClick={() => setDeleteConfirm(null)}
-                className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-neutral-700 bg-neutral-100 hover:bg-neutral-200 transition-colors"
+                disabled={deleting}
+                className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-neutral-700 bg-neutral-100 hover:bg-neutral-200 transition-colors disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 onClick={handleDelete}
-                className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-white bg-neutral-900 hover:bg-neutral-800 transition-colors"
+                disabled={deleting}
+                className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-white bg-red-600 hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                Delete
+                {deleting ? (<>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Deleting...
+                </>) : (
+                  <>Delete</>
+                )}
               </button>
             </div>
           </div>
