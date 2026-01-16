@@ -1,6 +1,6 @@
 /**
  * UniMemory VS Code Extension
- * Long-term memory capture + recall for AI-assisted development
+ * Capture long-term memories from AI-assisted development
  * Works with Cursor, Windsurf, VS Code, and other VS Code-based editors
  */
 
@@ -9,7 +9,6 @@ import { UniMemoryClient } from './api/client';
 import { AuthManager } from './auth/authManager';
 import { StatusBarManager } from './ui/statusBar';
 import { ActivityPanel } from './ui/activityPanel';
-import { recallMemoryCommand } from './commands/recallMemory';
 import { saveMemoryCommand } from './commands/saveMemory';
 import { saveChatCommand } from './commands/saveChat';
 import { saveProjectContextCommand } from './commands/saveProjectContext';
@@ -39,12 +38,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Register commands
   const commands = [
-    // Memory Recall - Cmd+Shift+M
-    vscode.commands.registerCommand('unimemory.recallMemory', async () => {
-      await recallMemoryCommand(client, statusBar);
-    }),
-
-    // Save Memory - Save selection as atomic memory
+    // Save Memory - Save selection as atomic memory (Cmd+Shift+S)
     vscode.commands.registerCommand('unimemory.saveMemory', async () => {
       await saveMemoryCommand(client, statusBar);
     }),
@@ -110,7 +104,7 @@ export async function activate(context: vscode.ExtensionContext) {
   const hasShownWelcome = context.globalState.get<boolean>('unimemory.hasShownWelcome');
   if (!hasShownWelcome) {
     const action = await vscode.window.showInformationMessage(
-      'UniMemory extension installed! Login to start capturing and recalling memories.',
+      'UniMemory installed! Login to start capturing memories from your development work.',
       'Login Now',
       'Later'
     );

@@ -1,7 +1,7 @@
 {
   "name": "unimemory-vscode",
   "displayName": "UniMemory",
-  "description": "Long-term memory capture + recall for AI-assisted development. Works with Cursor, Windsurf, and VS Code.",
+  "description": "Capture long-term memories from your AI-assisted development. Save decisions, code context, and chat insights to UniMemory.",
   "version": "0.1.0",
   "publisher": "unimemory",
   "icon": "assets/icon.png",
@@ -30,11 +30,6 @@
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
-      {
-        "command": "unimemory.recallMemory",
-        "title": "UniMemory: Recall Memories",
-        "icon": "$(search)"
-      },
       {
         "command": "unimemory.saveMemory",
         "title": "UniMemory: Save Selection as Memory",
@@ -68,14 +63,6 @@
     ],
     "keybindings": [
       {
-        "command": "unimemory.recallMemory",
-        "key": "ctrl+\\",
-        "mac": "ctrl+\\",
-        "win": "ctrl+\\",
-        "linux": "ctrl+\\",
-        "when": "editorTextFocus"
-      },
-      {
         "command": "unimemory.saveMemory",
         "key": "cmd+shift+s",
         "mac": "cmd+shift+s",
@@ -87,21 +74,17 @@
     "menus": {
       "editor/context": [
         {
-          "command": "unimemory.recallMemory",
+          "command": "unimemory.saveMemory",
           "group": "unimemory@1",
-          "when": "editorTextFocus"
+          "when": "editorHasSelection"
         },
         {
-          "command": "unimemory.saveMemory",
+          "command": "unimemory.saveProjectContext",
           "group": "unimemory@2",
-          "when": "editorHasSelection"
+          "when": "editorTextFocus"
         }
       ],
       "commandPalette": [
-        {
-          "command": "unimemory.recallMemory",
-          "when": "true"
-        },
         {
           "command": "unimemory.saveMemory",
           "when": "editorHasSelection"
@@ -128,13 +111,6 @@
           "type": "string",
           "default": "https://unimemory-app.vercel.app",
           "description": "UniMemory App URL for authentication"
-        },
-        "unimemory.maxMemories": {
-          "type": "number",
-          "default": 5,
-          "minimum": 1,
-          "maximum": 20,
-          "description": "Maximum number of memories to recall"
         },
         "unimemory.showStatusBar": {
           "type": "boolean",

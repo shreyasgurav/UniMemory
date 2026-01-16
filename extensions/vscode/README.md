@@ -1,45 +1,56 @@
 # UniMemory VS Code Extension
 
-**Long-term memory capture + recall for AI-assisted development.**
+**Capture long-term memories from AI-assisted development.**
 
 Works with **Cursor**, **Windsurf**, **VS Code**, and other VS Code-based editors.
 
+> **Note:** This extension is for **memory capture only**. For memory recall, use the UniMemory MCP server or Chrome extension.
+
 ## 🧠 Core Features
 
-### 1. Memory Recall (Ctrl+\)
-Inject relevant long-term memories into your current context.
-
-- Press `Ctrl+\` (all platforms - matches Chrome extension)
-- Uses current selection or cursor line as search query
-- Retrieves relevant memories from your UniMemory
-- Insert above cursor, as comment, or copy to clipboard
-
-### 2. Save Memory (Cmd+Shift+S)
-Save selected text as an atomic memory.
+### 1. Save Selection (Cmd+Shift+S) — Most Used
+Save selected code or text as an atomic memory.
 
 - Select text and press `Cmd+Shift+S`
 - Or right-click → "UniMemory: Save Selection as Memory"
 - Add optional tags for organization
+- Includes file path, language, and repo context
 
-### 3. Save Chat
+**Best for:**
+- Important code patterns
+- Useful comments and explanations
+- Configuration snippets
+
+### 2. Save Project Context — Most Important
+Store stable project-level decisions (architecture, constraints, tradeoffs).
+
+- Command Palette → "UniMemory: Save Project Context"
+- Choose context type: Tech Stack, Architecture, Constraints, Goals
+- Describe the decision or context
+- Optionally attach selected code
+
+**Best for:**
+- "We chose X over Y because..."
+- "This system cannot use Redis due to..."
+- "Architecture follows hexagonal pattern"
+
+### 3. Save Chat — Explicit Only
 Explicitly save a conversation to extract long-term memories.
 
 - Command Palette → "UniMemory: Save Chat to Memory"
 - Paste chat content or use clipboard
 - Backend extracts atomic memories automatically
 
-### 4. Save Project Context
-Store stable project-level decisions (tech stack, architecture, constraints).
+**Best for:**
+- Important discussions with AI agents
+- Debugging sessions worth remembering
+- Decision-making conversations
 
-- Command Palette → "UniMemory: Save Project Context"
-- Choose context type: Tech Stack, Architecture, Constraints, Goals, etc.
-- Saved rarely, used frequently in recall
-
-### 5. Activity Visibility
+### 4. Activity Visibility
 See what UniMemory is doing via status bar and activity panel.
 
 - Status bar shows connection status
-- Activity panel shows recent operations
+- Activity panel shows recent save operations
 - Toast notifications for actions
 
 ## 🚀 Getting Started
@@ -66,7 +77,6 @@ See what UniMemory is doing via status bar and activity panel.
 
 | Shortcut | Action |
 |----------|--------|
-| `Ctrl+\` | Recall memories (matches Chrome extension) |
 | `Cmd+Shift+S` | Save selection as memory |
 
 ## 🎯 What Counts as a Memory
@@ -89,7 +99,6 @@ UniMemory stores **atomic, long-term facts** only:
 |---------|---------|-------------|
 | `unimemory.apiUrl` | Railway API | UniMemory API endpoint |
 | `unimemory.appUrl` | Vercel App | UniMemory web app URL |
-| `unimemory.maxMemories` | 5 | Max memories to recall |
 | `unimemory.showStatusBar` | true | Show status bar item |
 
 ## 🏗️ Development
@@ -121,8 +130,7 @@ extensions/vscode/
 │   ├── auth/
 │   │   └── authManager.ts    # OAuth flow
 │   ├── commands/
-│   │   ├── recallMemory.ts   # Cmd+Shift+M
-│   │   ├── saveMemory.ts     # Save selection
+│   │   ├── saveMemory.ts     # Save selection (Cmd+Shift+S)
 │   │   ├── saveChat.ts       # Save conversation
 │   │   └── saveProjectContext.ts
 │   └── ui/
@@ -133,12 +141,24 @@ extensions/vscode/
 └── README.md
 ```
 
-## 🔒 Privacy
+## 🔒 Privacy & Philosophy
 
-- No auto-saving without user intent
-- No code storage by default
-- No background ingestion
-- All actions are explicit and visible
+- **No auto-saving** — You decide what's worth remembering
+- **No background ingestion** — Only explicit saves
+- **No code storage by default** — Just the context you provide
+- **All actions visible** — Activity panel shows everything
+
+## 🔌 Where Recall Happens
+
+This extension is for **capture**. Recall happens via:
+
+| Layer | Use Case |
+|-------|----------|
+| **MCP Server** | Agent-to-memory recall in Cursor/Windsurf |
+| **Chrome Extension** | Direct injection into ChatGPT/Claude/Gemini |
+| **Web Dashboard** | Browse and search all memories |
+
+This separation keeps the extension simple and the signal quality high.
 
 ## 📄 License
 
