@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "@/lib/firebase";
@@ -8,7 +8,7 @@ import Image from "next/image";
 
 export const dynamic = "force-dynamic";
 
-export default function ExtensionWelcomePage() {
+function ExtensionWelcomeContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [status, setStatus] = useState<"connecting" | "connected" | "error">("connecting");
@@ -74,5 +74,25 @@ export default function ExtensionWelcomePage() {
         <p className="text-2xl text-red-600">Connection failed. Please try again.</p>
       )}
     </div>
+  );
+}
+
+export default function ExtensionWelcomePage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex flex-col items-center justify-center bg-white">
+        <Image 
+          src="/Unimemory Name Logo NoBG.png" 
+          alt="UniMemory" 
+          width={280} 
+          height={80} 
+          className="mb-12"
+          priority
+        />
+        <p className="text-2xl text-neutral-700">Loading...</p>
+      </div>
+    }>
+      <ExtensionWelcomeContent />
+    </Suspense>
   );
 }
