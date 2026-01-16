@@ -174,6 +174,7 @@ export default function ActivityPage() {
     // Fallback to hardcoded favicons for known platforms
     const name = sourceName.toLowerCase();
     const knownFavicons: Record<string, string> = {
+      chrome: "https://www.google.com/chrome/static/images/chrome-logo.svg",
       chatgpt: "https://chat.openai.com/favicon.ico",
       claude: "https://claude.ai/favicon.ico",
       cursor: "https://cursor.sh/favicon.ico",
