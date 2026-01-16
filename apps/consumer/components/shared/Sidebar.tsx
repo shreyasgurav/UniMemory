@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { MessageSquare, History, Activity, Link2, Settings } from "lucide-react";
+import { History, Activity, Link2, Settings } from "lucide-react";
 import { useRouter, usePathname } from "next/navigation";
 import { User } from "firebase/auth";
 import Image from "next/image";
@@ -16,25 +16,17 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
   const pathname = usePathname();
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
 
-  const activeView = pathname === "/chat"
-    ? "chat"
-    : pathname?.includes("/memories")
-      ? "memories"
-      : pathname?.includes("/activity")
-        ? "activity"
-        : pathname?.includes("/connectors")
-          ? "connectors"
-          : pathname?.includes("/settings")
-            ? "settings"
-            : "chat";
+  const activeView = pathname?.includes("/memories")
+    ? "memories"
+    : pathname?.includes("/activity")
+      ? "activity"
+      : pathname?.includes("/connectors")
+        ? "connectors"
+        : pathname?.includes("/settings")
+          ? "settings"
+          : "memories";
 
   const navItems = [
-    {
-      id: "chat",
-      path: "/chat",
-      icon: <MessageSquare className="w-4 h-4" strokeWidth={1.5} />,
-      label: "Chat"
-    },
     {
       id: "memories",
       path: "/memories",

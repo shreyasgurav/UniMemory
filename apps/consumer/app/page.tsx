@@ -13,7 +13,7 @@ export default function HomePage() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
-        router.push("/chat");
+        router.push("/memories");
       } else {
         router.push("/login");
       }
