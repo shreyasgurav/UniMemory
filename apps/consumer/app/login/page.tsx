@@ -89,7 +89,7 @@ export default function LoginPage() {
       {/* Right Side - Static Image */}
       <div className="hidden lg:block lg:w-2/5 relative overflow-hidden bg-black">
         <img 
-          src="/Unimemory-LoginPage-Image.png" 
+          src="/Unimemory-LoginPage-image.png" 
           alt="UniMemory Login Visual" 
           className="absolute inset-0 w-full h-full object-contain object-right"
         />
