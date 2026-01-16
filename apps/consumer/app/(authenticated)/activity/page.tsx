@@ -321,11 +321,6 @@ export default function ActivityPage() {
                           {truncatedPreview}
                         </p>
                       )}
-                      {event.memory_count !== undefined && event.memory_count !== null && (
-                        <p className="text-xs text-neutral-500 mb-1">
-                          {event.memory_count} {event.memory_count === 1 ? "memory" : "memories"}
-                        </p>
-                      )}
                       <p className="text-xs text-neutral-400">
                         {new Date(event.created_at).toLocaleString('en-US', {
                           month: 'short',
