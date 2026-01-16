@@ -46,33 +46,42 @@ const EXTENSIONS = [
 
 export default function ConnectorsPage() {
   const [tokens, setTokens] = useState<MCPToken[]>([]);
-  const [loading, setLoading] = useState(true);
   const [selectedClient, setSelectedClient] = useState<MCPToken | null>(null);
+  const [selectedClientLoading, setSelectedClientLoading] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const [installMethod, setInstallMethod] = useState<"one-click" | "manual">("one-click");
 
-  const loadTokens = useCallback(async () => {
+  const loadTokenForClient = useCallback(async (clientId: string) => {
+    setSelectedClientLoading(true);
     try {
       const token = await auth.currentUser?.getIdToken();
-      if (!token) return;
+      if (!token) return null;
 
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/consumer/mcp/tokens`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (response.ok) {
         const data = await response.json();
-        setTokens(data.tokens || []);
+        const clientToken = (data.tokens || []).find(
+          (t: MCPToken) => t.client_type === clientId && t.is_active
+        );
+        return clientToken || null;
       }
+      return null;
     } catch (error) {
-      console.error("Failed to load MCP tokens:", error);
+      console.error("Failed to load MCP token:", error);
+      return null;
     } finally {
-      setLoading(false);
+      setSelectedClientLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    loadTokens();
-  }, [loadTokens]);
+  const handleClientClick = async (client: MCPClient) => {
+    const clientToken = await loadTokenForClient(client.id);
+    if (clientToken) {
+      setSelectedClient(clientToken);
+    }
+  };
 
   const copyToClipboard = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
@@ -174,9 +183,6 @@ export default function ConnectorsPage() {
     );
   };
 
-  const getClientToken = (clientId: string): MCPToken | undefined => {
-    return tokens.find((t) => t.client_type === clientId && t.is_active);
-  };
 
   const getJsonConfig = (token: string, mcpUrl: string) => {
     return JSON.stringify({
@@ -190,38 +196,6 @@ export default function ConnectorsPage() {
       }
     }, null, 2);
   };
-
-  if (loading) {
-    return (
-      <div className="h-screen flex flex-col bg-neutral-50">
-        <div className="px-8 py-6">
-          <h1 className="text-2xl font-semibold text-neutral-900">Connectors</h1>
-        </div>
-        <div className="flex-1 overflow-y-auto p-8 bg-neutral-50">
-          <div className="max-w-4xl mx-auto space-y-8">
-            {/* Extensions Skeleton */}
-            <div>
-              <div className="h-6 w-32 bg-neutral-200 rounded mb-4 animate-pulse" />
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {[1, 2].map((i) => (
-                  <div key={i} className="bg-neutral-200 rounded-xl h-20 animate-pulse" />
-                ))}
-              </div>
-            </div>
-            {/* MCP Connectors Skeleton */}
-            <div>
-              <div className="h-6 w-40 bg-neutral-200 rounded mb-4 animate-pulse" />
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {[1, 2, 3, 4].map((i) => (
-                  <div key={i} className="bg-neutral-200 rounded-xl h-28 animate-pulse" />
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="h-screen flex flex-col bg-neutral-50">
@@ -266,29 +240,25 @@ export default function ConnectorsPage() {
           <div>
             <h2 className="text-lg font-semibold text-neutral-900 mb-4">MCP Connectors</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {MCP_CLIENTS.map((client) => {
-                const clientToken = getClientToken(client.id);
-                
-                return (
-                  <button
-                    key={client.id}
-                    onClick={() => clientToken && setSelectedClient(clientToken)}
-                    className="bg-white rounded-xl p-5 hover:shadow-md transition-all text-left"
-                  >
-                    <div className="flex items-start gap-4">
-                      <div className="flex-shrink-0">
-                        {getConnectorLogo(client.id, client.name)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="text-base font-semibold text-neutral-900 mb-0.5">
-                          {client.name}
-                        </h3>
-                        <p className="text-sm text-neutral-500">{client.description}</p>
-                      </div>
+              {MCP_CLIENTS.map((client) => (
+                <button
+                  key={client.id}
+                  onClick={() => handleClientClick(client)}
+                  className="bg-white rounded-xl p-5 hover:shadow-md transition-all text-left"
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="flex-shrink-0">
+                      {getConnectorLogo(client.id, client.name)}
                     </div>
-                  </button>
-                );
-              })}
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-base font-semibold text-neutral-900 mb-0.5">
+                        {client.name}
+                      </h3>
+                      <p className="text-sm text-neutral-500">{client.description}</p>
+                    </div>
+                  </div>
+                </button>
+              ))}
             </div>
           </div>
         </div>
@@ -343,7 +313,13 @@ export default function ConnectorsPage() {
               )}
 
               {/* Content */}
-              {selectedClient.token && selectedClient.mcp_url ? (
+              {selectedClientLoading ? (
+                <div className="space-y-4">
+                  {/* Skeleton for loading state */}
+                  <div className="bg-neutral-100 rounded-lg h-32 animate-pulse" />
+                  <div className="bg-neutral-100 rounded-lg h-48 animate-pulse" />
+                </div>
+              ) : selectedClient.token && selectedClient.mcp_url ? (
                 <div>
                   {/* Cursor One-Click Install */}
                   {selectedClient.client_type === "cursor" && installMethod === "one-click" && (
