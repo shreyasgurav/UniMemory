@@ -74,12 +74,12 @@ const COLORS = {
 };
 
 const FORCE = {
-  repulsion: -800,
+  repulsion: -600,
   linkDistance: 120,
-  linkStrengthDocMem: 0.8,
-  linkStrengthMemMem: 0.3,
-  centerGravity: 0.02,
-  velocityDecay: 0.6,
+  linkStrengthDocMem: 0.9,
+  linkStrengthMemMem: 0.4,
+  centerGravity: 0.01,
+  velocityDecay: 0.8,  // Higher = more damping, less movement
   collisionDoc: 60,
   collisionMem: 25,
 };
@@ -222,10 +222,21 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
 
     const nodeMap = new Map(nodesRef.current.map((n) => [n.id, n]));
     let alpha = 1;
+    let tickCount = 0;
+    const maxTicks = 300; // Stop after 300 iterations regardless
 
     const tick = () => {
-      if (!isSimulating.current || alpha < 0.001) {
+      tickCount++;
+      
+      // Stop conditions: alpha too low, max ticks reached, or velocities are very small
+      if (!isSimulating.current || alpha < 0.005 || tickCount > maxTicks) {
         isSimulating.current = false;
+        // Zero out all velocities to fully stop
+        for (const node of nodesRef.current) {
+          node.vx = 0;
+          node.vy = 0;
+        }
+        setNodes([...nodesRef.current]);
         return;
       }
 
@@ -307,7 +318,7 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
         }
       }
 
-      // 5. Apply velocities
+      // 5. Apply velocities with damping
       for (const node of nodes) {
         if (draggingNode?.id === node.id) continue;
         node.vx *= FORCE.velocityDecay;
@@ -316,8 +327,14 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
         node.y += node.vy;
       }
 
-      alpha *= 0.99;
-      setNodes([...nodesRef.current]);
+      // Faster alpha decay for quicker settling
+      alpha *= 0.96;
+      
+      // Only update state every 3 frames for better performance
+      if (tickCount % 3 === 0) {
+        setNodes([...nodesRef.current]);
+      }
+      
       animationRef.current = requestAnimationFrame(tick);
     };
 

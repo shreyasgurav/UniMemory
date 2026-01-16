@@ -724,7 +724,22 @@ async def get_memory_graph(
     """
     owner_id = str(user.id)
     
-    # Fetch sources with their memory counts
+    # Fetch ALL active memories for the user (including atomic memories without sources)
+    all_memories_result = await session.execute(
+        select(Memory)
+        .where(Memory.owner_id == owner_id, Memory.is_active == True)
+        .order_by(Memory.created_at.desc())
+        .limit(limit * 5)  # Get more memories since we'll cluster them
+    )
+    all_memories = all_memories_result.scalars().all()
+    
+    if not all_memories:
+        return MemoryGraphResponse(sources=[], edges=[], stats={"sources": 0, "memories": 0, "connections": 0})
+    
+    all_memory_ids = [str(m.id) for m in all_memories]
+    memories = {str(m.id): m for m in all_memories}
+    
+    # Fetch sources
     sources_result = await session.execute(
         select(Source)
         .where(Source.owner_id == owner_id)
@@ -732,10 +747,6 @@ async def get_memory_graph(
         .limit(limit)
     )
     sources = sources_result.scalars().all()
-    
-    if not sources:
-        return MemoryGraphResponse(sources=[], edges=[], stats={"sources": 0, "memories": 0, "connections": 0})
-    
     source_ids = [str(s.id) for s in sources]
     
     # Fetch memory_sources links
@@ -745,16 +756,6 @@ async def get_memory_graph(
     )
     memory_sources = memory_sources_result.scalars().all()
     
-    # Get all memory IDs linked to these sources
-    memory_ids = list(set(str(ms.memory_id) for ms in memory_sources))
-    
-    # Fetch all memories
-    memories_result = await session.execute(
-        select(Memory)
-        .where(Memory.id.in_(memory_ids), Memory.is_active == True)
-    )
-    memories = {str(m.id): m for m in memories_result.scalars().all()}
-    
     # Build source -> memories mapping
     source_memories_map: Dict[str, List] = {sid: [] for sid in source_ids}
     for ms in memory_sources:
@@ -763,19 +764,26 @@ async def get_memory_graph(
         if mid in memories and sid in source_memories_map:
             source_memories_map[sid].append(memories[mid])
     
-    # Fetch waypoints between memories
+    # Fetch waypoints between ALL memories
     waypoints_result = await session.execute(
         select(Waypoint)
         .where(
-            Waypoint.src_id.in_(memory_ids),
-            Waypoint.dst_id.in_(memory_ids)
+            Waypoint.src_id.in_(all_memory_ids),
+            Waypoint.dst_id.in_(all_memory_ids)
         )
     )
     waypoints = waypoints_result.scalars().all()
     
+    # Track which memories are linked to sources
+    linked_memory_ids = set()
+    for ms in memory_sources:
+        linked_memory_ids.add(str(ms.memory_id))
+    
     # Build graph sources
     graph_sources = []
     total_memories = 0
+    
+    # 1. Add sources with their memories
     for source in sources:
         sid = str(source.id)
         source_mems = source_memories_map.get(sid, [])
@@ -797,6 +805,29 @@ async def get_memory_graph(
                     created_at=m.created_at.isoformat() if m.created_at else ""
                 )
                 for m in source_mems[:20]  # Limit memories per source for performance
+            ]
+        ))
+    
+    # 2. Add atomic memories (memories without sources) as a virtual "Atomic Memories" source
+    atomic_memories = [m for m in all_memories if str(m.id) not in linked_memory_ids]
+    if atomic_memories:
+        total_memories += len(atomic_memories)
+        graph_sources.append(GraphSource(
+            id="atomic-memories",
+            type="atomic",
+            title="Atomic Memories",
+            summary="Standalone memories not linked to any document",
+            created_at=atomic_memories[0].created_at.isoformat() if atomic_memories else "",
+            memory_count=len(atomic_memories),
+            memories=[
+                GraphMemory(
+                    id=str(m.id),
+                    content=m.content[:200] if m.content else "",
+                    sector=m.sector,
+                    salience=m.salience or 0.5,
+                    created_at=m.created_at.isoformat() if m.created_at else ""
+                )
+                for m in atomic_memories[:50]  # Show up to 50 atomic memories
             ]
         ))
     
