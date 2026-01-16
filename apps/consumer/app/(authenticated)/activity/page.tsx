@@ -244,6 +244,24 @@ export default function ActivityPage() {
                 const rawPreview = event.details || event.raw_preview || "";
                 const truncatedPreview = rawPreview.length > 100 ? rawPreview.substring(0, 100) + "..." : rawPreview;
                 
+                // Get action label and color based on event type
+                const getActionInfo = (type: string) => {
+                  const actions: Record<string, { label: string; color: string; bgColor: string }> = {
+                    source_created: { label: "Saved", color: "text-green-700", bgColor: "bg-green-50" },
+                    memory_created: { label: "Added Memory", color: "text-green-700", bgColor: "bg-green-50" },
+                    memory_deleted: { label: "Deleted", color: "text-red-700", bgColor: "bg-red-50" },
+                    source_deleted: { label: "Deleted", color: "text-red-700", bgColor: "bg-red-50" },
+                    memory_searched: { label: "Searched", color: "text-blue-700", bgColor: "bg-blue-50" },
+                    memory_viewed: { label: "Viewed", color: "text-purple-700", bgColor: "bg-purple-50" },
+                    source_viewed: { label: "Viewed", color: "text-purple-700", bgColor: "bg-purple-50" },
+                    mcp_call: { label: "MCP Call", color: "text-orange-700", bgColor: "bg-orange-50" },
+                    ingest: { label: "Ingested", color: "text-green-700", bgColor: "bg-green-50" },
+                  };
+                  return actions[type] || { label: type.replace(/_/g, " "), color: "text-neutral-700", bgColor: "bg-neutral-100" };
+                };
+                
+                const actionInfo = getActionInfo(event.type);
+                
                 return (
                   <div key={event.id} className="flex gap-4 relative">
                     {/* Timeline Node */}
@@ -258,10 +276,13 @@ export default function ActivityPage() {
 
                     {/* Content */}
                     <div className="flex-1 pb-8">
-                      <div className="flex items-baseline gap-2 mb-1">
+                      <div className="flex items-center gap-2 mb-1">
                         <h3 className="text-base font-semibold text-neutral-900">
                           {sourceName}
                         </h3>
+                        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${actionInfo.bgColor} ${actionInfo.color}`}>
+                          {actionInfo.label}
+                        </span>
                       </div>
                       {event.title && (
                         <p className="text-sm font-medium text-neutral-700 mb-1">
@@ -282,6 +303,11 @@ export default function ActivityPage() {
                       {truncatedPreview && (
                         <p className="text-sm text-neutral-600 mb-2 leading-relaxed">
                           {truncatedPreview}
+                        </p>
+                      )}
+                      {event.memory_count !== undefined && event.memory_count !== null && (
+                        <p className="text-xs text-neutral-500 mb-1">
+                          {event.memory_count} {event.memory_count === 1 ? "memory" : "memories"}
                         </p>
                       )}
                       <p className="text-xs text-neutral-400">

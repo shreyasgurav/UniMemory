@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Trash2, X, Loader2, Network } from "lucide-react";
+import { Trash2, X, Loader2, Workflow } from "lucide-react";
 import { auth } from "@/lib/firebase";
 import MemoryGraph from "@/components/MemoryGraph";
 
@@ -221,9 +221,11 @@ export default function MemoriesPage() {
         <h1 className="text-2xl font-semibold text-neutral-900">Memories</h1>
         <button
           onClick={() => setShowGraph(true)}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-neutral-900 text-white text-sm font-medium hover:bg-neutral-800 transition-colors"
+          className="group flex items-center gap-2 pl-2 pr-4 py-2 rounded-xl bg-neutral-900 text-white text-sm font-medium shadow-sm hover:bg-neutral-800 active:scale-[0.98] transition-all duration-150"
         >
-          <Network className="w-4 h-4" />
+          <span className="flex items-center justify-center w-7 h-7 rounded-lg transition-colors">
+            <Workflow className="w-4 h-4 text-white/90" />
+          </span>
           Memory Graph
         </button>
       </div>

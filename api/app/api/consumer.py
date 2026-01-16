@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 import logging
 
 from app.db.database import get_db
-from app.db.models import Source, Memory, MemorySource, User, ProcessingLog, MCPActivity, Waypoint
+from app.db.models import Source, Memory, MemorySource, User, ProcessingLog, MCPActivity, Waypoint, ActivityLog
 from app.api.auth import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -155,6 +155,45 @@ async def verify_consumer_session_token(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token verification failed"
         )
+
+
+# ============ Activity Logging Helper ============
+
+async def log_activity(
+    session: AsyncSession,
+    user_id: str,
+    action: str,
+    source: str,
+    agent: Optional[str] = None,
+    memory_id: Optional[str] = None,
+    source_id: Optional[str] = None,
+    details: Optional[Dict[str, Any]] = None,
+    description: Optional[str] = None
+):
+    """
+    Log an activity event to the activity_logs table.
+    
+    Actions: memory_created, memory_deleted, memory_searched, source_created, 
+             source_deleted, mcp_search, mcp_add_memory, dashboard_search, etc.
+    Sources: extension, mcp, dashboard, api
+    """
+    try:
+        activity = ActivityLog(
+            user_id=user_id,
+            action=action,
+            source=source,
+            agent=agent,
+            memory_id=memory_id,
+            source_id=source_id,
+            details=details or {},
+            description=description
+        )
+        session.add(activity)
+        await session.commit()
+    except Exception as e:
+        logger.error(f"Failed to log activity: {e}")
+        # Don't fail the main operation if logging fails
+        await session.rollback()
 
 
 # ============ Response Models ============
@@ -483,6 +522,22 @@ async def delete_memory(
     if not memory:
         raise HTTPException(status_code=404, detail="Memory not found")
     
+    # Log the deletion activity BEFORE deleting (preserve content info)
+    content_preview = memory.content[:100] if memory.content else ""
+    await log_activity(
+        session=session,
+        user_id=str(user.id),
+        action="memory_deleted",
+        source="dashboard",
+        memory_id=memory_id,
+        details={
+            "content_preview": content_preview,
+            "sector": memory.sector,
+            "salience": memory.salience
+        },
+        description=f"Deleted memory: {content_preview}..."
+    )
+    
     memory.is_active = False
     await session.commit()
     
@@ -506,6 +561,31 @@ async def delete_source(
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
     
+    # Count memories to be deleted
+    mem_count_result = await session.execute(
+        select(func.count(MemorySource.memory_id))
+        .where(MemorySource.source_id == source_id)
+    )
+    mem_count = mem_count_result.scalar() or 0
+    
+    # Log the deletion activity BEFORE deleting
+    metadata = source.source_metadata or {}
+    await log_activity(
+        session=session,
+        user_id=str(user.id),
+        action="source_deleted",
+        source="dashboard",
+        source_id=source_id,
+        details={
+            "title": source.title or metadata.get("title"),
+            "url": metadata.get("url"),
+            "type": source.type,
+            "memory_count": mem_count,
+            "source_app": source.source_app
+        },
+        description=f"Deleted source: {source.title or 'Untitled'} ({mem_count} memories)"
+    )
+    
     # Soft delete all memories associated with this source
     await session.execute(
         select(Memory)
@@ -517,9 +597,9 @@ async def delete_source(
     )
     
     # Update memories to set is_active = False
-    from sqlalchemy import update
+    from sqlalchemy import update as sql_update
     await session.execute(
-        update(Memory)
+        sql_update(Memory)
         .where(Memory.id.in_(
             select(MemorySource.memory_id)
             .where(MemorySource.source_id == source_id)
@@ -972,12 +1052,54 @@ async def get_activity_feed(
     session: AsyncSession = Depends(get_db)
 ):
     """
-    Get activity feed showing ingestion events, MCP tool calls, and agent usage.
-    Aggregates from processing_logs, sources, and mcp_activity.
+    Get comprehensive activity feed showing all user actions:
+    - Source/memory creation (extension, API, MCP)
+    - Deletions (memories, sources)
+    - Searches (MCP, dashboard)
+    - MCP tool calls
+    
+    Primary source: activity_logs table
+    Fallback: sources, mcp_activity tables for legacy data
     """
     events = []
+    seen_ids = set()  # Track seen event IDs to avoid duplicates
     
-    # Get recent sources (ingestion events)
+    # 1. Get activity logs (primary source for new events)
+    try:
+        activity_result = await session.execute(
+            select(ActivityLog)
+            .where(ActivityLog.user_id == str(user.id))
+            .order_by(ActivityLog.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        activity_logs = activity_result.scalars().all()
+        
+        for log in activity_logs:
+            details_dict = log.details or {}
+            events.append(ActivityEvent(
+                id=str(log.id),
+                type=log.action,
+                source=log.source,
+                agent=log.agent,
+                memory_count=details_dict.get("memory_count"),
+                details=log.description or details_dict.get("content_preview", ""),
+                tool_name=details_dict.get("tool_name"),
+                created_at=str(log.created_at),
+                title=details_dict.get("title"),
+                url=details_dict.get("url"),
+                platform=details_dict.get("platform") or log.agent
+            ))
+            seen_ids.add(str(log.id))
+            # Also track related entity IDs
+            if log.source_id:
+                seen_ids.add(str(log.source_id))
+            if log.memory_id:
+                seen_ids.add(str(log.memory_id))
+    except Exception as e:
+        logger.warning(f"Failed to fetch activity logs (table may not exist yet): {e}")
+    
+    # 2. Get recent sources (legacy ingestion events)
     sources_result = await session.execute(
         select(Source)
         .where(Source.owner_id == str(user.id))
@@ -988,6 +1110,9 @@ async def get_activity_feed(
     sources = sources_result.scalars().all()
     
     for source in sources:
+        if str(source.id) in seen_ids:
+            continue  # Skip if already in activity_logs
+            
         # Count linked memories
         mem_count_result = await session.execute(
             select(func.count(MemorySource.memory_id))
@@ -1001,45 +1126,22 @@ async def get_activity_feed(
         url = metadata.get("url")
         title = source.title or metadata.get("title")
         
-        # Build details string (do not include title in details per UX request)
-        details = f"Saved {mem_count} memories"
-        
         events.append(ActivityEvent(
             id=str(source.id),
             type="source_created",
-            source=source.source_app or "unknown",
+            source=source.source_app or "extension",
             agent=None,
             memory_count=mem_count,
-            details=details,
+            details=f"Saved {mem_count} memories",
             tool_name=None,
             created_at=str(source.created_at),
             title=title,
             url=url,
             platform=platform
         ))
+        seen_ids.add(str(source.id))
     
-    # Get processing logs
-    logs_result = await session.execute(
-        select(ProcessingLog)
-        .order_by(ProcessingLog.processed_at.desc())
-        .limit(20)
-    )
-    logs = logs_result.scalars().all()
-    
-    for log in logs:
-        if log.was_worth_remembering:
-            events.append(ActivityEvent(
-                id=str(log.id),
-                type="ingest",
-                source="api",
-                agent=None,
-                memory_count=log.extracted_count,
-                details=f"{log.extracted_count} memories extracted",
-                tool_name=None,
-                created_at=str(log.processed_at)
-            ))
-    
-    # Get MCP activity
+    # 3. Get MCP activity (searches, memory operations via AI agents)
     mcp_result = await session.execute(
         select(MCPActivity)
         .where(MCPActivity.user_id == str(user.id))
@@ -1049,21 +1151,37 @@ async def get_activity_feed(
     mcp_activities = mcp_result.scalars().all()
     
     for mcp in mcp_activities:
+        if str(mcp.id) in seen_ids:
+            continue
+            
         # Determine activity type based on tool
-        activity_type = "mcp_search" if mcp.tool_name == "search_memory" else \
-                       "mcp_context" if mcp.tool_name == "get_memory_context" else \
-                       "mcp_source" if mcp.tool_name == "get_source" else "mcp_call"
-        
-        # Build details string
         if mcp.tool_name == "search_memory":
+            activity_type = "memory_searched"
             query = mcp.tool_args.get("query", "")
-            details = f"Searched for '{query}' - {mcp.result_count} results"
+            details = f"Searched: '{query}' ({mcp.result_count} results)"
         elif mcp.tool_name == "get_memory_context":
-            details = f"Retrieved memory context"
+            activity_type = "memory_viewed"
+            details = "Retrieved memory context"
         elif mcp.tool_name == "get_source":
-            details = f"Retrieved source document"
+            activity_type = "source_viewed"
+            details = "Retrieved source document"
+        elif mcp.tool_name == "add_memory":
+            activity_type = "memory_created"
+            details = mcp.tool_args.get("content", "")[:100] + "..." if mcp.tool_args.get("content") else "Added memory"
         else:
+            activity_type = "mcp_call"
             details = f"Called {mcp.tool_name}"
+        
+        # Map client types to readable names
+        agent_map = {
+            "cursor": "Cursor",
+            "claude": "Claude Desktop",
+            "vscode": "VS Code",
+            "windsurf": "Windsurf",
+            "cline": "Cline",
+            "gemini": "Gemini CLI"
+        }
+        agent_name = agent_map.get(mcp.client_type, mcp.client_type)
         
         events.append(ActivityEvent(
             id=str(mcp.id),
@@ -1073,10 +1191,12 @@ async def get_activity_feed(
             memory_count=mcp.result_count if mcp.tool_name == "search_memory" else None,
             details=details,
             tool_name=mcp.tool_name,
-            created_at=str(mcp.created_at)
+            created_at=str(mcp.created_at),
+            platform=agent_name
         ))
+        seen_ids.add(str(mcp.id))
     
-    # Sort all events by created_at
+    # Sort all events by created_at (newest first)
     events.sort(key=lambda x: x.created_at, reverse=True)
     
     return ActivityFeedResponse(

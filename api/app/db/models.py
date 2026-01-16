@@ -378,3 +378,51 @@ class MCPActivity(Base):
     def __repr__(self):
         return f"<MCPActivity(id={self.id}, tool={self.tool_name}, client={self.client_type})>"
 
+
+class ActivityLog(Base):
+    """Comprehensive activity log for all user actions"""
+    __tablename__ = "activity_logs"
+    
+    id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    # Activity type: memory_created, memory_deleted, memory_searched, source_created, 
+    #                source_deleted, mcp_search, mcp_add_memory, dashboard_search, etc.
+    action = Column(String(100), nullable=False, index=True)
+    
+    # Source of action: extension, mcp, dashboard, api
+    source = Column(String(50), nullable=False, index=True)
+    
+    # Optional agent/client info: cursor, claude, chatgpt, chrome, etc.
+    agent = Column(String(100))
+    
+    # Related entity IDs (nullable - some actions may not have these)
+    memory_id = Column(UUID(as_uuid=False), nullable=True)
+    source_id = Column(UUID(as_uuid=False), nullable=True)
+    
+    # Activity details as JSON (flexible schema for different action types)
+    details = Column(JSONB, default=dict)
+    # Example details:
+    # memory_created: {content_preview, sector, salience, memory_count}
+    # memory_deleted: {content_preview, sector, reason}
+    # memory_searched: {query, result_count, platform}
+    # source_created: {title, url, type, memory_count}
+    
+    # Human-readable description
+    description = Column(Text)
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    
+    # Relationships
+    user = relationship("User")
+    
+    __table_args__ = (
+        Index("idx_activity_logs_user_created", "user_id", "created_at"),
+        Index("idx_activity_logs_action", "action"),
+        Index("idx_activity_logs_source", "source"),
+    )
+    
+    def __repr__(self):
+        return f"<ActivityLog(id={self.id}, action={self.action}, source={self.source})>"
+

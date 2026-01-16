@@ -98,6 +98,35 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
   const centerX = 800;
   const centerY = 500;
 
+  // ============ Prevent Browser Zoom ============
+  useEffect(() => {
+    if (!isOpen) return;
+
+    // Prevent browser zoom with Ctrl+wheel and pinch gestures
+    const preventZoom = (e: WheelEvent | TouchEvent) => {
+      if (e.ctrlKey || (e as TouchEvent).touches?.length > 1) {
+        e.preventDefault();
+      }
+    };
+
+    // Prevent keyboard zoom shortcuts
+    const preventKeyboardZoom = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === '+' || e.key === '-' || e.key === '0')) {
+        e.preventDefault();
+      }
+    };
+
+    document.addEventListener('wheel', preventZoom, { passive: false });
+    document.addEventListener('touchmove', preventZoom, { passive: false });
+    document.addEventListener('keydown', preventKeyboardZoom);
+
+    return () => {
+      document.removeEventListener('wheel', preventZoom);
+      document.removeEventListener('touchmove', preventZoom);
+      document.removeEventListener('keydown', preventKeyboardZoom);
+    };
+  }, [isOpen]);
+
   // ============ Fetch Data ============
   useEffect(() => {
     if (!isOpen) return;
@@ -326,13 +355,6 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
         ctx.lineWidth = isSelected ? 2 : 1;
         ctx.stroke();
 
-        // Icon
-        ctx.fillStyle = "rgba(255,255,255,0.7)";
-        ctx.font = "16px sans-serif";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText("📄", node.x, node.y);
-
         ctx.shadowBlur = 0;
       } else {
         // Memory: Hexagon
@@ -464,8 +486,8 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
   const totalDocs = nodes.filter((n) => n.type === "document").length;
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-[#0f1419] rounded-2xl w-full h-full max-w-[95vw] max-h-[95vh] overflow-hidden flex flex-col shadow-2xl border border-neutral-800">
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50" style={{ touchAction: 'none' }}>
+      <div className="bg-[#0f1419] rounded-2xl w-full h-full max-w-[95vw] max-h-[95vh] overflow-hidden flex flex-col min-h-0 shadow-2xl border border-neutral-800" style={{ touchAction: 'none' }}>
         {/* Header */}
         <div className="px-6 py-4 flex items-center justify-between border-b border-neutral-800/50">
           <div>
@@ -491,7 +513,7 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
         </div>
 
         {/* Canvas */}
-        <div className="flex-1 relative">
+        <div className="flex-1 min-h-0 relative">
           {loading ? (
             <div className="absolute inset-0 flex items-center justify-center bg-[#0f1419]">
               <Loader2 className="w-8 h-8 text-neutral-500 animate-spin" />
@@ -513,9 +535,10 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
             />
           )}
 
-          {/* Legend */}
-          <div className="absolute bottom-4 right-4 bg-neutral-900/95 rounded-xl p-4 backdrop-blur-sm border border-neutral-800">
-            <div className="text-xs font-medium text-neutral-400 mb-3">LEGEND</div>
+          {/* Legend - Always visible */}
+          {!loading && !error && (
+            <div className="absolute bottom-4 right-4 bg-neutral-900/95 rounded-xl p-4 backdrop-blur-sm border border-neutral-800 z-10">
+            <div className="text-xs font-medium text-neutral-400 mb-3">Guide</div>
             <div className="space-y-3">
               <div>
                 <div className="text-[10px] text-neutral-500 mb-1.5">NODES</div>
@@ -545,6 +568,7 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
               </div>
             </div>
           </div>
+          )}
 
           {/* Selected Node Detail */}
           {selectedNode && (
