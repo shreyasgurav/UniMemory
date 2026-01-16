@@ -164,12 +164,13 @@ class SourceResponse(BaseModel):
     id: str
     type: str
     raw_content: dict
-    summary: Optional[str]
-    source_metadata: Optional[dict]
-    end_user_id: Optional[str]
+    summary: Optional[str] = None
+    source_metadata: Optional[dict] = None
+    end_user_id: Optional[str] = None
     owner_id: str
     created_at: str
-    updated_at: Optional[str]
+    updated_at: Optional[str] = None
+    memory_count: Optional[int] = 0
 
     class Config:
         from_attributes = True
@@ -221,14 +222,29 @@ async def get_sources(
     session: AsyncSession = Depends(get_db)
 ):
     """Get all sources for the current user, ordered by created_at desc"""
+    # Subquery to count memories per source
+    memory_count_subq = (
+        select(
+            MemorySource.source_id,
+            func.count(MemorySource.memory_id).label('memory_count')
+        )
+        .join(Memory, Memory.id == MemorySource.memory_id)
+        .where(Memory.is_active == True)
+        .group_by(MemorySource.source_id)
+        .subquery()
+    )
+    
+    # Main query with left join to get memory counts
     result = await session.execute(
-        select(Source)
+        select(Source, memory_count_subq.c.memory_count)
+        .outerjoin(memory_count_subq, Source.id == memory_count_subq.c.source_id)
         .where(Source.owner_id == str(user.id))
         .order_by(Source.created_at.desc())
         .limit(limit)
         .offset(offset)
     )
-    sources = result.scalars().all()
+    sources_with_counts = result.all()
+    
     return [
         SourceResponse(
             id=str(s.id),
@@ -239,8 +255,9 @@ async def get_sources(
             end_user_id=s.end_user_id,
             owner_id=str(s.owner_id),
             created_at=str(s.created_at),
-            updated_at=str(s.updated_at) if s.updated_at else None
-        ) for s in sources
+            updated_at=str(s.updated_at) if s.updated_at else None,
+            memory_count=count or 0
+        ) for s, count in sources_with_counts
     ]
 
 
