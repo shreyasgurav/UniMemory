@@ -35,13 +35,6 @@
       ],
       "js": ["src/content/memory-inject.js"],
       "run_at": "document_idle"
-    },
-    {
-      "matches": [
-        "https://chatgpt.com/*"
-      ],
-      "js": ["src/content/chatgpt-import.js"],
-      "run_at": "document_idle"
     }
   ],
   "action": {
