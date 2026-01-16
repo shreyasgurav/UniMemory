@@ -102,6 +102,65 @@ async function searchMemories(query, limit = 5) {
   return result;
 }
 
+async function ingestPrompt(prompt, platform) {
+  let session = await getSession();
+  
+  if (!session) {
+    console.log('[UniMemory] Not authenticated, skipping prompt ingestion');
+    return { success: false, reason: 'not_authenticated' };
+  }
+  
+  console.log('[UniMemory] Ingesting prompt from', platform, ':', prompt.substring(0, 50) + '...');
+  
+  // Prepare chat data in the format expected by the ingest API
+  const chatData = {
+    messages: [
+      {
+        role: 'user',
+        content: prompt
+      }
+    ],
+    source_metadata: {
+      platform: platform,
+      url: 'extension',
+      title: `${platform} prompt`,
+      timestamp: new Date().toISOString()
+    }
+  };
+  
+  try {
+    const response = await fetch(`${API_BASE_URL}/ingest/chat`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(chatData)
+    });
+    
+    // If 401 Unauthorized, session might be expired
+    if (response.status === 401) {
+      await clearSession();
+      console.error('[UniMemory] Session expired during ingestion');
+      return { success: false, reason: 'session_expired' };
+    }
+    
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      console.error('[UniMemory] Ingestion failed:', error);
+      return { success: false, reason: 'api_error', error };
+    }
+    
+    const result = await response.json();
+    console.log('[UniMemory] Prompt ingested successfully, extracted', result.memories_count || 0, 'memories');
+    
+    return { success: true, data: result };
+  } catch (error) {
+    console.error('[UniMemory] Ingestion error:', error);
+    return { success: false, reason: 'network_error', error: error.message };
+  }
+}
+
 async function ingestChat(chatData) {
   let session = await getSession();
   
@@ -201,6 +260,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         
         case 'SEARCH_MEMORIES': {
           const result = await searchMemories(message.query, message.limit || 5);
+          sendResponse({ success: true, data: result });
+          break;
+        }
+        
+        case 'INGEST_PROMPT': {
+          const result = await ingestPrompt(message.data.prompt, message.data.platform);
           sendResponse({ success: true, data: result });
           break;
         }

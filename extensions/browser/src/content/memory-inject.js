@@ -15,16 +15,19 @@
     chatgpt: {
       input: '#prompt-textarea, div[contenteditable="true"][data-placeholder]',
       container: 'form',
+      sendButton: 'button[data-testid="send-button"], button[data-testid="fruitjuice-send-button"]',
       name: 'ChatGPT'
     },
     claude: {
       input: 'div[contenteditable="true"].ProseMirror',
       container: 'fieldset',
+      sendButton: 'button[aria-label*="Send"], button[type="submit"]',
       name: 'Claude'
     },
     gemini: {
       input: 'div[contenteditable="true"].ql-editor, rich-textarea',
       container: 'form',
+      sendButton: 'button[aria-label*="Send"], button[type="submit"]',
       name: 'Gemini'
     }
   };
@@ -393,6 +396,71 @@ ${memoryText}
     document.head.appendChild(style);
   }
 
+  // Capture and ingest user prompt
+  async function captureAndIngestPrompt(promptText) {
+    if (!promptText || promptText.trim().length === 0) return;
+    
+    try {
+      // Send to background script for ingestion
+      const response = await chrome.runtime.sendMessage({
+        type: 'INGEST_PROMPT',
+        data: {
+          prompt: promptText,
+          platform: currentPlatform
+        }
+      });
+      
+      if (response?.success) {
+        console.log('[UniMemory] Prompt ingested successfully');
+      }
+    } catch (error) {
+      console.error('[UniMemory] Failed to ingest prompt:', error);
+    }
+  }
+
+  // Monitor send button clicks to capture prompts
+  function monitorSendButton() {
+    if (!currentPlatform) return;
+    
+    const sendButtonSelector = PLATFORM_SELECTORS[currentPlatform].sendButton;
+    
+    // Use event delegation on document for dynamically added buttons
+    document.addEventListener('click', async (e) => {
+      const sendButton = e.target.closest(sendButtonSelector);
+      if (!sendButton) return;
+      
+      // Get the input element
+      const input = findChatInput();
+      if (!input) return;
+      
+      // Capture the prompt text
+      const promptText = getPromptText(input);
+      if (!promptText) return;
+      
+      // Ingest the prompt asynchronously (don't block the send)
+      setTimeout(() => {
+        captureAndIngestPrompt(promptText);
+      }, 100);
+    }, true); // Use capture phase to catch before React handlers
+    
+    // Also monitor Enter key press in input
+    document.addEventListener('keydown', async (e) => {
+      if (e.key !== 'Enter') return;
+      if (e.shiftKey) return; // Shift+Enter is for new line
+      
+      const input = findChatInput();
+      if (!input) return;
+      if (!input.contains(e.target)) return;
+      
+      const promptText = getPromptText(input);
+      if (!promptText) return;
+      
+      setTimeout(() => {
+        captureAndIngestPrompt(promptText);
+      }, 100);
+    }, true);
+  }
+
   // Initialize on supported platforms
   function init() {
     currentPlatform = detectPlatform();
@@ -406,6 +474,9 @@ ${memoryText}
     if (input) {
       injectButton(input);
     }
+
+    // Start monitoring send button for automatic prompt capture
+    monitorSendButton();
 
     // Watch for DOM changes (React apps update frequently)
     const observer = new MutationObserver(() => {
