@@ -707,6 +707,7 @@ class GraphEdge(BaseModel):
 
 class MemoryGraphResponse(BaseModel):
     sources: List[GraphSource]
+    atomic_memories: List[GraphMemory]  # Standalone memories not linked to any document
     edges: List[GraphEdge]
     stats: dict
 
@@ -808,28 +809,19 @@ async def get_memory_graph(
             ]
         ))
     
-    # 2. Add atomic memories (memories without sources) as a virtual "Atomic Memories" source
+    # 2. Get atomic memories (memories without sources) as separate list
     atomic_memories = [m for m in all_memories if str(m.id) not in linked_memory_ids]
-    if atomic_memories:
-        total_memories += len(atomic_memories)
-        graph_sources.append(GraphSource(
-            id="atomic-memories",
-            type="atomic",
-            title="Atomic Memories",
-            summary="Standalone memories not linked to any document",
-            created_at=atomic_memories[0].created_at.isoformat() if atomic_memories else "",
-            memory_count=len(atomic_memories),
-            memories=[
-                GraphMemory(
-                    id=str(m.id),
-                    content=m.content[:200] if m.content else "",
-                    sector=m.sector,
-                    salience=m.salience or 0.5,
-                    created_at=m.created_at.isoformat() if m.created_at else ""
-                )
-                for m in atomic_memories[:50]  # Show up to 50 atomic memories
-            ]
-        ))
+    atomic_graph_memories = [
+        GraphMemory(
+            id=str(m.id),
+            content=m.content[:200] if m.content else "",
+            sector=m.sector,
+            salience=m.salience or 0.5,
+            created_at=m.created_at.isoformat() if m.created_at else ""
+        )
+        for m in atomic_memories[:100]  # Show up to 100 atomic memories
+    ]
+    total_memories += len(atomic_graph_memories)
     
     # Build edges
     edges = []
@@ -844,7 +836,7 @@ async def get_memory_graph(
                 edge_type="doc-memory"
             ))
     
-    # 2. Memory-memory edges (waypoints)
+    # 2. Memory-memory edges (waypoints) - these will connect similar atomic memories
     for w in waypoints:
         edges.append(GraphEdge(
             source=str(w.src_id),
@@ -855,10 +847,12 @@ async def get_memory_graph(
     
     return MemoryGraphResponse(
         sources=graph_sources,
+        atomic_memories=atomic_graph_memories,
         edges=edges,
         stats={
             "sources": len(graph_sources),
             "memories": total_memories,
+            "atomic": len(atomic_graph_memories),
             "connections": len(edges)
         }
     )

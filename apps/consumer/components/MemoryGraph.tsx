@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { X, ZoomIn, ZoomOut, Maximize2, Loader2, FileText, Brain } from "lucide-react";
 import { auth } from "@/lib/firebase";
 
@@ -35,11 +35,9 @@ interface GraphNode {
   type: "document" | "memory";
   x: number;
   y: number;
-  vx: number;
-  vy: number;
   data: GraphSource | GraphMemory;
   size: number;
-  parentId?: string; // For memories, points to parent document
+  parentId?: string;
 }
 
 interface MemoryGraphProps {
@@ -73,35 +71,22 @@ const COLORS = {
   } as Record<string, string>,
 };
 
-const FORCE = {
-  repulsion: -600,
-  linkDistance: 120,
-  linkStrengthDocMem: 0.9,
-  linkStrengthMemMem: 0.4,
-  centerGravity: 0.01,
-  velocityDecay: 0.8,  // Higher = more damping, less movement
-  collisionDoc: 60,
-  collisionMem: 25,
-};
-
 // ============ Component ============
 export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
   const [sources, setSources] = useState<GraphSource[]>([]);
+  const [atomicMemories, setAtomicMemories] = useState<GraphMemory[]>([]);
   const [edges, setEdges] = useState<GraphEdge[]>([]);
-  const [stats, setStats] = useState({ sources: 0, memories: 0, connections: 0 });
+  const [stats, setStats] = useState({ sources: 0, memories: 0, atomic: 0, connections: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Graph state
+  // Graph state - completely static, no animation
   const [nodes, setNodes] = useState<GraphNode[]>([]);
   const nodesRef = useRef<GraphNode[]>([]);
-  const edgesRef = useRef<GraphEdge[]>([]);
-  const animationRef = useRef<number>(0);
-  const isSimulating = useRef(false);
 
   // Canvas state
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [zoom, setZoom] = useState(0.8);
+  const [zoom, setZoom] = useState(0.6);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
@@ -110,8 +95,8 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
   const [draggingNode, setDraggingNode] = useState<GraphNode | null>(null);
 
   // Center coordinates
-  const centerX = 600;
-  const centerY = 400;
+  const centerX = 800;
+  const centerY = 500;
 
   // ============ Fetch Data ============
   useEffect(() => {
@@ -136,9 +121,10 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
         if (!response.ok) throw new Error("Failed to fetch graph data");
 
         const data = await response.json();
-        setSources(data.sources);
-        setEdges(data.edges);
-        setStats(data.stats);
+        setSources(data.sources || []);
+        setAtomicMemories(data.atomic_memories || []);
+        setEdges(data.edges || []);
+        setStats(data.stats || { sources: 0, memories: 0, atomic: 0, connections: 0 });
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load graph");
       } finally {
@@ -149,197 +135,100 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
     fetchGraph();
   }, [isOpen]);
 
-  // ============ Build Graph Nodes ============
+  // ============ Build Graph Nodes (Static Layout - No Animation) ============
   useEffect(() => {
-    if (sources.length === 0) {
+    if (sources.length === 0 && atomicMemories.length === 0) {
       nodesRef.current = [];
-      edgesRef.current = [];
       setNodes([]);
       return;
     }
 
     const allNodes: GraphNode[] = [];
 
-    // Create document nodes in a grid
-    const gridSize = Math.ceil(Math.sqrt(sources.length));
-    const spacing = 350;
+    // 1. Create document nodes in a grid on the LEFT side
+    const docGridSize = Math.ceil(Math.sqrt(sources.length)) || 1;
+    const docSpacing = 300;
+    const docStartX = 300;
+    const docStartY = centerY;
 
     sources.forEach((source, i) => {
-      const row = Math.floor(i / gridSize);
-      const col = i % gridSize;
-      const x = centerX + (col - gridSize / 2) * spacing + (Math.random() - 0.5) * 50;
-      const y = centerY + (row - gridSize / 2) * spacing + (Math.random() - 0.5) * 50;
+      const row = Math.floor(i / docGridSize);
+      const col = i % docGridSize;
+      const x = docStartX + (col - docGridSize / 2 + 0.5) * docSpacing;
+      const y = docStartY + (row - Math.ceil(sources.length / docGridSize) / 2 + 0.5) * docSpacing;
 
       // Document node
-      const docNode: GraphNode = {
+      allNodes.push({
         id: source.id,
         type: "document",
         x,
         y,
-        vx: 0,
-        vy: 0,
         data: source,
-        size: 50,
-      };
-      allNodes.push(docNode);
+        size: 45,
+      });
 
-      // Memory nodes around document
+      // Memory nodes around document in a circle
+      const memCount = source.memories.length;
       source.memories.forEach((mem, memIdx) => {
-        const angle = (2 * Math.PI * memIdx) / Math.max(source.memories.length, 1);
-        const distance = 80 + Math.random() * 40;
-        const memNode: GraphNode = {
+        const angle = (2 * Math.PI * memIdx) / Math.max(memCount, 1);
+        const distance = 90 + Math.min(memCount * 3, 30);
+        allNodes.push({
           id: mem.id,
           type: "memory",
           x: x + Math.cos(angle) * distance,
           y: y + Math.sin(angle) * distance,
-          vx: 0,
-          vy: 0,
           data: mem,
-          size: 20 + (mem.salience || 0.5) * 15,
+          size: 18 + (mem.salience || 0.5) * 10,
           parentId: source.id,
-        };
-        allNodes.push(memNode);
+        });
       });
     });
 
+    // 2. Create atomic memory nodes on the RIGHT side - clustered by sector
+    if (atomicMemories.length > 0) {
+      // Group by sector
+      const sectorGroups: Record<string, GraphMemory[]> = {};
+      atomicMemories.forEach((mem) => {
+        const sector = mem.sector || "default";
+        if (!sectorGroups[sector]) sectorGroups[sector] = [];
+        sectorGroups[sector].push(mem);
+      });
+
+      const sectors = Object.keys(sectorGroups);
+      const atomicStartX = sources.length > 0 ? centerX + 400 : centerX;
+      const sectorSpacing = 250;
+
+      sectors.forEach((sector, sectorIdx) => {
+        const mems = sectorGroups[sector];
+        const sectorAngle = (2 * Math.PI * sectorIdx) / Math.max(sectors.length, 1);
+        const sectorCenterX = atomicStartX + Math.cos(sectorAngle) * sectorSpacing * 0.8;
+        const sectorCenterY = centerY + Math.sin(sectorAngle) * sectorSpacing * 0.8;
+
+        // Place memories in cluster around sector center
+        const memGridSize = Math.ceil(Math.sqrt(mems.length));
+        const memSpacing = 50;
+
+        mems.forEach((mem, memIdx) => {
+          const row = Math.floor(memIdx / memGridSize);
+          const col = memIdx % memGridSize;
+          const x = sectorCenterX + (col - memGridSize / 2 + 0.5) * memSpacing;
+          const y = sectorCenterY + (row - Math.ceil(mems.length / memGridSize) / 2 + 0.5) * memSpacing;
+
+          allNodes.push({
+            id: mem.id,
+            type: "memory",
+            x,
+            y,
+            data: mem,
+            size: 18 + (mem.salience || 0.5) * 10,
+          });
+        });
+      });
+    }
+
     nodesRef.current = allNodes;
-    edgesRef.current = edges;
     setNodes([...allNodes]);
-
-    // Start simulation
-    startSimulation();
-
-    return () => {
-      isSimulating.current = false;
-      if (animationRef.current) cancelAnimationFrame(animationRef.current);
-    };
-  }, [sources, edges]);
-
-  // ============ Force Simulation ============
-  const startSimulation = useCallback(() => {
-    if (isSimulating.current) return;
-    isSimulating.current = true;
-
-    const nodeMap = new Map(nodesRef.current.map((n) => [n.id, n]));
-    let alpha = 1;
-    let tickCount = 0;
-    const maxTicks = 300; // Stop after 300 iterations regardless
-
-    const tick = () => {
-      tickCount++;
-      
-      // Stop conditions: alpha too low, max ticks reached, or velocities are very small
-      if (!isSimulating.current || alpha < 0.005 || tickCount > maxTicks) {
-        isSimulating.current = false;
-        // Zero out all velocities to fully stop
-        for (const node of nodesRef.current) {
-          node.vx = 0;
-          node.vy = 0;
-        }
-        setNodes([...nodesRef.current]);
-        return;
-      }
-
-      const nodes = nodesRef.current;
-
-      // 1. Repulsion between all nodes
-      for (let i = 0; i < nodes.length; i++) {
-        for (let j = i + 1; j < nodes.length; j++) {
-          const ni = nodes[i];
-          const nj = nodes[j];
-          const dx = nj.x - ni.x;
-          const dy = nj.y - ni.y;
-          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-          const force = (FORCE.repulsion * alpha) / (dist * dist);
-
-          const fx = (dx / dist) * force;
-          const fy = (dy / dist) * force;
-
-          ni.vx -= fx;
-          ni.vy -= fy;
-          nj.vx += fx;
-          nj.vy += fy;
-        }
-      }
-
-      // 2. Link forces
-      for (const edge of edgesRef.current) {
-        const source = nodeMap.get(edge.source);
-        const target = nodeMap.get(edge.target);
-        if (!source || !target) continue;
-
-        const dx = target.x - source.x;
-        const dy = target.y - source.y;
-        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-
-        const strength =
-          edge.edge_type === "doc-memory"
-            ? FORCE.linkStrengthDocMem
-            : FORCE.linkStrengthMemMem * edge.weight;
-
-        const force = (dist - FORCE.linkDistance) * strength * alpha;
-        const fx = (dx / dist) * force;
-        const fy = (dy / dist) * force;
-
-        source.vx += fx;
-        source.vy += fy;
-        target.vx -= fx;
-        target.vy -= fy;
-      }
-
-      // 3. Center gravity
-      for (const node of nodes) {
-        node.vx += (centerX - node.x) * FORCE.centerGravity * alpha;
-        node.vy += (centerY - node.y) * FORCE.centerGravity * alpha;
-      }
-
-      // 4. Collision detection
-      for (let i = 0; i < nodes.length; i++) {
-        for (let j = i + 1; j < nodes.length; j++) {
-          const ni = nodes[i];
-          const nj = nodes[j];
-          const ri = ni.type === "document" ? FORCE.collisionDoc : FORCE.collisionMem;
-          const rj = nj.type === "document" ? FORCE.collisionDoc : FORCE.collisionMem;
-          const minDist = ri + rj;
-
-          const dx = nj.x - ni.x;
-          const dy = nj.y - ni.y;
-          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-
-          if (dist < minDist) {
-            const overlap = (minDist - dist) / 2;
-            const ox = (dx / dist) * overlap;
-            const oy = (dy / dist) * overlap;
-            ni.x -= ox;
-            ni.y -= oy;
-            nj.x += ox;
-            nj.y += oy;
-          }
-        }
-      }
-
-      // 5. Apply velocities with damping
-      for (const node of nodes) {
-        if (draggingNode?.id === node.id) continue;
-        node.vx *= FORCE.velocityDecay;
-        node.vy *= FORCE.velocityDecay;
-        node.x += node.vx;
-        node.y += node.vy;
-      }
-
-      // Faster alpha decay for quicker settling
-      alpha *= 0.96;
-      
-      // Only update state every 3 frames for better performance
-      if (tickCount % 3 === 0) {
-        setNodes([...nodesRef.current]);
-      }
-      
-      animationRef.current = requestAnimationFrame(tick);
-    };
-
-    animationRef.current = requestAnimationFrame(tick);
-  }, [draggingNode]);
+  }, [sources, atomicMemories, edges]);
 
   // ============ Canvas Rendering ============
   useEffect(() => {
@@ -529,8 +418,6 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
         if (node) {
           node.x = world.x;
           node.y = world.y;
-          node.vx = 0;
-          node.vy = 0;
           setNodes([...nodesRef.current]);
         }
         return;
@@ -547,14 +434,9 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
   );
 
   const handleMouseUp = useCallback(() => {
-    if (draggingNode) {
-      setDraggingNode(null);
-      // Restart simulation
-      isSimulating.current = false;
-      setTimeout(() => startSimulation(), 50);
-    }
+    setDraggingNode(null);
     setIsDragging(false);
-  }, [draggingNode, startSimulation]);
+  }, []);
 
   const handleClick = useCallback(() => {
     if (hoveredNode && !draggingNode) {
@@ -571,7 +453,7 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
   }, []);
 
   const resetView = useCallback(() => {
-    setZoom(0.8);
+    setZoom(0.6);
     setPan({ x: 0, y: 0 });
     setSelectedNode(null);
   }, []);
