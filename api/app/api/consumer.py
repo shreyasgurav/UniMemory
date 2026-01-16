@@ -586,7 +586,7 @@ class ConsumerSearchResult(BaseModel):
 
 
 class ConsumerSearchResponse(BaseModel):
-    results: List[MemoryResponse]
+    results: List[ConsumerSearchResult]
     total: int
     query: str
 
