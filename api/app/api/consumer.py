@@ -235,7 +235,7 @@ class CreateAtomicMemoryResponse(BaseModel):
 @router.post("/consumer/memories/atomic", response_model=CreateAtomicMemoryResponse)
 async def create_atomic_memory(
     request: CreateAtomicMemoryRequest,
-    user: User = Depends(get_current_user),
+    user: User = Depends(verify_consumer_session_token),
     session: AsyncSession = Depends(get_db)
 ):
     """Create a standalone atomic memory without source (for individual prompts)"""

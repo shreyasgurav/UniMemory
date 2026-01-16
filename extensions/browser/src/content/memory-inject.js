@@ -262,61 +262,13 @@ ${memoryText}
         outline: none;
         box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
       }
-      .unimemory-toast {
-        position: fixed;
-        bottom: 24px;
-        right: 24px;
-        padding: 12px 20px;
-        border-radius: 8px;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-        font-size: 14px;
-        font-weight: 500;
-        color: white;
-        z-index: 999999;
-        opacity: 0;
-        transform: translateY(10px);
-        transition: all 0.3s ease;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-      }
-      .unimemory-toast.show {
-        opacity: 1;
-        transform: translateY(0);
-      }
-      .unimemory-toast-info {
-        background: #3b82f6;
-      }
-      .unimemory-toast-success {
-        background: #10b981;
-      }
-      .unimemory-toast-error {
-        background: #ef4444;
-      }
     `;
     document.head.appendChild(style);
-  }
-
-  // Show toast notification
-  function showToast(message, type = 'info') {
-    const existing = document.querySelector('.unimemory-toast');
-    if (existing) existing.remove();
-    
-    const toast = document.createElement('div');
-    toast.className = `unimemory-toast unimemory-toast-${type}`;
-    toast.textContent = message;
-    document.body.appendChild(toast);
-    
-    setTimeout(() => toast.classList.add('show'), 10);
-    setTimeout(() => {
-      toast.classList.remove('show');
-      setTimeout(() => toast.remove(), 300);
-    }, 3000);
   }
 
   // Capture and ingest user prompt
   async function captureAndIngestPrompt(promptText) {
     if (!promptText || promptText.trim().length === 0) return;
-    
-    showToast('Saving memory...', 'info');
     
     try {
       // Send to background script for ingestion
@@ -330,14 +282,9 @@ ${memoryText}
       
       if (response?.success) {
         console.log('[UniMemory] Prompt ingested successfully');
-        showToast('Memory saved!', 'success');
-      } else {
-        console.error('[UniMemory] Failed to save:', response);
-        showToast('Failed to save memory', 'error');
       }
     } catch (error) {
       console.error('[UniMemory] Failed to ingest prompt:', error);
-      showToast('Failed to save memory', 'error');
     }
   }
 
