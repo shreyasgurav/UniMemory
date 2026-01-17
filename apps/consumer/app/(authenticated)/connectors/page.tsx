@@ -340,29 +340,29 @@ export default function ConnectorsPage() {
                       <p className="text-xs text-neutral-500 mt-3">
                         This uses <code className="bg-neutral-100 px-1 py-0.5 rounded text-neutral-700">install-mcp</code> to automatically add UniMemory to your {selectedClientInfo.name} config
                       </p>
-                    </div>
-                  )}
 
-                  {/* Cursor Deep Link - Only for Cursor */}
-                  {selectedClient.client_type === "cursor" && installMethod === "one-click" && false && (
-                    <div className="bg-neutral-50 rounded-lg p-8 text-center">
-                      <p className="text-sm text-neutral-600 mb-6">
-                        Click the button below to automatically install and configure UniMemory in Cursor
-                      </p>
-                      <a
-                        href={`cursor://anysphere.cursor-deeplink/mcp/install?name=unimemory&config=${btoa(JSON.stringify({ url: selectedClient.mcp_url, headers: { Authorization: `Bearer ${selectedClient.token}` } }))}`}
-                        className="inline-flex items-center gap-2 px-6 py-3 rounded-lg text-sm font-medium text-white bg-neutral-900 hover:bg-neutral-800 transition-colors"
-                      >
-                        <img 
-                          src="https://cursor.sh/favicon.ico" 
-                          alt="Cursor"
-                          className="w-5 h-5"
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none';
-                          }}
-                        />
-                        Add to Cursor
-                      </a>
+                      {/* Cursor Deep Link - Only for Cursor */}
+                      {selectedClient.client_type === "cursor" && (
+                        <div className="mt-6 pt-6 border-t border-neutral-200">
+                          <p className="text-sm text-neutral-600 mb-4">
+                            Or use one-click install:
+                          </p>
+                          <a
+                            href={`cursor://anysphere.cursor-deeplink/mcp/install?name=unimemory&config=${btoa(JSON.stringify({ url: selectedClient.mcp_url, headers: { Authorization: `Bearer ${selectedClient.token}` } }))}`}
+                            className="inline-flex items-center gap-2 px-6 py-3 rounded-lg text-sm font-medium text-white bg-neutral-900 hover:bg-neutral-800 transition-colors"
+                          >
+                            <img 
+                              src="https://cursor.sh/favicon.ico" 
+                              alt="Cursor"
+                              className="w-5 h-5"
+                              onError={(e) => {
+                                e.currentTarget.style.display = 'none';
+                              }}
+                            />
+                            Add to Cursor
+                          </a>
+                        </div>
+                      )}
                     </div>
                   )}
 

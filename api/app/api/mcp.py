@@ -54,9 +54,12 @@ async def oauth_protected_resource():
 
 
 @router.get("/mcp/.well-known/oauth-authorization-server")
+@router.get("/.well-known/oauth-authorization-server")
 async def oauth_authorization_server():
     """
     OAuth 2.0 Authorization Server Metadata endpoint.
+    Available at both /mcp/.well-known/ and /.well-known/ paths
+    since install-mcp queries the authorization_servers URL directly.
     https://datatracker.ietf.org/doc/html/rfc8414
     """
     return {
