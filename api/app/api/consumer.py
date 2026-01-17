@@ -201,6 +201,7 @@ async def log_activity(
 class SourceResponse(BaseModel):
     id: str
     type: str
+    title: Optional[str] = None
     raw_content: dict
     summary: Optional[str] = None
     source_metadata: Optional[dict] = None

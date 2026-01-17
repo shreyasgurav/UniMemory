@@ -271,7 +271,7 @@
       
       if (response.success) {
         const memoryCount = response.data?.stored || 0;
-        const title = metadata.title || 'Chat';
+        const title = response.data?.source_title || metadata.title || 'Chat';
         showToast(`Saved "${title}" - ${memoryCount} ${memoryCount === 1 ? 'memory' : 'memories'} extracted`, 'success');
       } else {
         if (response.error === 'Not authenticated' || response.error?.includes('Session expired')) {

@@ -74,6 +74,7 @@ class IngestResponse(BaseModel):
     memory_ids: List[str]
     tokens_used: int = 0  # Token transparency
     source_id: Optional[str] = None
+    source_title: Optional[str] = None  # Generated title for display
     # Note: was_worth_remembering removed from public response (internal detail)
 
 
@@ -406,7 +407,8 @@ async def ingest_text(
         skipped=skipped,
         memory_ids=memory_ids,
         tokens_used=total_tokens,
-        source_id=source_uuid
+        source_id=source_uuid,
+        source_title=generated_title
     )
 
 
@@ -529,7 +531,8 @@ async def ingest_chat(
         skipped=skipped,
         memory_ids=memory_ids,
         tokens_used=total_tokens,
-        source_id=source_uuid
+        source_id=source_uuid,
+        source_title=generated_title
     )
 
 
