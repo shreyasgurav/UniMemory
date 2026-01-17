@@ -173,6 +173,63 @@ Keep it under 200 words. Be factual and descriptive, not conversational."""
         
         return "web page"
     
+    async def generate_title(self, text: str, source_type: str = "chat", metadata: dict = None) -> tuple[str, int]:
+        """
+        Generate a meaningful title from content.
+        
+        Args:
+            text: Raw content
+            source_type: Type of source (chat, document, etc.)
+            metadata: Optional metadata
+        
+        Returns:
+            Tuple of (title, tokens_used)
+        """
+        # Truncate if too long
+        max_chars = 2000
+        truncated = text[:max_chars]
+        
+        is_conversation = self._is_conversation_content(truncated, metadata)
+        
+        if is_conversation:
+            system_prompt = """Generate a short, descriptive title (3-8 words) for this conversation.
+Focus on the main topic or question discussed. Be specific and concise.
+Examples: "Python async/await best practices", "Debugging React state updates", "SQL query optimization tips"
+Just return the title, nothing else."""
+        else:
+            system_prompt = """Generate a short, descriptive title (3-8 words) for this content.
+Focus on the main topic or purpose. Be specific and concise.
+Examples: "Machine learning tutorial", "API documentation guide", "Product pricing page"
+Just return the title, nothing else."""
+        
+        try:
+            response = await asyncio.wait_for(
+                self.client.chat.completions.create(
+                    model=settings.OPENAI_MODEL,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": truncated}
+                    ],
+                    temperature=0.5,
+                    max_tokens=30,
+                ),
+                timeout=settings.OPENAI_TIMEOUT
+            )
+            
+            title = response.choices[0].message.content.strip()
+            # Remove quotes if present
+            title = title.strip('"\'')
+            tokens_used = response.usage.total_tokens if response.usage else 0
+            
+            return title, tokens_used
+            
+        except asyncio.TimeoutError:
+            logger.error(f"Title generation timeout for {source_type}")
+            return "Untitled conversation" if is_conversation else "Untitled document", 0
+        except Exception as e:
+            logger.error(f"Title generation error: {e}")
+            return "Untitled conversation" if is_conversation else "Untitled document", 0
+    
     async def summarize_and_embed(self, text: str, source_type: str = "text", metadata: dict = None) -> tuple[str, Optional[list[float]], int]:
         """
         Generate summary and embedding in one call.

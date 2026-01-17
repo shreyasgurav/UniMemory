@@ -453,7 +453,15 @@ async def ingest_chat(
     #         source_id=None
     #     )
     
-    # Step 2: Create Source record with raw chat + summary + embedding
+    # Step 2: Generate meaningful title from content
+    generated_title, title_tokens = await summarizer.generate_title(
+        conversation,
+        "chat",
+        metadata=request.source_metadata
+    )
+    total_tokens += title_tokens
+    
+    # Step 3: Create Source record with raw chat + summary + embedding
     # Pass metadata to help summarizer detect if this is a conversation or web page
     summary, summary_embedding, summary_tokens = await summarizer.summarize_and_embed(
         conversation, 
@@ -476,7 +484,7 @@ async def ingest_chat(
         end_user_id=str(end_user.id),
         type="chat",
         source_app=request.app_id or source_app,
-        title=request.source_metadata.get("title") if request.source_metadata else None,
+        title=generated_title,  # Use generated title instead of tab title
         raw_content={"messages": request.messages},
         summary=summary,
         summary_embedding=summary_embedding,
