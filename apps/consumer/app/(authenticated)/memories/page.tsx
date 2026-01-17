@@ -225,9 +225,9 @@ export default function MemoriesPage() {
               ) : (
                 <>
                   {sources.map((source) => {
-                    const platformName = getPlatformName(source);
-                    const favicon = getPlatformFavicon(source);
                     const title = getSourceTitle(source);
+                    const metadata = (source as any).source_metadata || {};
+                    const sourceUrl = metadata.url;
                     
                     return (
                       <div key={source.id} className="break-inside-avoid mb-4">
@@ -245,25 +245,9 @@ export default function MemoriesPage() {
                             onClick={() => loadSourceDetail(source.id)}
                             className="text-left w-full"
                           >
-                            <div className="flex items-center gap-2 mb-2">
-                              {favicon ? (
-                                <img 
-                                  src={favicon} 
-                                  alt={platformName}
-                                  className="w-5 h-5 rounded"
-                                  onError={(e) => {
-                                    e.currentTarget.style.display = 'none';
-                                  }}
-                                />
-                              ) : (
-                                <div className="w-5 h-5 rounded bg-neutral-200 flex items-center justify-center text-neutral-600 text-xs font-semibold">
-                                  {platformName.charAt(0).toUpperCase()}
-                                </div>
-                              )}
-                              <h3 className="text-neutral-900 font-semibold text-base pr-8 flex-1">
-                                {title}
-                              </h3>
-                            </div>
+                            <h3 className="text-neutral-900 font-semibold text-base pr-8 mb-2">
+                              {title}
+                            </h3>
                             <p className="text-neutral-600 text-sm mb-3 leading-relaxed line-clamp-4">
                               {source.summary || "No summary available"}
                             </p>
@@ -273,6 +257,26 @@ export default function MemoriesPage() {
                                 <>
                                   <span>•</span>
                                   <span>{source.memory_count} {source.memory_count === 1 ? 'memory' : 'memories'}</span>
+                                </>
+                              )}
+                              {sourceUrl && (
+                                <>
+                                  <span>•</span>
+                                  <a
+                                    href={sourceUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="text-blue-500 hover:text-blue-600 hover:underline"
+                                  >
+                                    {(() => {
+                                      try {
+                                        return new URL(sourceUrl).hostname.replace('www.', '');
+                                      } catch {
+                                        return 'source';
+                                      }
+                                    })()}
+                                  </a>
                                 </>
                               )}
                             </div>
