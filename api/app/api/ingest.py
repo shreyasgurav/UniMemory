@@ -302,13 +302,6 @@ async def ingest_text(
     user, api_key, source_app = user_info
     owner_id = str(user.id)
     
-    # Check if ingest is enabled for this user
-    if not check_ingest_enabled(user):
-        raise HTTPException(
-            status_code=403,
-            detail="Ingest is disabled for this account. Enable via settings or use POST /memories."
-        )
-    
     extractor = get_extractor()
     summarizer = SourceSummarizer()
     content = request.content
@@ -437,13 +430,6 @@ async def ingest_chat(
     user, api_key, source_app = user_info
     owner_id = str(user.id)
     
-    # Check if ingest is enabled
-    if not check_ingest_enabled(user):
-        raise HTTPException(
-            status_code=403,
-            detail="Ingest is disabled for this account. Enable via settings or use POST /memories."
-        )
-    
     extractor = get_extractor()
     summarizer = SourceSummarizer()
     total_tokens = 0
@@ -556,13 +542,6 @@ async def ingest_document(
     """
     user, api_key, source_app = user_info
     owner_id = str(user.id)
-    
-    # Check if ingest is enabled
-    if not check_ingest_enabled(user):
-        raise HTTPException(
-            status_code=403,
-            detail="Ingest is disabled for this account. Enable via settings or use POST /memories."
-        )
     
     extractor = get_extractor()
     summarizer = SourceSummarizer()
