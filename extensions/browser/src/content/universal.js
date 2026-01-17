@@ -181,7 +181,7 @@
     
     return {
       url: window.location.href,
-      title: document.title,
+      // Don't send title - backend will generate meaningful title from content
       platform: detectPlatform(),
       favicon: favicon,
       domain: domain,

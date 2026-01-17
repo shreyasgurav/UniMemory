@@ -345,6 +345,7 @@ async def get_source(
     return SourceWithMemoriesResponse(
         id=str(source.id),
         type=source.type,
+        title=source.title,
         raw_content=source.raw_content or {},
         summary=source.summary,
         source_metadata=source.source_metadata,

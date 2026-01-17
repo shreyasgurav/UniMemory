@@ -224,7 +224,7 @@ async function ingestChat(chatData) {
         platform: chatData.platform,
         conversation_id: chatData.conversationId,
         url: chatData.url,
-        title: chatData.title,
+        // Don't send title - backend will generate meaningful title from content
         captured_at: new Date().toISOString()
       }
     })

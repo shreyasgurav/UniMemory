@@ -105,13 +105,10 @@ export default function MemoriesPage() {
   };
 
   const getSourceTitle = (source: Source) => {
-    // Prioritize actual title from source or metadata
+    // Use generated title only, no fallback to tab name
     if (source.title) return source.title;
     
-    const metadata = source.source_metadata || {};
-    if (metadata.title) return metadata.title;
-    
-    // Fallback to generic label (not platform name)
+    // Fallback to generic label (not tab name from metadata)
     if (source.type === "chat") return "Untitled Chat";
     return "Untitled " + source.type.charAt(0).toUpperCase() + source.type.slice(1);
   };
