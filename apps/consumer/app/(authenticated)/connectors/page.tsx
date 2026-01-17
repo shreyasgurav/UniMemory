@@ -24,9 +24,8 @@ interface MCPClient {
 
 const MCP_CLIENTS: MCPClient[] = [
   { id: "cursor", name: "Cursor", description: "AI-powered code editor" },
-  { id: "claude", name: "Claude Desktop", description: "Anthropic's Claude assistant" },
   { id: "windsurf", name: "Windsurf", description: "Codeium's AI IDE" },
-  { id: "cline", name: "Cline", description: "Terminal-based AI assistant" },
+  { id: "claude", name: "Claude Desktop", description: "Anthropic's Claude assistant" },
 ];
 
 const EXTENSIONS = [
@@ -35,12 +34,6 @@ const EXTENSIONS = [
     name: "Chrome Extension", 
     description: "Save memories from any webpage",
     url: "https://chromewebstore.google.com/detail/unimemory/your-extension-id"
-  },
-  { 
-    id: "vscode", 
-    name: "VS Code Extension", 
-    description: "Save code snippets and context",
-    url: "https://marketplace.visualstudio.com/items?itemName=unimemory.vscode"
   },
 ];
 
