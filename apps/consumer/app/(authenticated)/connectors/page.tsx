@@ -1,8 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ExternalLink } from "lucide-react";
 import { auth } from "@/lib/firebase";
+
+// Chrome extension API types
+declare global {
+  interface Window {
+    chrome?: {
+      runtime?: {
+        sendMessage: (extensionId: string, message: any, callback: (response: any) => void) => void;
+        lastError?: { message: string };
+      };
+    };
+  }
+}
 
 interface MCPToken {
   id: string;
@@ -15,6 +27,41 @@ interface MCPToken {
 
 export default function ConnectorsPage() {
   const [installing, setInstalling] = useState(false);
+  const [extensionConnected, setExtensionConnected] = useState(false);
+
+  // Check extension connection status on mount and when window regains focus
+  useEffect(() => {
+    const checkExtensionStatus = async () => {
+      try {
+        // Try to communicate with extension
+        if (window.chrome?.runtime?.sendMessage) {
+          window.chrome.runtime.sendMessage(
+            process.env.NEXT_PUBLIC_EXTENSION_ID || 'your-extension-id',
+            { type: 'GET_AUTH_STATUS' },
+            (response: any) => {
+              if (window.chrome?.runtime?.lastError) {
+                setExtensionConnected(false);
+              } else {
+                setExtensionConnected(response?.authenticated || false);
+              }
+            }
+          );
+        }
+      } catch (error) {
+        setExtensionConnected(false);
+      }
+    };
+
+    checkExtensionStatus();
+
+    // Re-check when window regains focus (user returns from login)
+    const handleFocus = () => {
+      checkExtensionStatus();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, []);
 
   const handleCursorClick = async () => {
     setInstalling(true);
@@ -70,28 +117,38 @@ export default function ConnectorsPage() {
 
   return (
     <div className="p-8">
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-4xl mx-auto">
         <h1 className="text-2xl font-semibold text-neutral-900 mb-8">Connectors</h1>
 
-        <div className="grid grid-cols-2 gap-6">
+        <div className="space-y-8">
           {/* Extensions Section */}
-          <div>
+          <div className="max-w-2xl">
             <h2 className="text-sm font-medium text-neutral-500 mb-3">Extensions</h2>
             <a
               href="https://chromewebstore.google.com/detail/unimemory/your-extension-id"
               target="_blank"
               rel="noopener noreferrer"
-              className="group flex items-center justify-between bg-white rounded-lg p-4 hover:shadow-md transition-all cursor-pointer"
+              className="group flex items-center justify-between bg-white rounded-lg p-4 hover:shadow-md transition-all cursor-pointer max-w-md"
             >
               <div className="flex items-center gap-3">
-                <img 
-                  src="https://www.google.com/chrome/static/images/chrome-logo.svg" 
-                  alt="Chrome"
-                  className="w-10 h-10"
-                />
+                <div className="relative">
+                  <img 
+                    src="https://www.google.com/chrome/static/images/chrome-logo.svg" 
+                    alt="Chrome"
+                    className="w-10 h-10"
+                  />
+                  {extensionConnected && (
+                    <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
+                  )}
+                </div>
                 <div>
-                  <h3 className="font-medium text-neutral-900">Chrome Extension</h3>
-                  <p className="text-sm text-neutral-500">Save memories from any webpage</p>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-medium text-neutral-900">Chrome Extension</h3>
+                    {extensionConnected && (
+                      <span className="text-xs text-green-600 font-medium">Connected</span>
+                    )}
+                  </div>
+                  <p className="text-sm text-neutral-500">Save and recall memories across any AI agent.</p>
                 </div>
               </div>
               <ExternalLink className="w-5 h-5 text-neutral-400 group-hover:text-neutral-600 transition-colors" />
@@ -99,12 +156,12 @@ export default function ConnectorsPage() {
           </div>
 
           {/* MCP Section */}
-          <div>
+          <div className="max-w-2xl">
             <h2 className="text-sm font-medium text-neutral-500 mb-3">MCP</h2>
             <button
               onClick={handleCursorClick}
               disabled={installing}
-              className="group w-full flex items-center justify-between bg-white rounded-lg p-4 hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed text-left"
+              className="group w-full flex items-center justify-between bg-white rounded-lg p-4 hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed text-left max-w-md"
             >
               <div className="flex items-center gap-3">
                 <img 
@@ -117,7 +174,7 @@ export default function ConnectorsPage() {
                 />
                 <div>
                   <h3 className="font-medium text-neutral-900">Cursor</h3>
-                  <p className="text-sm text-neutral-500">AI-powered code editor</p>
+                  <p className="text-sm text-neutral-500">Recall long-term memories in Cursor.</p>
                 </div>
               </div>
               <div className="text-sm font-medium text-neutral-900">
