@@ -25,6 +25,7 @@ interface MCPClient {
 const MCP_CLIENTS: MCPClient[] = [
   { id: "cursor", name: "Cursor", description: "AI-powered code editor" },
   { id: "windsurf", name: "Windsurf", description: "Codeium's AI IDE" },
+  { id: "claude", name: "Claude Desktop", description: "Anthropic's Claude assistant" },
 ];
 
 const EXTENSIONS = [
@@ -87,11 +88,17 @@ export default function ConnectorsPage() {
     setTimeout(() => setCopied(null), 2000);
   };
 
+  const getInstallMcpCommand = (clientType: string, mcpUrl: string) => {
+    return `npx -y install-mcp@latest ${mcpUrl} --client ${clientType} --oauth=no`;
+  };
+
   const getTerminalCommand = (clientType: string, token: string, mcpUrl: string) => {
     const jsonConfig = `{"mcpServers": {"unimemory": {"url": "${mcpUrl}", "headers": {"Authorization": "Bearer ${token}"}}}}`;
     
     if (clientType === "windsurf") {
       return `mkdir -p ~/Library/Application\\ Support/Windsurf/User && echo '${jsonConfig}' > "$HOME/Library/Application Support/Windsurf/User/mcp_config.json"`;
+    } else if (clientType === "claude") {
+      return `mkdir -p ~/Library/Application\\ Support/Claude && echo '${jsonConfig}' > "$HOME/Library/Application Support/Claude/claude_desktop_config.json"`;
     }
     return jsonConfig;
   };
@@ -138,6 +145,18 @@ export default function ConnectorsPage() {
       );
     }
     
+    if (idLower.includes("claude")) {
+      return (
+        <img 
+          src="https://claude.ai/favicon.ico" 
+          alt="Claude"
+          className="w-10 h-10"
+          onError={(e) => {
+            e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23CC9B7A'%3E%3Crect width='24' height='24' rx='4'/%3E%3C/svg%3E";
+          }}
+        />
+      );
+    }
     
     if (idLower.includes("windsurf")) {
       return (
@@ -263,31 +282,29 @@ export default function ConnectorsPage() {
                 </button>
               </div>
 
-              {/* Toggle Tabs - Only show for Cursor */}
-              {selectedClientInfo.id === "cursor" && (
-                <div className="flex gap-2 mb-6">
-                  <button
-                    onClick={() => setInstallMethod("one-click")}
-                    className={`flex-1 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                      installMethod === "one-click"
-                        ? "bg-neutral-900 text-white"
-                        : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
-                    }`}
-                  >
-                    One Click Install
-                  </button>
-                  <button
-                    onClick={() => setInstallMethod("manual")}
-                    className={`flex-1 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                      installMethod === "manual"
-                        ? "bg-neutral-900 text-white"
-                        : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
-                    }`}
-                  >
-                    Manual Config
-                  </button>
-                </div>
-              )}
+              {/* Toggle Tabs */}
+              <div className="flex gap-2 mb-6">
+                <button
+                  onClick={() => setInstallMethod("one-click")}
+                  className={`flex-1 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                    installMethod === "one-click"
+                      ? "bg-neutral-900 text-white"
+                      : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+                  }`}
+                >
+                  Quick Install
+                </button>
+                <button
+                  onClick={() => setInstallMethod("manual")}
+                  className={`flex-1 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                    installMethod === "manual"
+                      ? "bg-neutral-900 text-white"
+                      : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+                  }`}
+                >
+                  Manual Config
+                </button>
+              </div>
 
               {/* Content */}
               {selectedClientLoading ? (
@@ -298,8 +315,34 @@ export default function ConnectorsPage() {
                 </div>
               ) : selectedClient && selectedClient.token && selectedClient.mcp_url ? (
                 <div>
-                  {/* Cursor One-Click Install */}
-                  {selectedClient.client_type === "cursor" && installMethod === "one-click" && (
+                  {/* Quick Install with install-mcp */}
+                  {installMethod === "one-click" && (
+                    <div>
+                      <p className="text-sm text-neutral-600 mb-4">
+                        Run this command in your terminal to automatically configure {selectedClientInfo.name}
+                      </p>
+                      <div className="bg-neutral-900 rounded-lg p-4 relative">
+                        <button
+                          onClick={() => {
+                            if (!selectedClient) return;
+                            copyToClipboard(getInstallMcpCommand(selectedClient.client_type, selectedClient.mcp_url!), `install-${selectedClient.id}`);
+                          }}
+                          className="absolute top-3 right-3 text-neutral-400 hover:text-white"
+                        >
+                          {copied === `install-${selectedClient.id}` ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                        </button>
+                        <pre className="text-sm text-neutral-300 whitespace-pre-wrap overflow-x-auto font-mono pr-10">
+                          {getInstallMcpCommand(selectedClient.client_type, selectedClient.mcp_url!)}
+                        </pre>
+                      </div>
+                      <p className="text-xs text-neutral-500 mt-3">
+                        This uses <code className="bg-neutral-100 px-1 py-0.5 rounded text-neutral-700">install-mcp</code> to automatically add UniMemory to your {selectedClientInfo.name} config
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Cursor Deep Link - Only for Cursor */}
+                  {selectedClient.client_type === "cursor" && installMethod === "one-click" && false && (
                     <div className="bg-neutral-50 rounded-lg p-8 text-center">
                       <p className="text-sm text-neutral-600 mb-6">
                         Click the button below to automatically install and configure UniMemory in Cursor
@@ -322,14 +365,13 @@ export default function ConnectorsPage() {
                   )}
 
                   {/* Manual Configuration */}
-                  {((selectedClient.client_type === "cursor" && installMethod === "manual") || 
-                    selectedClient.client_type !== "cursor") && (
+                  {installMethod === "manual" && (
                     <div>
                       <div className="bg-neutral-900 rounded-lg p-4 relative">
                         <button
                           onClick={() => {
                             if (!selectedClient) return;
-                            const config = selectedClient.client_type === "windsurf"
+                            const config = selectedClient.client_type === "windsurf" || selectedClient.client_type === "claude"
                               ? getTerminalCommand(selectedClient.client_type, selectedClient.token!, selectedClient.mcp_url!)
                               : getJsonConfig(selectedClient.token!, selectedClient.mcp_url!);
                             copyToClipboard(config, selectedClient.id);
@@ -339,7 +381,7 @@ export default function ConnectorsPage() {
                           {copied === selectedClient.id ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                         </button>
                         <pre className="text-sm text-neutral-300 whitespace-pre-wrap overflow-x-auto font-mono pr-10">
-                          {selectedClient.client_type === "windsurf"
+                          {selectedClient.client_type === "windsurf" || selectedClient.client_type === "claude"
                             ? getTerminalCommand(selectedClient.client_type, selectedClient.token!, selectedClient.mcp_url!)
                             : getJsonConfig(selectedClient.token!, selectedClient.mcp_url!)
                           }
