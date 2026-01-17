@@ -25,7 +25,6 @@ interface MCPClient {
 const MCP_CLIENTS: MCPClient[] = [
   { id: "cursor", name: "Cursor", description: "AI-powered code editor" },
   { id: "windsurf", name: "Windsurf", description: "Codeium's AI IDE" },
-  { id: "claude", name: "Claude Desktop", description: "Anthropic's Claude assistant" },
 ];
 
 const EXTENSIONS = [
@@ -93,8 +92,6 @@ export default function ConnectorsPage() {
     
     if (clientType === "windsurf") {
       return `mkdir -p ~/Library/Application\\ Support/Windsurf/User && echo '${jsonConfig}' > "$HOME/Library/Application Support/Windsurf/User/mcp_config.json"`;
-    } else if (clientType === "claude") {
-      return `mkdir -p ~/Library/Application\\ Support/Claude && echo '${jsonConfig}' > "$HOME/Library/Application Support/Claude/claude_desktop_config.json"`;
     }
     return jsonConfig;
   };
@@ -141,26 +138,6 @@ export default function ConnectorsPage() {
       );
     }
     
-    if (idLower.includes("claude")) {
-      return (
-        <img 
-          src="https://claude.ai/favicon.ico" 
-          alt="Claude"
-          className="w-10 h-10"
-          onError={(e) => {
-            e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23CC9B7A'%3E%3Crect width='24' height='24' rx='4'/%3E%3C/svg%3E";
-          }}
-        />
-      );
-    }
-    
-    if (idLower.includes("cline")) {
-      return (
-        <div className="w-10 h-10 rounded-lg bg-neutral-900 flex items-center justify-center text-white font-semibold text-sm">
-          CLI
-        </div>
-      );
-    }
     
     if (idLower.includes("windsurf")) {
       return (
@@ -352,7 +329,7 @@ export default function ConnectorsPage() {
                         <button
                           onClick={() => {
                             if (!selectedClient) return;
-                            const config = selectedClient.client_type === "windsurf" || selectedClient.client_type === "claude"
+                            const config = selectedClient.client_type === "windsurf"
                               ? getTerminalCommand(selectedClient.client_type, selectedClient.token!, selectedClient.mcp_url!)
                               : getJsonConfig(selectedClient.token!, selectedClient.mcp_url!);
                             copyToClipboard(config, selectedClient.id);
@@ -362,7 +339,7 @@ export default function ConnectorsPage() {
                           {copied === selectedClient.id ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                         </button>
                         <pre className="text-sm text-neutral-300 whitespace-pre-wrap overflow-x-auto font-mono pr-10">
-                          {selectedClient.client_type === "windsurf" || selectedClient.client_type === "claude"
+                          {selectedClient.client_type === "windsurf"
                             ? getTerminalCommand(selectedClient.client_type, selectedClient.token!, selectedClient.mcp_url!)
                             : getJsonConfig(selectedClient.token!, selectedClient.mcp_url!)
                           }
