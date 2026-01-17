@@ -60,6 +60,9 @@ export default function MemoriesPage() {
         memoriesRes.json()
       ]);
       
+      console.log('Sources data from API:', sourcesData);
+      console.log('First source title:', sourcesData[0]?.title);
+      
       setSources(sourcesData);
       setMemories(memoriesData);
     } catch (error) {

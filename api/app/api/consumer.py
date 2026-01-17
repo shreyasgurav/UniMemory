@@ -289,6 +289,7 @@ async def get_sources(
         SourceResponse(
             id=str(s.id),
             type=s.type,
+            title=s.title,
             raw_content=s.raw_content or {},
             summary=s.summary,
             source_metadata=s.source_metadata,
