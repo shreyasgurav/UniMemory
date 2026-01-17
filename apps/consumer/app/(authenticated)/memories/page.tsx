@@ -141,46 +141,18 @@ export default function MemoriesPage() {
   const getPlatformFavicon = (source: Source) => {
     const metadata = (source as any).source_metadata || {};
     
-    // First, try to use favicon from source_metadata
-    if (metadata.favicon) {
-      return metadata.favicon;
-    }
-    
-    // Second, try to construct favicon URL from metadata URL
+    // Use Google Favicon API with the source URL for reliable favicon fetching
     if (metadata.url) {
       try {
         const urlObj = new URL(metadata.url);
-        return `${urlObj.origin}/favicon.ico`;
-      } catch {}
-    }
-    
-    // Fallback to hardcoded favicons for known platforms
-    const platformName = getPlatformName(source);
-    const name = platformName.toLowerCase();
-    
-    const knownFavicons: Record<string, string> = {
-      chatgpt: "https://chat.openai.com/favicon.ico",
-      openai: "https://chat.openai.com/favicon.ico",
-      claude: "https://claude.ai/favicon.ico",
-      gemini: "https://gemini.google.com/favicon.ico",
-      bard: "https://gemini.google.com/favicon.ico",
-      perplexity: "https://www.perplexity.ai/favicon.ico",
-      "you.com": "https://you.com/favicon.ico",
-      github: "https://github.com/favicon.ico",
-      stackoverflow: "https://stackoverflow.com/favicon.ico",
-      reddit: "https://www.reddit.com/favicon.ico",
-      twitter: "https://twitter.com/favicon.ico",
-      linkedin: "https://linkedin.com/favicon.ico",
-      medium: "https://medium.com/favicon.ico",
-      notion: "https://notion.so/favicon.ico",
-    };
-    
-    for (const [key, url] of Object.entries(knownFavicons)) {
-      if (name.includes(key)) {
-        return url;
+        // Google's favicon service - reliable and fast
+        return `https://www.google.com/s2/favicons?domain=${urlObj.hostname}&sz=64`;
+      } catch (e) {
+        console.error('Invalid URL for favicon:', metadata.url);
       }
     }
     
+    // Fallback: if no URL in metadata, return null
     return null;
   };
 
