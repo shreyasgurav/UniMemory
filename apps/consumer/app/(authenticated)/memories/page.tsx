@@ -95,6 +95,8 @@ export default function MemoriesPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json();
+      console.log('Source detail from API:', data);
+      console.log('Source detail title:', data.title);
       setSelectedSource(data);
     } catch (error) {
       console.error("Failed to load source detail:", error);
