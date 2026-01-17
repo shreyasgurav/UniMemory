@@ -37,7 +37,7 @@ MCP_SERVER_INFO = {
 # OAUTH DISCOVERY ENDPOINTS (for install-mcp and MCP clients)
 # =============================================================================
 
-@router.get("/.well-known/oauth-protected-resource")
+@router.get("/mcp/.well-known/oauth-protected-resource")
 async def oauth_protected_resource():
     """
     OAuth 2.0 Protected Resource Metadata endpoint.
@@ -53,7 +53,7 @@ async def oauth_protected_resource():
     }
 
 
-@router.get("/.well-known/oauth-authorization-server")
+@router.get("/mcp/.well-known/oauth-authorization-server")
 async def oauth_authorization_server():
     """
     OAuth 2.0 Authorization Server Metadata endpoint.
