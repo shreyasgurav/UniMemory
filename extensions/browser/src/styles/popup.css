@@ -176,11 +176,19 @@ body {
 
 .btn-save-large {
   width: 100%;
-  padding: 18px 32px;
-  font-size: 16px;
+  padding: 14px 28px;
+  font-size: 15px;
   font-weight: 500;
   border-radius: 50px;
-  background: #3d4f5f;
+  background: #000000;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.btn-save-large:hover {
+  background: #1a1a1a;
 }
 
 .btn-small {

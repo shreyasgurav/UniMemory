@@ -97,10 +97,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         pageTitle.textContent = tab.title || 'Current Page';
         pageUrl.textContent = tab.url || '';
         
-        // Check if it's an AI chat page and update button text
+        // Check if it's an AI chat page and update button text and icon
         const url = tab.url || '';
         const isAiChat = AI_CHAT_DOMAINS.some(domain => url.includes(domain));
+        
+        // Update text
         saveBtnText.textContent = isAiChat ? 'Save this Chat' : 'Save Current Page';
+        
+        // Toggle icons
+        const iconDocument = document.getElementById('icon-document');
+        const iconDocumentFold = document.getElementById('icon-document-fold');
+        const iconChat = document.getElementById('icon-chat');
+        
+        if (isAiChat) {
+          iconDocument.classList.add('hidden');
+          iconDocumentFold.classList.add('hidden');
+          iconChat.classList.remove('hidden');
+        } else {
+          iconDocument.classList.remove('hidden');
+          iconDocumentFold.classList.remove('hidden');
+          iconChat.classList.add('hidden');
+        }
       }
     } catch (error) {
       console.error('Failed to load page info:', error);
