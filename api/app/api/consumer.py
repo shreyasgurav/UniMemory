@@ -895,7 +895,7 @@ async def get_memory_graph(
         graph_sources.append(GraphSource(
             id=sid,
             type=source.type or "unknown",
-            title=source.source_metadata.get("title") if source.source_metadata else None,
+            title=source.title,  # Use generated title from source
             summary=source.summary[:300] if source.summary else None,
             created_at=source.created_at.isoformat() if source.created_at else "",
             memory_count=len(source_mems),
