@@ -88,8 +88,10 @@ export default function ConnectorsPage() {
     setTimeout(() => setCopied(null), 2000);
   };
 
-  const getInstallMcpCommand = (clientType: string, mcpUrl: string) => {
-    return `npx -y install-mcp@latest ${mcpUrl} --client ${clientType} --oauth=no`;
+  const getInstallMcpCommand = (clientType: string) => {
+    // Use the base MCP URL without token - OAuth will handle authentication
+    const mcpUrl = "https://unimemory.up.railway.app/api/v1/mcp";
+    return `npx -y install-mcp@latest ${mcpUrl} --client ${clientType} --oauth=yes`;
   };
 
   const getTerminalCommand = (clientType: string, token: string, mcpUrl: string) => {
@@ -325,14 +327,14 @@ export default function ConnectorsPage() {
                         <button
                           onClick={() => {
                             if (!selectedClient) return;
-                            copyToClipboard(getInstallMcpCommand(selectedClient.client_type, selectedClient.mcp_url!), `install-${selectedClient.id}`);
+                            copyToClipboard(getInstallMcpCommand(selectedClient.client_type), `install-${selectedClient.id}`);
                           }}
                           className="absolute top-3 right-3 text-neutral-400 hover:text-white"
                         >
                           {copied === `install-${selectedClient.id}` ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                         </button>
                         <pre className="text-sm text-neutral-300 whitespace-pre-wrap overflow-x-auto font-mono pr-10">
-                          {getInstallMcpCommand(selectedClient.client_type, selectedClient.mcp_url!)}
+                          {getInstallMcpCommand(selectedClient.client_type)}
                         </pre>
                       </div>
                       <p className="text-xs text-neutral-500 mt-3">

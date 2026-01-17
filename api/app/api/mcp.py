@@ -3,7 +3,7 @@ MCP API endpoints for consumer users
 Handles MCP tokens and MCP-over-HTTP protocol for AI agent connections
 """
 from fastapi import APIRouter, Depends, HTTPException, Header, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from typing import List, Optional, Dict, Any
@@ -22,10 +22,192 @@ from app.core.auth import get_current_user
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+# OAuth configuration
+MCP_SERVER_URL = "https://unimemory.up.railway.app/api/v1/mcp"
+APP_URL = "https://unimemory-app.vercel.app"
+API_URL = "https://unimemory.up.railway.app/api/v1"
+
 MCP_SERVER_INFO = {
     "name": "unimemory",
     "version": "1.0.0",
 }
+
+
+# =============================================================================
+# OAUTH DISCOVERY ENDPOINTS (for install-mcp and MCP clients)
+# =============================================================================
+
+@router.get("/.well-known/oauth-protected-resource")
+async def oauth_protected_resource():
+    """
+    OAuth 2.0 Protected Resource Metadata endpoint.
+    MCP clients use this to discover the authorization server.
+    https://datatracker.ietf.org/doc/html/rfc8707
+    """
+    return {
+        "resource": MCP_SERVER_URL,
+        "authorization_servers": [API_URL],
+        "scopes_supported": ["openid", "profile", "email", "offline_access"],
+        "bearer_methods_supported": ["header"],
+        "resource_documentation": "https://unimemory.app/docs/mcp",
+    }
+
+
+@router.get("/.well-known/oauth-authorization-server")
+async def oauth_authorization_server():
+    """
+    OAuth 2.0 Authorization Server Metadata endpoint.
+    https://datatracker.ietf.org/doc/html/rfc8414
+    """
+    return {
+        "issuer": API_URL,
+        "authorization_endpoint": f"{APP_URL}/mcp/authorize",
+        "token_endpoint": f"{API_URL}/mcp/oauth/token",
+        "scopes_supported": ["openid", "profile", "email", "offline_access"],
+        "response_types_supported": ["code"],
+        "grant_types_supported": ["authorization_code", "refresh_token"],
+        "code_challenge_methods_supported": ["S256"],
+        "token_endpoint_auth_methods_supported": ["none"],
+    }
+
+
+# In-memory storage for OAuth codes (in production, use Redis/DB with TTL)
+_oauth_codes: Dict[str, Dict[str, Any]] = {}
+
+
+class OAuthTokenRequest(BaseModel):
+    grant_type: str
+    code: Optional[str] = None
+    redirect_uri: Optional[str] = None
+    code_verifier: Optional[str] = None
+    refresh_token: Optional[str] = None
+
+
+@router.post("/mcp/oauth/token")
+async def oauth_token(
+    request: Request,
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    OAuth 2.0 Token Endpoint.
+    Exchanges authorization codes for access tokens.
+    """
+    # Parse form data or JSON
+    content_type = request.headers.get("content-type", "")
+    if "application/x-www-form-urlencoded" in content_type:
+        form_data = await request.form()
+        grant_type = form_data.get("grant_type")
+        code = form_data.get("code")
+        redirect_uri = form_data.get("redirect_uri")
+        code_verifier = form_data.get("code_verifier")
+    else:
+        body = await request.json()
+        grant_type = body.get("grant_type")
+        code = body.get("code")
+        redirect_uri = body.get("redirect_uri")
+        code_verifier = body.get("code_verifier")
+    
+    if grant_type != "authorization_code":
+        return JSONResponse(
+            status_code=400,
+            content={"error": "unsupported_grant_type"}
+        )
+    
+    if not code:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "invalid_request", "error_description": "Missing code"}
+        )
+    
+    # Look up the code
+    code_data = _oauth_codes.get(code)
+    if not code_data:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "invalid_grant", "error_description": "Invalid or expired code"}
+        )
+    
+    # Verify PKCE if provided
+    if code_data.get("code_challenge") and code_verifier:
+        import base64
+        expected = base64.urlsafe_b64encode(
+            hashlib.sha256(code_verifier.encode()).digest()
+        ).decode().rstrip("=")
+        if expected != code_data["code_challenge"]:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "invalid_grant", "error_description": "PKCE verification failed"}
+            )
+    
+    # Delete the code (one-time use)
+    del _oauth_codes[code]
+    
+    # Get the user's MCP token
+    user_id = code_data["user_id"]
+    
+    result = await session.execute(
+        select(MCPToken)
+        .where(MCPToken.user_id == user_id, MCPToken.is_active == True)
+        .order_by(MCPToken.created_at.desc())
+        .limit(1)
+    )
+    mcp_token = result.scalar_one_or_none()
+    
+    if not mcp_token:
+        # Create a new MCP token for this user
+        token, token_hash, token_prefix = generate_mcp_token()
+        mcp_token = MCPToken(
+            user_id=user_id,
+            name="MCP OAuth Token",
+            client_type=code_data.get("client", "mcp"),
+            token_hash=token_hash,
+            token_prefix=token_prefix,
+            token_value=token,
+            is_active=True,
+        )
+        session.add(mcp_token)
+        await session.commit()
+        await session.refresh(mcp_token)
+        access_token = token
+    else:
+        access_token = mcp_token.token_value
+    
+    return {
+        "access_token": access_token,
+        "token_type": "Bearer",
+        "expires_in": 86400 * 365,  # 1 year
+        "scope": "openid profile email",
+    }
+
+
+def store_oauth_code(code: str, user_id: str, code_challenge: Optional[str] = None, client: str = "mcp"):
+    """Store an OAuth authorization code (called from consumer app)"""
+    _oauth_codes[code] = {
+        "user_id": user_id,
+        "code_challenge": code_challenge,
+        "client": client,
+        "created_at": datetime.utcnow().isoformat(),
+    }
+
+
+@router.post("/mcp/oauth/code")
+async def create_oauth_code(
+    request: Request,
+    user: User = Depends(get_current_user),
+):
+    """
+    Internal endpoint to create an OAuth authorization code.
+    Called by the consumer app after user authenticates.
+    """
+    body = await request.json()
+    code = secrets.token_urlsafe(32)
+    code_challenge = body.get("code_challenge")
+    client = body.get("client", "mcp")
+    
+    store_oauth_code(code, str(user.id), code_challenge, client)
+    
+    return {"code": code}
+
 
 MCP_TOOLS = [
     {
