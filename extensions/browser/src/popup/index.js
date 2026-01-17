@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const loginBtn = document.getElementById('login-btn');
   const logoutBtn = document.getElementById('logout-btn');
   const saveCurrentPageBtn = document.getElementById('save-current-page-btn');
+  const saveBtnText = document.getElementById('save-btn-text');
   const autoSaveToggle = document.getElementById('auto-save-toggle');
   const pageTitle = document.getElementById('page-title');
   const pageUrl = document.getElementById('page-url');
@@ -18,6 +19,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   const userAvatarSettings = document.getElementById('user-avatar-settings');
   const userNameSettings = document.getElementById('user-name-settings');
   const userEmailSettings = document.getElementById('user-email-settings');
+  
+  // AI chat platforms to detect
+  const AI_CHAT_DOMAINS = [
+    'chat.openai.com',
+    'chatgpt.com',
+    'claude.ai',
+    'gemini.google.com',
+    'bard.google.com',
+    'poe.com',
+    'perplexity.ai',
+    'copilot.microsoft.com',
+    'you.com'
+  ];
   
   // Tab elements
   const tabs = document.querySelectorAll('.tab');
@@ -82,6 +96,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (tab) {
         pageTitle.textContent = tab.title || 'Current Page';
         pageUrl.textContent = tab.url || '';
+        
+        // Check if it's an AI chat page and update button text
+        const url = tab.url || '';
+        const isAiChat = AI_CHAT_DOMAINS.some(domain => url.includes(domain));
+        saveBtnText.textContent = isAiChat ? 'Save this Chat' : 'Save Current Page';
       }
     } catch (error) {
       console.error('Failed to load page info:', error);

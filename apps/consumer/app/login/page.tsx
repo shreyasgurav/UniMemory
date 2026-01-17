@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth, signInWithGoogle, handleRedirectResult } from "@/lib/firebase";
 import { Loader2 } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [signingIn, setSigningIn] = useState(false);
 
@@ -16,14 +17,20 @@ export default function LoginPage() {
     
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
-        router.push("/");
+        // Check for redirect parameter (used by extension login flow)
+        const redirectParam = searchParams.get('redirect');
+        if (redirectParam) {
+          router.push(decodeURIComponent(redirectParam));
+        } else {
+          router.push("/");
+        }
       } else {
         setLoading(false);
       }
     });
 
     return () => unsubscribe();
-  }, [router]);
+  }, [router, searchParams]);
 
   const handleSignIn = async () => {
     setSigningIn(true);
