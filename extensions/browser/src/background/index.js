@@ -111,55 +111,25 @@ async function refreshSession(firebaseToken) {
   }
 }
 
-async function recallMemories(query) {
+async function searchMemories(query, limit = 10) {
   let session = await getSession();
   
   if (!session) {
     throw new Error('Not authenticated');
   }
   
-  console.log('[UniMemory] Recalling memories for:', query || '(empty)');
+  console.log('[UniMemory] Searching memories:', query || '(all)');
   
-  // If no query, get recent sources instead
-  if (!query || !query.trim()) {
-    const response = await fetch(`${API_BASE_URL}/consumer/sources?limit=10`, {
-      headers: {
-        'Authorization': `Bearer ${session.token}`
-      }
-    });
-    
-    if (response.status === 401) {
-      await clearSession();
-      throw new Error('Not authenticated');
-    }
-    
-    if (!response.ok) {
-      throw new Error('Failed to fetch sources');
-    }
-    
-    const sources = await response.json();
-    return { memories: [], sources: sources.map(s => ({
-      id: s.id,
-      type: s.type,
-      title: s.title,
-      summary: s.summary,
-      similarity: 0,
-      score: 0
-    })), query: '' };
-  }
-  
-  // Semantic recall - embed full query, search memories + sources
-  const response = await fetch(`${API_BASE_URL}/consumer/recall`, {
+  // Simple semantic search on memories
+  const response = await fetch(`${API_BASE_URL}/consumer/search`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${session.token}`,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      query: query,
-      memory_limit: 5,
-      source_limit: 3,
-      include_context_block: true
+      query: query || '',
+      limit: limit
     })
   });
   
@@ -170,14 +140,14 @@ async function recallMemories(query) {
   
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    console.error('[UniMemory] Recall failed:', error);
-    throw new Error(error.detail || 'Failed to recall memories');
+    console.error('[UniMemory] Search failed:', error);
+    throw new Error(error.detail || 'Failed to search memories');
   }
   
   const result = await response.json();
-  console.log('[UniMemory] Recalled', result.memories?.length || 0, 'memories,', result.sources?.length || 0, 'sources');
+  console.log('[UniMemory] Found', result.results?.length || 0, 'memories');
   
-  return result;
+  return result.results || [];
 }
 
 async function ingestPrompt(prompt, platform) {
@@ -330,7 +300,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         
         case 'SEARCH_MEMORIES': {
-          const result = await recallMemories(message.query);
+          const result = await searchMemories(message.query, message.limit || 10);
           sendResponse({ success: true, data: result });
           break;
         }

@@ -208,23 +208,25 @@
   border-color: #d4d4d4;
 }
 
-.unimemory-popup-card-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #171717;
-  margin-bottom: 4px;
-}
-
-.unimemory-popup-card-summary {
+.unimemory-popup-card-content {
   font-size: 13px;
-  color: #525252;
-  line-height: 1.4;
-  margin-bottom: 6px;
+  color: #171717;
+  line-height: 1.5;
 }
 
-.unimemory-popup-card-meta {
-  font-size: 12px;
-  color: #a3a3a3;
+.unimemory-popup-card-tags {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.unimemory-popup-card-tags .tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  background: #f5f5f5;
+  color: #737373;
+  border-radius: 4px;
 }
 
 @keyframes popupFadeIn {

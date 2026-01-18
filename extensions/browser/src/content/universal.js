@@ -338,7 +338,7 @@
     memoryPopup.className = 'unimemory-popup';
     memoryPopup.innerHTML = `
       <div class="unimemory-popup-content">
-        <div class="unimemory-popup-header">Recent Sources</div>
+        <div class="unimemory-popup-header">Your Memories</div>
         <div class="unimemory-popup-list">
           <div class="unimemory-popup-loading">Loading...</div>
         </div>
@@ -347,8 +347,8 @@
     
     document.body.appendChild(memoryPopup);
     
-    // Load all recent sources immediately
-    await loadAllSources();
+    // Load all memories immediately
+    await loadAllMemories();
     
     // Close on click outside
     memoryPopup.addEventListener('click', (e) => {
@@ -363,7 +363,7 @@
     }
   }
   
-  async function loadAllSources() {
+  async function loadAllMemories() {
     const listEl = memoryPopup?.querySelector('.unimemory-popup-list');
     if (!listEl) return;
     
@@ -372,52 +372,50 @@
     try {
       const response = await chrome.runtime.sendMessage({
         type: 'SEARCH_MEMORIES',
-        query: ''  // Empty query = get recent sources
+        query: '',  // Empty query = get all memories
+        limit: 20
       });
       
       if (!response.success) {
-        listEl.innerHTML = '<div class="unimemory-popup-empty">Failed to load sources</div>';
+        listEl.innerHTML = '<div class="unimemory-popup-empty">Failed to load memories</div>';
         return;
       }
       
-      const result = response.data || {};
-      const sources = result.sources || [];
+      const memories = response.data || [];
       
-      if (sources.length === 0) {
-        listEl.innerHTML = '<div class="unimemory-popup-empty">No sources found</div>';
+      if (memories.length === 0) {
+        listEl.innerHTML = '<div class="unimemory-popup-empty">No memories found</div>';
         return;
       }
       
       listEl.innerHTML = '';
       
-      // Show all sources as cards
-      sources.forEach(source => {
-        const card = createSourceCard(source);
+      // Show all memories as cards
+      memories.forEach(memory => {
+        const card = createMemoryCard(memory);
         listEl.appendChild(card);
       });
       
     } catch (error) {
-      console.error('Failed to load sources:', error);
-      listEl.innerHTML = '<div class="unimemory-popup-empty">Failed to load sources</div>';
+      console.error('Failed to load memories:', error);
+      listEl.innerHTML = '<div class="unimemory-popup-empty">Failed to load memories</div>';
     }
   }
   
-  function createSourceCard(source) {
+  function createMemoryCard(memory) {
     const card = document.createElement('div');
     card.className = 'unimemory-popup-card';
     
-    const title = source.title || 'Untitled';
-    const summary = source.summary || '';
-    const memCount = source.memory_count || 0;
+    const content = memory.content || '';
+    const tags = memory.tags || [];
     
     card.innerHTML = `
-      <div class="unimemory-popup-card-title">${escapeHtml(title)}</div>
-      <div class="unimemory-popup-card-summary">${escapeHtml(summary.substring(0, 150))}${summary.length > 150 ? '...' : ''}</div>
-      <div class="unimemory-popup-card-meta">${memCount} ${memCount === 1 ? 'memory' : 'memories'}</div>
+      <div class="unimemory-popup-card-content">${escapeHtml(content)}</div>
+      ${tags.length > 0 ? `<div class="unimemory-popup-card-tags">${tags.map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
     `;
     
-    card.addEventListener('click', async () => {
-      await insertSourceContent(source);
+    card.addEventListener('click', () => {
+      insertMemoryContent(memory);
     });
     
     return card;
@@ -429,28 +427,18 @@
     return div.innerHTML;
   }
   
-  async function insertSourceContent(source) {
+  function insertMemoryContent(memory) {
     if (!activeInputElement) return;
     
-    const title = source.title || 'Untitled';
-    let content = '';
-    
-    // Try to get raw content from source
-    if (source.raw_content && source.raw_content.messages) {
-      // Extract text from messages
-      content = source.raw_content.messages.map(m => m.content).join('\n\n');
-    } else if (source.summary) {
-      // Fallback to summary
-      content = source.summary;
-    }
+    const content = memory.content || '';
     
     if (!content) {
       showToast('No content available', 'error');
       return;
     }
     
-    // Format with header
-    const formattedContent = `[Context from: ${title}]\n\n${content}\n\n---\n\n`;
+    // Insert memory content directly
+    const insertText = content + '\n\n';
     
     // Insert into active element
     if (activeInputElement.isContentEditable || activeInputElement.getAttribute('contenteditable') === 'true') {
@@ -460,18 +448,18 @@
       range.collapse(false);
       selection.removeAllRanges();
       selection.addRange(range);
-      document.execCommand('insertText', false, formattedContent);
+      document.execCommand('insertText', false, insertText);
     } else {
       const start = activeInputElement.selectionStart || 0;
       const end = activeInputElement.selectionEnd || 0;
       const value = activeInputElement.value || '';
-      activeInputElement.value = value.substring(0, start) + formattedContent + value.substring(end);
-      activeInputElement.selectionStart = activeInputElement.selectionEnd = start + formattedContent.length;
+      activeInputElement.value = value.substring(0, start) + insertText + value.substring(end);
+      activeInputElement.selectionStart = activeInputElement.selectionEnd = start + insertText.length;
       activeInputElement.dispatchEvent(new Event('input', { bubbles: true }));
     }
     
     closeMemoryPopup();
-    showToast(`Added: ${title}`, 'success');
+    showToast('Memory added', 'success');
   }
   
   // Add keyboard listener
