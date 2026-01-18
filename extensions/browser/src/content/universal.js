@@ -58,49 +58,53 @@
     return domMatch;
   }
   
-  // ============ Universal Message Extraction ============
+  // ============ Raw Page Content Extraction ============
   
   function extractMessages() {
-    const messages = [];
+    // Extract entire page content as single raw text
+    const rawContent = extractRawPageContent();
     
-    // Strategy 1: Look for alternating message patterns
-    const messageSelectors = [
-      '[data-message-author-role]',
-      '[data-testid*="message"]',
-      '[data-testid*="turn"]',
-      '[class*="message-"]',
-      '.message',
-      '.chat-message'
+    // Return as single message with raw content
+    return [{
+      role: 'user',
+      content: rawContent
+    }];
+  }
+  
+  function extractRawPageContent() {
+    // Find main content container
+    const contentSelectors = [
+      'main',
+      '[role="main"]',
+      '.content',
+      '.chat-content',
+      '#content',
+      'article'
     ];
     
-    for (const selector of messageSelectors) {
-      const elements = document.querySelectorAll(selector);
-      if (elements.length > 0) {
-        elements.forEach((el, index) => {
-          const text = extractTextContent(el);
-          if (text && text.length > 10) {
-            // Determine role by position or attributes
-            const role = determineRole(el, index);
-            messages.push({ role, content: text });
-          }
-        });
-        
-        if (messages.length > 0) break;
-      }
+    let container = null;
+    for (const selector of contentSelectors) {
+      container = document.querySelector(selector);
+      if (container) break;
     }
     
-    // Strategy 2: If no structured messages, extract all text blocks
-    if (messages.length === 0) {
-      const textBlocks = extractTextBlocks();
-      textBlocks.forEach((text, index) => {
-        messages.push({
-          role: index % 2 === 0 ? 'user' : 'assistant',
-          content: text
-        });
-      });
-    }
+    if (!container) container = document.body;
     
-    return messages;
+    // Clone and clean
+    const clone = container.cloneNode(true);
+    
+    // Remove non-content elements
+    clone.querySelectorAll('script, style, nav, header, footer, button, svg, iframe, .sidebar, .navigation, [role="navigation"]').forEach(el => el.remove());
+    
+    // Get all text content
+    let text = clone.innerText || clone.textContent || '';
+    
+    // Clean up whitespace
+    text = text.replace(/\n\s*\n\s*\n/g, '\n\n'); // Max 2 newlines
+    text = text.replace(/[ \t]+/g, ' '); // Single spaces
+    text = text.trim();
+    
+    return text;
   }
   
   function extractTextContent(element) {

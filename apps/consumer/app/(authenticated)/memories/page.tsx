@@ -391,17 +391,8 @@ export default function MemoriesPage() {
                   <div className="w-1/2 overflow-y-auto bg-white">
                     <div className="p-6">
                       {selectedSource.type === "chat" && selectedSource.raw_content.messages ? (
-                        <div className="space-y-6">
-                          {selectedSource.raw_content.messages.map((msg: any, idx: number) => (
-                            <div key={idx}>
-                              <div className="font-semibold text-neutral-900 mb-2 text-xs uppercase tracking-wide">
-                                {msg.role}
-                              </div>
-                              <div className="text-neutral-700 leading-relaxed whitespace-pre-wrap">
-                                {msg.content}
-                              </div>
-                            </div>
-                          ))}
+                        <div className="text-neutral-700 leading-relaxed whitespace-pre-wrap text-sm">
+                          {selectedSource.raw_content.messages.map((msg: any) => msg.content).join('\n\n')}
                         </div>
                       ) : (
                         <pre className="whitespace-pre-wrap font-mono text-xs text-neutral-600">
