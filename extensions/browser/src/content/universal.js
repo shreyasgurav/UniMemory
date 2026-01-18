@@ -333,24 +333,12 @@
     // Remove existing popup
     closeMemoryPopup();
     
-    // Get current input text as initial search context
-    let initialQuery = '';
-    if (activeInputElement) {
-      if (activeInputElement.isContentEditable || activeInputElement.getAttribute('contenteditable') === 'true') {
-        initialQuery = activeInputElement.innerText || activeInputElement.textContent || '';
-      } else {
-        initialQuery = activeInputElement.value || '';
-      }
-      // Truncate to reasonable length for search
-      initialQuery = initialQuery.trim().substring(0, 200);
-    }
-    
     // Create popup
     memoryPopup = document.createElement('div');
     memoryPopup.className = 'unimemory-popup';
     memoryPopup.innerHTML = `
       <div class="unimemory-popup-content">
-        <input type="text" class="unimemory-popup-search" placeholder="Search your memories..." autofocus />
+        <div class="unimemory-popup-header">Recent Memories</div>
         <div class="unimemory-popup-list">
           <div class="unimemory-popup-loading">Loading...</div>
         </div>
@@ -359,21 +347,8 @@
     
     document.body.appendChild(memoryPopup);
     
-    // Focus search input and set initial query
-    const searchInput = memoryPopup.querySelector('.unimemory-popup-search');
-    searchInput.value = initialQuery;
-    searchInput.focus();
-    searchInput.select();
-    
-    // Load documents based on initial query (or recent if empty)
-    await loadDocuments(initialQuery);
-    
-    // Search on input
-    let searchTimeout;
-    searchInput.addEventListener('input', (e) => {
-      clearTimeout(searchTimeout);
-      searchTimeout = setTimeout(() => loadDocuments(e.target.value), 300);
-    });
+    // Load recent documents
+    await loadDocuments();
     
     // Close on click outside
     memoryPopup.addEventListener('click', (e) => {
@@ -388,7 +363,7 @@
     }
   }
   
-  async function loadDocuments(query) {
+  async function loadDocuments() {
     const listEl = memoryPopup?.querySelector('.unimemory-popup-list');
     if (!listEl) return;
     
@@ -397,7 +372,7 @@
     try {
       const response = await chrome.runtime.sendMessage({
         type: 'SEARCH_MEMORIES',
-        query: query
+        query: ''
       });
       
       if (!response.success) {

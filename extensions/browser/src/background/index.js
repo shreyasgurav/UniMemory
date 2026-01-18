@@ -118,19 +118,13 @@ async function searchMemories(query, limit = 10) {
     throw new Error('Not authenticated');
   }
   
-  console.log('[UniMemory] Searching sources for:', query || '(recent)');
+  console.log('[UniMemory] Fetching sources (limit:', limit, ')');
   
-  // Use enhanced source search endpoint
-  const response = await fetch(`${API_BASE_URL}/consumer/sources/search`, {
-    method: 'POST',
+  // Simple GET request for recent sources - semantic search is too complex
+  const response = await fetch(`${API_BASE_URL}/consumer/sources?limit=${limit}`, {
     headers: {
-      'Authorization': `Bearer ${session.token}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      query: query || null,
-      limit: limit
-    })
+      'Authorization': `Bearer ${session.token}`
+    }
   });
   
   // If 401 Unauthorized, session might be expired
@@ -142,13 +136,12 @@ async function searchMemories(query, limit = 10) {
   
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    console.error('[UniMemory] Source search failed:', error);
-    throw new Error(error.detail || 'Failed to search sources');
+    console.error('[UniMemory] Fetch sources failed:', error);
+    throw new Error(error.detail || 'Failed to fetch sources');
   }
   
-  const result = await response.json();
-  const sources = result.results || [];
-  console.log('[UniMemory] Found', sources.length, 'sources');
+  const sources = await response.json();
+  console.log('[UniMemory] Fetched', sources.length, 'sources');
   
   return sources;
 }
