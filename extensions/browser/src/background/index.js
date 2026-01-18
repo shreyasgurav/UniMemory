@@ -111,26 +111,40 @@ async function refreshSession(firebaseToken) {
   }
 }
 
-async function searchMemories(query, limit = 5) {
+async function searchMemories(query, limit = 10) {
   let session = await getSession();
   
   if (!session) {
     throw new Error('Not authenticated');
   }
   
-  console.log('[UniMemory] Searching memories for:', query.substring(0, 50) + '...');
+  console.log('[UniMemory] Fetching sources for query:', query || '(all)');
   
-  const response = await fetch(`${API_BASE_URL}/consumer/search`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${session.token}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      query: query,
-      limit: limit
-    })
-  });
+  // If query provided, use search endpoint; otherwise get recent sources
+  let response;
+  
+  if (query && query.trim()) {
+    // Search for relevant sources using semantic search
+    response = await fetch(`${API_BASE_URL}/consumer/search`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        query: query,
+        limit: limit,
+        include_sources: true
+      })
+    });
+  } else {
+    // Get recent sources
+    response = await fetch(`${API_BASE_URL}/consumer/sources?limit=${limit}`, {
+      headers: {
+        'Authorization': `Bearer ${session.token}`
+      }
+    });
+  }
   
   // If 401 Unauthorized, session might be expired
   if (response.status === 401) {
@@ -141,14 +155,17 @@ async function searchMemories(query, limit = 5) {
   
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    console.error('[UniMemory] Search failed:', error);
-    throw new Error(error.detail || 'Failed to search memories');
+    console.error('[UniMemory] Fetch sources failed:', error);
+    throw new Error(error.detail || 'Failed to fetch sources');
   }
   
   const result = await response.json();
-  console.log('[UniMemory] Search returned', result.results?.length || 0, 'memories');
   
-  return result;
+  // Normalize result - search returns { results }, sources returns array
+  const sources = result.results || result || [];
+  console.log('[UniMemory] Fetched', sources.length, 'sources');
+  
+  return sources;
 }
 
 async function ingestPrompt(prompt, platform) {

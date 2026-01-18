@@ -297,6 +297,192 @@
     }
   }
   
+  // ============ Memory Retrieval Popup ============
+  
+  let activeInputElement = null;
+  let memoryPopup = null;
+  
+  function handleKeyboardShortcut(e) {
+    // Cmd+] (Mac) or Ctrl+] (Windows)
+    if ((e.metaKey || e.ctrlKey) && e.key === ']') {
+      const activeEl = document.activeElement;
+      
+      // Check if focused on an input, textarea, or contenteditable
+      const isInput = activeEl && (
+        activeEl.tagName === 'INPUT' ||
+        activeEl.tagName === 'TEXTAREA' ||
+        activeEl.isContentEditable ||
+        activeEl.getAttribute('contenteditable') === 'true' ||
+        activeEl.closest('[contenteditable="true"]')
+      );
+      
+      if (isInput) {
+        e.preventDefault();
+        activeInputElement = activeEl;
+        showMemoryPopup();
+      }
+    }
+    
+    // Close popup on Escape
+    if (e.key === 'Escape' && memoryPopup) {
+      closeMemoryPopup();
+    }
+  }
+  
+  async function showMemoryPopup() {
+    // Remove existing popup
+    closeMemoryPopup();
+    
+    // Create popup
+    memoryPopup = document.createElement('div');
+    memoryPopup.className = 'unimemory-popup';
+    memoryPopup.innerHTML = `
+      <div class="unimemory-popup-content">
+        <input type="text" class="unimemory-popup-search" placeholder="Search your memories..." autofocus />
+        <div class="unimemory-popup-list">
+          <div class="unimemory-popup-loading">Loading...</div>
+        </div>
+      </div>
+    `;
+    
+    document.body.appendChild(memoryPopup);
+    
+    // Focus search input
+    const searchInput = memoryPopup.querySelector('.unimemory-popup-search');
+    searchInput.focus();
+    
+    // Load initial documents
+    await loadDocuments('');
+    
+    // Search on input
+    let searchTimeout;
+    searchInput.addEventListener('input', (e) => {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(() => loadDocuments(e.target.value), 300);
+    });
+    
+    // Close on click outside
+    memoryPopup.addEventListener('click', (e) => {
+      if (e.target === memoryPopup) closeMemoryPopup();
+    });
+  }
+  
+  function closeMemoryPopup() {
+    if (memoryPopup) {
+      memoryPopup.remove();
+      memoryPopup = null;
+    }
+  }
+  
+  async function loadDocuments(query) {
+    const listEl = memoryPopup?.querySelector('.unimemory-popup-list');
+    if (!listEl) return;
+    
+    listEl.innerHTML = '<div class="unimemory-popup-loading">Loading...</div>';
+    
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'SEARCH_MEMORIES',
+        query: query
+      });
+      
+      if (!response.success) {
+        listEl.innerHTML = '<div class="unimemory-popup-empty">Failed to load memories</div>';
+        return;
+      }
+      
+      const sources = response.data || [];
+      
+      if (sources.length === 0) {
+        listEl.innerHTML = '<div class="unimemory-popup-empty">No memories found</div>';
+        return;
+      }
+      
+      listEl.innerHTML = '';
+      sources.forEach(source => {
+        const card = createDocumentCard(source);
+        listEl.appendChild(card);
+      });
+      
+    } catch (error) {
+      console.error('Failed to load documents:', error);
+      listEl.innerHTML = '<div class="unimemory-popup-empty">Failed to load memories</div>';
+    }
+  }
+  
+  function createDocumentCard(source) {
+    const card = document.createElement('div');
+    card.className = 'unimemory-popup-card';
+    
+    const title = source.title || 'Untitled';
+    const summary = source.summary || '';
+    const memoryCount = source.memory_count || 0;
+    
+    card.innerHTML = `
+      <div class="unimemory-popup-card-title">${escapeHtml(title)}</div>
+      <div class="unimemory-popup-card-summary">${escapeHtml(summary.substring(0, 150))}${summary.length > 150 ? '...' : ''}</div>
+      <div class="unimemory-popup-card-meta">${memoryCount} ${memoryCount === 1 ? 'memory' : 'memories'}</div>
+    `;
+    
+    card.addEventListener('click', () => insertDocumentContent(source));
+    
+    return card;
+  }
+  
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+  
+  async function insertDocumentContent(source) {
+    if (!activeInputElement) return;
+    
+    // Build content to insert
+    let content = '';
+    
+    if (source.summary) {
+      content = source.summary;
+    } else if (source.raw_content?.messages) {
+      content = source.raw_content.messages.map(m => m.content).join('\n\n');
+    }
+    
+    if (!content) {
+      showToast('No content to insert', 'error');
+      return;
+    }
+    
+    // Insert into active element
+    if (activeInputElement.isContentEditable || activeInputElement.getAttribute('contenteditable') === 'true') {
+      // For contenteditable (like ChatGPT input)
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(activeInputElement);
+      range.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      
+      document.execCommand('insertText', false, content);
+    } else {
+      // For regular input/textarea
+      const start = activeInputElement.selectionStart || 0;
+      const end = activeInputElement.selectionEnd || 0;
+      const value = activeInputElement.value || '';
+      
+      activeInputElement.value = value.substring(0, start) + content + value.substring(end);
+      activeInputElement.selectionStart = activeInputElement.selectionEnd = start + content.length;
+      
+      // Trigger input event for React/Vue apps
+      activeInputElement.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    
+    closeMemoryPopup();
+    showToast('Memory added to chat', 'success');
+  }
+  
+  // Add keyboard listener
+  document.addEventListener('keydown', handleKeyboardShortcut);
+  
   // ============ UI Notifications ============
   
   function showNotification(message, type = 'info') {
