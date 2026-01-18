@@ -892,6 +892,29 @@ async def consumer_recall(
         raise HTTPException(status_code=500, detail=f"Recall failed: {str(e)}")
 
 
+# ============ Source Search (Legacy) ============
+
+class SourceSearchRequest(BaseModel):
+    query: Optional[str] = None
+    limit: int = 10
+
+class SourceSearchResult(BaseModel):
+    id: str
+    type: str
+    title: Optional[str] = None
+    summary: Optional[str] = None
+    raw_content: dict
+    memory_count: int = 0
+    created_at: str
+    source_metadata: Optional[dict] = None
+    relevance_score: Optional[float] = None
+
+class SourceSearchResponse(BaseModel):
+    results: List[SourceSearchResult]
+    total: int
+    query: Optional[str] = None
+
+
 @router.post("/consumer/sources/search", response_model=SourceSearchResponse)
 async def search_sources(
     request: SourceSearchRequest,
