@@ -118,36 +118,54 @@ async function searchMemories(query, limit = 10) {
     throw new Error('Not authenticated');
   }
   
-  console.log('[UniMemory] Searching memories:', query || '(all)');
+  console.log('[UniMemory] Fetching sources for query:', query || '(all)');
   
-  // Simple semantic search on memories
-  const response = await fetch(`${API_BASE_URL}/consumer/search`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${session.token}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      query: query || '',
-      limit: limit
-    })
-  });
+  // If query provided, use search endpoint; otherwise get recent sources
+  let response;
   
+  if (query && query.trim()) {
+    // Search for relevant sources using semantic search
+    response = await fetch(`${API_BASE_URL}/consumer/search`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        query: query,
+        limit: limit,
+        include_sources: true
+      })
+    });
+  } else {
+    // Get recent sources
+    response = await fetch(`${API_BASE_URL}/consumer/sources?limit=${limit}`, {
+      headers: {
+        'Authorization': `Bearer ${session.token}`
+      }
+    });
+  }
+  
+  // If 401 Unauthorized, session might be expired
   if (response.status === 401) {
     await clearSession();
+    console.error('[UniMemory] Session expired, please log in again');
     throw new Error('Not authenticated');
   }
   
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    console.error('[UniMemory] Search failed:', error);
-    throw new Error(error.detail || 'Failed to search memories');
+    console.error('[UniMemory] Fetch sources failed:', error);
+    throw new Error(error.detail || 'Failed to fetch sources');
   }
   
   const result = await response.json();
-  console.log('[UniMemory] Found', result.results?.length || 0, 'memories');
   
-  return result.results || [];
+  // Normalize result - search returns { results }, sources returns array
+  const sources = result.results || result || [];
+  console.log('[UniMemory] Fetched', sources.length, 'sources');
+  
+  return sources;
 }
 
 async function ingestPrompt(prompt, platform) {
@@ -300,7 +318,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         
         case 'SEARCH_MEMORIES': {
-          const result = await searchMemories(message.query, message.limit || 10);
+          const result = await searchMemories(message.query, message.limit || 5);
           sendResponse({ success: true, data: result });
           break;
         }
