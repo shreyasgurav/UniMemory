@@ -784,27 +784,112 @@ async def consumer_search(
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
 
-# ============ Enhanced Source Search ============
+# ============ Recall (Semantic Search) ============
 
-class SourceSearchRequest(BaseModel):
-    query: Optional[str] = None
-    limit: int = 10
+class RecallRequest(BaseModel):
+    """Request for semantic recall"""
+    query: str  # Full sentence/prompt - NOT keywords
+    memory_limit: int = 5  # Max atomic memories
+    source_limit: int = 2  # Max source summaries
+    include_context_block: bool = False  # Return formatted context string
 
-class SourceSearchResult(BaseModel):
+class RecallMemory(BaseModel):
+    """Atomic memory result"""
+    id: str
+    content: str
+    tags: List[str] = []
+    salience: float
+    similarity: float
+    score: float
+    created_at: Optional[str] = None
+
+class RecallSource(BaseModel):
+    """Source summary result (NOT raw content)"""
     id: str
     type: str
     title: Optional[str] = None
     summary: Optional[str] = None
-    raw_content: dict
-    memory_count: int = 0
-    created_at: str
-    source_metadata: Optional[dict] = None
-    relevance_score: Optional[float] = None
+    similarity: float
+    score: float
+    created_at: Optional[str] = None
 
-class SourceSearchResponse(BaseModel):
-    results: List[SourceSearchResult]
-    total: int
-    query: Optional[str] = None
+class RecallResponse(BaseModel):
+    """Structured recall response"""
+    memories: List[RecallMemory]
+    sources: List[RecallSource]
+    query: str
+    total_memories: int
+    total_sources: int
+    context_block: Optional[str] = None  # Formatted for AI injection
+
+
+@router.post("/consumer/recall", response_model=RecallResponse)
+async def consumer_recall(
+    request: RecallRequest,
+    user: User = Depends(verify_consumer_session_token),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Semantic recall with dual search.
+    
+    Pipeline:
+    1. Embed FULL query sentence (not keywords)
+    2. Search atomic memories (precision)
+    3. Search source summaries (context)
+    4. Rank by similarity + salience + recency
+    5. Return small, high-signal context
+    
+    Returns memories and source summaries (NOT raw content).
+    Use /consumer/sources/{id} to fetch raw content on demand.
+    """
+    from app.core.recall import recall
+    
+    if not request.query or not request.query.strip():
+        raise HTTPException(status_code=400, detail="Query cannot be empty")
+    
+    owner_id = str(user.id)
+    
+    try:
+        result = await recall(
+            session=session,
+            query=request.query,
+            owner_id=owner_id,
+            memory_limit=request.memory_limit,
+            source_limit=request.source_limit
+        )
+        
+        response = RecallResponse(
+            memories=[RecallMemory(**m) for m in result.memories],
+            sources=[RecallSource(**s) for s in result.sources],
+            query=result.query,
+            total_memories=result.total_memories,
+            total_sources=result.total_sources,
+            context_block=result.to_context_block() if request.include_context_block else None
+        )
+        
+        # Log recall activity
+        try:
+            await log_activity(
+                session=session,
+                user_id=owner_id,
+                action="memory_recalled",
+                source="extension",
+                agent="Chrome Extension",
+                details={
+                    "query": request.query[:100],
+                    "memories_found": len(result.memories),
+                    "sources_found": len(result.sources)
+                },
+                description=f"Recalled: {len(result.memories)} memories, {len(result.sources)} sources"
+            )
+        except Exception as e:
+            logger.error(f"Failed to log recall activity: {e}")
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Recall failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Recall failed: {str(e)}")
 
 
 @router.post("/consumer/sources/search", response_model=SourceSearchResponse)

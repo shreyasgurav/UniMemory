@@ -329,26 +329,58 @@
     }
   }
   
+  let lastRecallResult = null;  // Store last recall for context insertion
+  
   async function showMemoryPopup() {
     // Remove existing popup
     closeMemoryPopup();
+    
+    // Get current input text for semantic search
+    let currentQuery = '';
+    if (activeInputElement) {
+      if (activeInputElement.isContentEditable || activeInputElement.getAttribute('contenteditable') === 'true') {
+        currentQuery = activeInputElement.innerText || activeInputElement.textContent || '';
+      } else {
+        currentQuery = activeInputElement.value || '';
+      }
+      currentQuery = currentQuery.trim().substring(0, 500);
+    }
     
     // Create popup
     memoryPopup = document.createElement('div');
     memoryPopup.className = 'unimemory-popup';
     memoryPopup.innerHTML = `
       <div class="unimemory-popup-content">
-        <div class="unimemory-popup-header">Recent Memories</div>
+        <input type="text" class="unimemory-popup-search" placeholder="Describe what you need..." autofocus />
         <div class="unimemory-popup-list">
           <div class="unimemory-popup-loading">Loading...</div>
+        </div>
+        <div class="unimemory-popup-footer">
+          <button class="unimemory-popup-insert-all">Insert All Context</button>
         </div>
       </div>
     `;
     
     document.body.appendChild(memoryPopup);
     
-    // Load recent documents
-    await loadDocuments();
+    // Set initial query and focus
+    const searchInput = memoryPopup.querySelector('.unimemory-popup-search');
+    searchInput.value = currentQuery;
+    searchInput.focus();
+    searchInput.select();
+    
+    // Load with current query (semantic search on full sentence)
+    await loadRecallResults(currentQuery);
+    
+    // Search on input (debounced)
+    let searchTimeout;
+    searchInput.addEventListener('input', (e) => {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(() => loadRecallResults(e.target.value), 400);
+    });
+    
+    // Insert all context button
+    memoryPopup.querySelector('.unimemory-popup-insert-all').addEventListener('click', insertAllContext);
     
     // Close on click outside
     memoryPopup.addEventListener('click', (e) => {
@@ -361,60 +393,100 @@
       memoryPopup.remove();
       memoryPopup = null;
     }
+    lastRecallResult = null;
   }
   
-  async function loadDocuments() {
+  async function loadRecallResults(query) {
     const listEl = memoryPopup?.querySelector('.unimemory-popup-list');
     if (!listEl) return;
     
-    listEl.innerHTML = '<div class="unimemory-popup-loading">Loading...</div>';
+    listEl.innerHTML = '<div class="unimemory-popup-loading">Searching...</div>';
     
     try {
       const response = await chrome.runtime.sendMessage({
         type: 'SEARCH_MEMORIES',
-        query: ''
+        query: query
       });
       
       if (!response.success) {
-        listEl.innerHTML = '<div class="unimemory-popup-empty">Failed to load memories</div>';
+        listEl.innerHTML = '<div class="unimemory-popup-empty">Failed to search</div>';
         return;
       }
       
-      const sources = response.data || [];
+      const result = response.data || {};
+      lastRecallResult = result;
       
-      if (sources.length === 0) {
-        listEl.innerHTML = '<div class="unimemory-popup-empty">No memories found</div>';
+      const memories = result.memories || [];
+      const sources = result.sources || [];
+      
+      if (memories.length === 0 && sources.length === 0) {
+        listEl.innerHTML = '<div class="unimemory-popup-empty">No relevant context found</div>';
         return;
       }
       
       listEl.innerHTML = '';
-      sources.forEach(source => {
-        const card = createDocumentCard(source);
-        listEl.appendChild(card);
-      });
+      
+      // Show memories first (atomic facts)
+      if (memories.length > 0) {
+        const memSection = document.createElement('div');
+        memSection.className = 'unimemory-popup-section';
+        memSection.innerHTML = '<div class="unimemory-popup-section-title">Memories</div>';
+        memories.forEach(mem => {
+          const card = createMemoryCard(mem);
+          memSection.appendChild(card);
+        });
+        listEl.appendChild(memSection);
+      }
+      
+      // Show sources (context anchors)
+      if (sources.length > 0) {
+        const srcSection = document.createElement('div');
+        srcSection.className = 'unimemory-popup-section';
+        srcSection.innerHTML = '<div class="unimemory-popup-section-title">Related Discussions</div>';
+        sources.forEach(src => {
+          const card = createSourceCard(src);
+          srcSection.appendChild(card);
+        });
+        listEl.appendChild(srcSection);
+      }
       
     } catch (error) {
-      console.error('Failed to load documents:', error);
-      listEl.innerHTML = '<div class="unimemory-popup-empty">Failed to load memories</div>';
+      console.error('Failed to recall:', error);
+      listEl.innerHTML = '<div class="unimemory-popup-empty">Failed to search</div>';
     }
   }
   
-  function createDocumentCard(source) {
+  function createMemoryCard(memory) {
     const card = document.createElement('div');
-    card.className = 'unimemory-popup-card';
+    card.className = 'unimemory-popup-card unimemory-popup-card-memory';
+    
+    const content = memory.content || '';
+    const score = memory.score ? `${Math.round(memory.score * 100)}%` : '';
+    
+    card.innerHTML = `
+      <div class="unimemory-popup-card-content">${escapeHtml(content)}</div>
+      ${score ? `<div class="unimemory-popup-card-score">${score}</div>` : ''}
+    `;
+    
+    card.addEventListener('click', () => insertContent(content));
+    return card;
+  }
+  
+  function createSourceCard(source) {
+    const card = document.createElement('div');
+    card.className = 'unimemory-popup-card unimemory-popup-card-source';
     
     const title = source.title || 'Untitled';
     const summary = source.summary || '';
-    const memoryCount = source.memory_count || 0;
+    const score = source.score ? `${Math.round(source.score * 100)}%` : '';
     
     card.innerHTML = `
       <div class="unimemory-popup-card-title">${escapeHtml(title)}</div>
-      <div class="unimemory-popup-card-summary">${escapeHtml(summary.substring(0, 150))}${summary.length > 150 ? '...' : ''}</div>
-      <div class="unimemory-popup-card-meta">${memoryCount} ${memoryCount === 1 ? 'memory' : 'memories'}</div>
+      <div class="unimemory-popup-card-summary">${escapeHtml(summary.substring(0, 120))}${summary.length > 120 ? '...' : ''}</div>
+      ${score ? `<div class="unimemory-popup-card-score">${score}</div>` : ''}
     `;
     
-    card.addEventListener('click', () => insertDocumentContent(source));
-    
+    card.addEventListener('click', () => insertContent(`[From: ${title}]\n${summary}`));
     return card;
   }
   
@@ -424,57 +496,69 @@
     return div.innerHTML;
   }
   
-  async function insertDocumentContent(source) {
-    if (!activeInputElement) return;
-    
-    // Build content to insert - prefer raw content for full context
-    let content = '';
-    const title = source.title || 'Untitled';
-    
-    // Get raw content from messages if available
-    if (source.raw_content?.messages) {
-      content = source.raw_content.messages.map(m => m.content).join('\n\n');
-    }
-    
-    // Fallback to summary if no raw content
-    if (!content && source.summary) {
-      content = source.summary;
-    }
-    
-    if (!content) {
-      showToast('No content to insert', 'error');
-      return;
-    }
-    
-    // Format with context header
-    const formattedContent = `[Context from: ${title}]\n\n${content}\n\n---\n\n`;
+  function insertContent(text) {
+    if (!activeInputElement || !text) return;
     
     // Insert into active element
     if (activeInputElement.isContentEditable || activeInputElement.getAttribute('contenteditable') === 'true') {
-      // For contenteditable (like ChatGPT input)
       const selection = window.getSelection();
       const range = document.createRange();
       range.selectNodeContents(activeInputElement);
       range.collapse(false);
       selection.removeAllRanges();
       selection.addRange(range);
-      
-      document.execCommand('insertText', false, formattedContent);
+      document.execCommand('insertText', false, text + '\n\n');
     } else {
-      // For regular input/textarea
       const start = activeInputElement.selectionStart || 0;
       const end = activeInputElement.selectionEnd || 0;
       const value = activeInputElement.value || '';
-      
-      activeInputElement.value = value.substring(0, start) + formattedContent + value.substring(end);
-      activeInputElement.selectionStart = activeInputElement.selectionEnd = start + formattedContent.length;
-      
-      // Trigger input event for React/Vue apps
+      const insertText = text + '\n\n';
+      activeInputElement.value = value.substring(0, start) + insertText + value.substring(end);
+      activeInputElement.selectionStart = activeInputElement.selectionEnd = start + insertText.length;
       activeInputElement.dispatchEvent(new Event('input', { bubbles: true }));
     }
     
     closeMemoryPopup();
-    showToast(`Added context: ${title}`, 'success');
+    showToast('Context added', 'success');
+  }
+  
+  function insertAllContext() {
+    if (!activeInputElement || !lastRecallResult) return;
+    
+    // Use the pre-formatted context_block from API
+    if (lastRecallResult.context_block) {
+      insertContent(lastRecallResult.context_block);
+      return;
+    }
+    
+    // Fallback: build context manually
+    let context = '';
+    const memories = lastRecallResult.memories || [];
+    const sources = lastRecallResult.sources || [];
+    
+    if (memories.length > 0) {
+      context += 'Relevant context from your memory:\n\n';
+      memories.forEach(m => {
+        context += `- ${m.content}\n`;
+      });
+      context += '\n';
+    }
+    
+    if (sources.length > 0) {
+      context += 'Related discussions:\n';
+      sources.forEach(s => {
+        const title = s.title || 'Untitled';
+        const summary = s.summary ? s.summary.substring(0, 100) + '...' : '';
+        context += `- ${title}: ${summary}\n`;
+      });
+      context += '\n';
+    }
+    
+    if (context) {
+      insertContent(context);
+    } else {
+      showToast('No context to insert', 'error');
+    }
   }
   
   // Add keyboard listener
