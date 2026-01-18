@@ -333,6 +333,18 @@
     // Remove existing popup
     closeMemoryPopup();
     
+    // Get current input text as initial search context
+    let initialQuery = '';
+    if (activeInputElement) {
+      if (activeInputElement.isContentEditable || activeInputElement.getAttribute('contenteditable') === 'true') {
+        initialQuery = activeInputElement.innerText || activeInputElement.textContent || '';
+      } else {
+        initialQuery = activeInputElement.value || '';
+      }
+      // Truncate to reasonable length for search
+      initialQuery = initialQuery.trim().substring(0, 200);
+    }
+    
     // Create popup
     memoryPopup = document.createElement('div');
     memoryPopup.className = 'unimemory-popup';
@@ -347,12 +359,14 @@
     
     document.body.appendChild(memoryPopup);
     
-    // Focus search input
+    // Focus search input and set initial query
     const searchInput = memoryPopup.querySelector('.unimemory-popup-search');
+    searchInput.value = initialQuery;
     searchInput.focus();
+    searchInput.select();
     
-    // Load initial documents
-    await loadDocuments('');
+    // Load documents based on initial query (or recent if empty)
+    await loadDocuments(initialQuery);
     
     // Search on input
     let searchTimeout;
@@ -438,19 +452,27 @@
   async function insertDocumentContent(source) {
     if (!activeInputElement) return;
     
-    // Build content to insert
+    // Build content to insert - prefer raw content for full context
     let content = '';
+    const title = source.title || 'Untitled';
     
-    if (source.summary) {
-      content = source.summary;
-    } else if (source.raw_content?.messages) {
+    // Get raw content from messages if available
+    if (source.raw_content?.messages) {
       content = source.raw_content.messages.map(m => m.content).join('\n\n');
+    }
+    
+    // Fallback to summary if no raw content
+    if (!content && source.summary) {
+      content = source.summary;
     }
     
     if (!content) {
       showToast('No content to insert', 'error');
       return;
     }
+    
+    // Format with context header
+    const formattedContent = `[Context from: ${title}]\n\n${content}\n\n---\n\n`;
     
     // Insert into active element
     if (activeInputElement.isContentEditable || activeInputElement.getAttribute('contenteditable') === 'true') {
@@ -462,22 +484,22 @@
       selection.removeAllRanges();
       selection.addRange(range);
       
-      document.execCommand('insertText', false, content);
+      document.execCommand('insertText', false, formattedContent);
     } else {
       // For regular input/textarea
       const start = activeInputElement.selectionStart || 0;
       const end = activeInputElement.selectionEnd || 0;
       const value = activeInputElement.value || '';
       
-      activeInputElement.value = value.substring(0, start) + content + value.substring(end);
-      activeInputElement.selectionStart = activeInputElement.selectionEnd = start + content.length;
+      activeInputElement.value = value.substring(0, start) + formattedContent + value.substring(end);
+      activeInputElement.selectionStart = activeInputElement.selectionEnd = start + formattedContent.length;
       
       // Trigger input event for React/Vue apps
       activeInputElement.dispatchEvent(new Event('input', { bubbles: true }));
     }
     
     closeMemoryPopup();
-    showToast('Memory added to chat', 'success');
+    showToast(`Added context: ${title}`, 'success');
   }
   
   // Add keyboard listener

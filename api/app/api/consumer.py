@@ -784,6 +784,123 @@ async def consumer_search(
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
 
+# ============ Enhanced Source Search ============
+
+class SourceSearchRequest(BaseModel):
+    query: Optional[str] = None
+    limit: int = 10
+
+class SourceSearchResult(BaseModel):
+    id: str
+    type: str
+    title: Optional[str] = None
+    summary: Optional[str] = None
+    raw_content: dict
+    memory_count: int = 0
+    created_at: str
+    source_metadata: Optional[dict] = None
+    relevance_score: Optional[float] = None
+
+class SourceSearchResponse(BaseModel):
+    results: List[SourceSearchResult]
+    total: int
+    query: Optional[str] = None
+
+
+@router.post("/consumer/sources/search", response_model=SourceSearchResponse)
+async def search_sources(
+    request: SourceSearchRequest,
+    user: User = Depends(verify_consumer_session_token),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Search sources using semantic search on summaries.
+    Returns sources with raw_content for context injection.
+    If no query provided, returns recent sources.
+    """
+    from app.core.embeddings import get_embedding_service
+    
+    owner_id = str(user.id)
+    limit = min(request.limit or 10, 20)
+    
+    # Get memory counts for sources
+    memory_count_subq = (
+        select(
+            MemorySource.source_id,
+            func.count(MemorySource.memory_id).label('memory_count')
+        )
+        .group_by(MemorySource.source_id)
+        .subquery()
+    )
+    
+    if request.query and request.query.strip():
+        # Semantic search on source summaries
+        embedding_service = get_embedding_service()
+        query_embedding = await embedding_service.embed(request.query)
+        
+        # Search by summary_embedding similarity
+        result = await session.execute(
+            select(
+                Source,
+                func.coalesce(memory_count_subq.c.memory_count, 0).label('mem_count'),
+                (1 - Source.summary_embedding.cosine_distance(query_embedding)).label('similarity')
+            )
+            .outerjoin(memory_count_subq, memory_count_subq.c.source_id == Source.id)
+            .where(Source.owner_id == owner_id)
+            .where(Source.summary_embedding.isnot(None))
+            .order_by((1 - Source.summary_embedding.cosine_distance(query_embedding)).desc())
+            .limit(limit)
+        )
+        sources_with_scores = result.all()
+        
+        search_results = []
+        for source, mem_count, similarity in sources_with_scores:
+            search_results.append(SourceSearchResult(
+                id=str(source.id),
+                type=source.type,
+                title=source.title,
+                summary=source.summary,
+                raw_content=source.raw_content or {},
+                memory_count=mem_count or 0,
+                created_at=str(source.created_at),
+                source_metadata=source.source_metadata,
+                relevance_score=float(similarity) if similarity else None
+            ))
+    else:
+        # No query - return recent sources
+        result = await session.execute(
+            select(
+                Source,
+                func.coalesce(memory_count_subq.c.memory_count, 0).label('mem_count')
+            )
+            .outerjoin(memory_count_subq, memory_count_subq.c.source_id == Source.id)
+            .where(Source.owner_id == owner_id)
+            .order_by(Source.created_at.desc())
+            .limit(limit)
+        )
+        sources_with_counts = result.all()
+        
+        search_results = []
+        for source, mem_count in sources_with_counts:
+            search_results.append(SourceSearchResult(
+                id=str(source.id),
+                type=source.type,
+                title=source.title,
+                summary=source.summary,
+                raw_content=source.raw_content or {},
+                memory_count=mem_count or 0,
+                created_at=str(source.created_at),
+                source_metadata=source.source_metadata,
+                relevance_score=None
+            ))
+    
+    return SourceSearchResponse(
+        results=search_results,
+        total=len(search_results),
+        query=request.query
+    )
+
+
 # ============ Memory Graph Endpoints ============
 
 class GraphMemory(BaseModel):
