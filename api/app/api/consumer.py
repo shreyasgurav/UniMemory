@@ -256,9 +256,9 @@ class TagsUpdateRequest(BaseModel):
 
 @router.get("/consumer/sources", response_model=List[SourceResponse])
 async def get_sources(
-    limit: int = 50,
+    limit: int = 10,
     offset: int = 0,
-    user: User = Depends(get_current_user),
+    user: User = Depends(verify_consumer_session_token),
     session: AsyncSession = Depends(get_db)
 ):
     """Get all sources for the current user, ordered by created_at desc"""
