@@ -415,13 +415,18 @@
     card.className = 'unimemory-popup-card';
     
     const title = source.title || 'Untitled';
-    const summary = source.summary || '';
+    const summary = source.summary || 'No summary available';
     const memoryCount = source.memory_count || 0;
+    const createdAt = source.created_at ? new Date(source.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
     
     card.innerHTML = `
       <div class="unimemory-popup-card-title">${escapeHtml(title)}</div>
-      <div class="unimemory-popup-card-summary">${escapeHtml(summary.substring(0, 150))}${summary.length > 150 ? '...' : ''}</div>
-      <div class="unimemory-popup-card-meta">${memoryCount} ${memoryCount === 1 ? 'memory' : 'memories'}</div>
+      <div class="unimemory-popup-card-summary">${escapeHtml(summary.substring(0, 200))}${summary.length > 200 ? '...' : ''}</div>
+      <div class="unimemory-popup-card-meta">
+        ${createdAt ? `<span>${createdAt}</span>` : ''}
+        ${createdAt && memoryCount > 0 ? '<span>•</span>' : ''}
+        ${memoryCount > 0 ? `<span>${memoryCount} ${memoryCount === 1 ? 'memory' : 'memories'}</span>` : ''}
+      </div>
     `;
     
     card.addEventListener('click', () => insertDocumentContent(source));
@@ -438,13 +443,22 @@
   async function insertDocumentContent(source) {
     if (!activeInputElement) return;
     
-    // Build content to insert
+    // Build content to insert: raw content first, then summary
     let content = '';
     
+    // First add raw content
+    if (source.raw_content?.messages) {
+      const rawText = source.raw_content.messages.map(m => m.content).join('\n\n');
+      content = rawText;
+    }
+    
+    // Then add summary below if available
     if (source.summary) {
-      content = source.summary;
-    } else if (source.raw_content?.messages) {
-      content = source.raw_content.messages.map(m => m.content).join('\n\n');
+      if (content) {
+        content += '\n\n---\nSummary:\n' + source.summary;
+      } else {
+        content = source.summary;
+      }
     }
     
     if (!content) {
