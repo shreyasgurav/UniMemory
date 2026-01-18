@@ -836,7 +836,7 @@ async def search_sources(
     if request.query and request.query.strip():
         # Semantic search on source summaries
         embedding_service = get_embedding_service()
-        query_embedding = await embedding_service.embed(request.query)
+        query_embedding, _ = await embedding_service.embed(request.query)  # Returns (vector, dim)
         
         # Search by summary_embedding similarity
         result = await session.execute(
