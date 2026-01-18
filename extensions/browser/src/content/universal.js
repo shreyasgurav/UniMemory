@@ -329,58 +329,26 @@
     }
   }
   
-  let lastRecallResult = null;  // Store last recall for context insertion
-  
   async function showMemoryPopup() {
     // Remove existing popup
     closeMemoryPopup();
-    
-    // Get current input text for semantic search
-    let currentQuery = '';
-    if (activeInputElement) {
-      if (activeInputElement.isContentEditable || activeInputElement.getAttribute('contenteditable') === 'true') {
-        currentQuery = activeInputElement.innerText || activeInputElement.textContent || '';
-      } else {
-        currentQuery = activeInputElement.value || '';
-      }
-      currentQuery = currentQuery.trim().substring(0, 500);
-    }
     
     // Create popup
     memoryPopup = document.createElement('div');
     memoryPopup.className = 'unimemory-popup';
     memoryPopup.innerHTML = `
       <div class="unimemory-popup-content">
-        <input type="text" class="unimemory-popup-search" placeholder="Describe what you need..." autofocus />
+        <div class="unimemory-popup-header">Recent Sources</div>
         <div class="unimemory-popup-list">
           <div class="unimemory-popup-loading">Loading...</div>
-        </div>
-        <div class="unimemory-popup-footer">
-          <button class="unimemory-popup-insert-all">Insert All Context</button>
         </div>
       </div>
     `;
     
     document.body.appendChild(memoryPopup);
     
-    // Set initial query and focus
-    const searchInput = memoryPopup.querySelector('.unimemory-popup-search');
-    searchInput.value = currentQuery;
-    searchInput.focus();
-    searchInput.select();
-    
-    // Load with current query (semantic search on full sentence)
-    await loadRecallResults(currentQuery);
-    
-    // Search on input (debounced)
-    let searchTimeout;
-    searchInput.addEventListener('input', (e) => {
-      clearTimeout(searchTimeout);
-      searchTimeout = setTimeout(() => loadRecallResults(e.target.value), 400);
-    });
-    
-    // Insert all context button
-    memoryPopup.querySelector('.unimemory-popup-insert-all').addEventListener('click', insertAllContext);
+    // Load all recent sources immediately
+    await loadAllSources();
     
     // Close on click outside
     memoryPopup.addEventListener('click', (e) => {
@@ -393,100 +361,65 @@
       memoryPopup.remove();
       memoryPopup = null;
     }
-    lastRecallResult = null;
   }
   
-  async function loadRecallResults(query) {
+  async function loadAllSources() {
     const listEl = memoryPopup?.querySelector('.unimemory-popup-list');
     if (!listEl) return;
     
-    listEl.innerHTML = '<div class="unimemory-popup-loading">Searching...</div>';
+    listEl.innerHTML = '<div class="unimemory-popup-loading">Loading...</div>';
     
     try {
       const response = await chrome.runtime.sendMessage({
         type: 'SEARCH_MEMORIES',
-        query: query
+        query: ''  // Empty query = get recent sources
       });
       
       if (!response.success) {
-        listEl.innerHTML = '<div class="unimemory-popup-empty">Failed to search</div>';
+        listEl.innerHTML = '<div class="unimemory-popup-empty">Failed to load sources</div>';
         return;
       }
       
       const result = response.data || {};
-      lastRecallResult = result;
-      
-      const memories = result.memories || [];
       const sources = result.sources || [];
       
-      if (memories.length === 0 && sources.length === 0) {
-        listEl.innerHTML = '<div class="unimemory-popup-empty">No relevant context found</div>';
+      if (sources.length === 0) {
+        listEl.innerHTML = '<div class="unimemory-popup-empty">No sources found</div>';
         return;
       }
       
       listEl.innerHTML = '';
       
-      // Show memories first (atomic facts)
-      if (memories.length > 0) {
-        const memSection = document.createElement('div');
-        memSection.className = 'unimemory-popup-section';
-        memSection.innerHTML = '<div class="unimemory-popup-section-title">Memories</div>';
-        memories.forEach(mem => {
-          const card = createMemoryCard(mem);
-          memSection.appendChild(card);
-        });
-        listEl.appendChild(memSection);
-      }
-      
-      // Show sources (context anchors)
-      if (sources.length > 0) {
-        const srcSection = document.createElement('div');
-        srcSection.className = 'unimemory-popup-section';
-        srcSection.innerHTML = '<div class="unimemory-popup-section-title">Related Discussions</div>';
-        sources.forEach(src => {
-          const card = createSourceCard(src);
-          srcSection.appendChild(card);
-        });
-        listEl.appendChild(srcSection);
-      }
+      // Show all sources as cards
+      sources.forEach(source => {
+        const card = createSourceCard(source);
+        listEl.appendChild(card);
+      });
       
     } catch (error) {
-      console.error('Failed to recall:', error);
-      listEl.innerHTML = '<div class="unimemory-popup-empty">Failed to search</div>';
+      console.error('Failed to load sources:', error);
+      listEl.innerHTML = '<div class="unimemory-popup-empty">Failed to load sources</div>';
     }
-  }
-  
-  function createMemoryCard(memory) {
-    const card = document.createElement('div');
-    card.className = 'unimemory-popup-card unimemory-popup-card-memory';
-    
-    const content = memory.content || '';
-    const score = memory.score ? `${Math.round(memory.score * 100)}%` : '';
-    
-    card.innerHTML = `
-      <div class="unimemory-popup-card-content">${escapeHtml(content)}</div>
-      ${score ? `<div class="unimemory-popup-card-score">${score}</div>` : ''}
-    `;
-    
-    card.addEventListener('click', () => insertContent(content));
-    return card;
   }
   
   function createSourceCard(source) {
     const card = document.createElement('div');
-    card.className = 'unimemory-popup-card unimemory-popup-card-source';
+    card.className = 'unimemory-popup-card';
     
     const title = source.title || 'Untitled';
     const summary = source.summary || '';
-    const score = source.score ? `${Math.round(source.score * 100)}%` : '';
+    const memCount = source.memory_count || 0;
     
     card.innerHTML = `
       <div class="unimemory-popup-card-title">${escapeHtml(title)}</div>
-      <div class="unimemory-popup-card-summary">${escapeHtml(summary.substring(0, 120))}${summary.length > 120 ? '...' : ''}</div>
-      ${score ? `<div class="unimemory-popup-card-score">${score}</div>` : ''}
+      <div class="unimemory-popup-card-summary">${escapeHtml(summary.substring(0, 150))}${summary.length > 150 ? '...' : ''}</div>
+      <div class="unimemory-popup-card-meta">${memCount} ${memCount === 1 ? 'memory' : 'memories'}</div>
     `;
     
-    card.addEventListener('click', () => insertContent(`[From: ${title}]\n${summary}`));
+    card.addEventListener('click', async () => {
+      await insertSourceContent(source);
+    });
+    
     return card;
   }
   
@@ -496,8 +429,28 @@
     return div.innerHTML;
   }
   
-  function insertContent(text) {
-    if (!activeInputElement || !text) return;
+  async function insertSourceContent(source) {
+    if (!activeInputElement) return;
+    
+    const title = source.title || 'Untitled';
+    let content = '';
+    
+    // Try to get raw content from source
+    if (source.raw_content && source.raw_content.messages) {
+      // Extract text from messages
+      content = source.raw_content.messages.map(m => m.content).join('\n\n');
+    } else if (source.summary) {
+      // Fallback to summary
+      content = source.summary;
+    }
+    
+    if (!content) {
+      showToast('No content available', 'error');
+      return;
+    }
+    
+    // Format with header
+    const formattedContent = `[Context from: ${title}]\n\n${content}\n\n---\n\n`;
     
     // Insert into active element
     if (activeInputElement.isContentEditable || activeInputElement.getAttribute('contenteditable') === 'true') {
@@ -507,58 +460,18 @@
       range.collapse(false);
       selection.removeAllRanges();
       selection.addRange(range);
-      document.execCommand('insertText', false, text + '\n\n');
+      document.execCommand('insertText', false, formattedContent);
     } else {
       const start = activeInputElement.selectionStart || 0;
       const end = activeInputElement.selectionEnd || 0;
       const value = activeInputElement.value || '';
-      const insertText = text + '\n\n';
-      activeInputElement.value = value.substring(0, start) + insertText + value.substring(end);
-      activeInputElement.selectionStart = activeInputElement.selectionEnd = start + insertText.length;
+      activeInputElement.value = value.substring(0, start) + formattedContent + value.substring(end);
+      activeInputElement.selectionStart = activeInputElement.selectionEnd = start + formattedContent.length;
       activeInputElement.dispatchEvent(new Event('input', { bubbles: true }));
     }
     
     closeMemoryPopup();
-    showToast('Context added', 'success');
-  }
-  
-  function insertAllContext() {
-    if (!activeInputElement || !lastRecallResult) return;
-    
-    // Use the pre-formatted context_block from API
-    if (lastRecallResult.context_block) {
-      insertContent(lastRecallResult.context_block);
-      return;
-    }
-    
-    // Fallback: build context manually
-    let context = '';
-    const memories = lastRecallResult.memories || [];
-    const sources = lastRecallResult.sources || [];
-    
-    if (memories.length > 0) {
-      context += 'Relevant context from your memory:\n\n';
-      memories.forEach(m => {
-        context += `- ${m.content}\n`;
-      });
-      context += '\n';
-    }
-    
-    if (sources.length > 0) {
-      context += 'Related discussions:\n';
-      sources.forEach(s => {
-        const title = s.title || 'Untitled';
-        const summary = s.summary ? s.summary.substring(0, 100) + '...' : '';
-        context += `- ${title}: ${summary}\n`;
-      });
-      context += '\n';
-    }
-    
-    if (context) {
-      insertContent(context);
-    } else {
-      showToast('No context to insert', 'error');
-    }
+    showToast(`Added: ${title}`, 'success');
   }
   
   // Add keyboard listener
