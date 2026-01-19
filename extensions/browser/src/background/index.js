@@ -111,111 +111,126 @@ async function refreshSession(firebaseToken) {
   }
 }
 
-async function searchMemories(query, limit = 10) {
+async function searchNuclearMemories(query, limit = 5) {
   let session = await getSession();
-  
+
   if (!session) {
     throw new Error('Not authenticated');
   }
-  
-  console.log('[UniMemory] Fetching sources for query:', query || '(all)');
-  
-  // If query provided, use search endpoint; otherwise get recent sources
-  let response;
-  
-  if (query && query.trim()) {
-    // Search for relevant sources using semantic search
-    response = await fetch(`${API_BASE_URL}/consumer/search`, {
+
+  if (!query || !query.trim()) {
+    return [];
+  }
+
+  console.log('[UniMemory] Searching memories for query:', query);
+
+  const response = await fetch(`${API_BASE_URL}/consumer/search`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${session.token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      query: query,
+      limit: limit
+    })
+  });
+
+  if (response.status === 401) {
+    await clearSession();
+    console.error('[UniMemory] Session expired, please log in again');
+    throw new Error('Not authenticated');
+  }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    console.error('[UniMemory] Memory search failed:', error);
+    throw new Error(error.detail || 'Failed to search memories');
+  }
+
+  const result = await response.json();
+  const memories = result.results || [];
+  console.log('[UniMemory] Retrieved', memories.length, 'memories');
+  return memories;
+}
+
+async function searchSources(limit = 10) {
+  let session = await getSession();
+
+  if (!session) {
+    throw new Error('Not authenticated');
+  }
+
+  console.log('[UniMemory] Fetching sources (limit', limit + ')');
+
+  const response = await fetch(`${API_BASE_URL}/consumer/sources?limit=${limit}`, {
+    headers: {
+      'Authorization': `Bearer ${session.token}`
+    }
+  });
+
+  if (response.status === 401) {
+    await clearSession();
+    console.error('[UniMemory] Session expired, please log in again');
+    throw new Error('Not authenticated');
+  }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    console.error('[UniMemory] Failed to fetch sources:', error);
+    throw new Error(error.detail || 'Failed to fetch sources');
+  }
+
+  const sources = await response.json();
+  console.log('[UniMemory] Fetched', sources.length, 'sources');
+  return sources;
+}
+
+async function ingestPrompt(prompt, platform) {
+  let session = await getSession();
+
+  if (!session) {
+    console.log('[UniMemory] Not authenticated, skipping prompt ingestion');
+    return { success: false, reason: 'not_authenticated' };
+  }
+
+  console.log('[UniMemory] Ingesting prompt via ingest API:', prompt.substring(0, 50) + '...');
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/ingest/text`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${session.token}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        query: query,
-        limit: limit,
-        include_sources: true
+        // Raw prompt content to be evaluated by ingest pipeline
+        content: prompt,
+        // Tag as coming from extension + specific AI platform
+        user_id: 'anonymous',
+        app_id: platform,
+        // For prompts sent to AI, we only want atomic memories, no Source
+        create_source: false
       })
     });
-  } else {
-    // Get recent sources
-    response = await fetch(`${API_BASE_URL}/consumer/sources?limit=${limit}`, {
-      headers: {
-        'Authorization': `Bearer ${session.token}`
-      }
-    });
-  }
-  
-  // If 401 Unauthorized, session might be expired
-  if (response.status === 401) {
-    await clearSession();
-    console.error('[UniMemory] Session expired, please log in again');
-    throw new Error('Not authenticated');
-  }
-  
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    console.error('[UniMemory] Fetch sources failed:', error);
-    throw new Error(error.detail || 'Failed to fetch sources');
-  }
-  
-  const result = await response.json();
-  
-  // Normalize result - search returns { results }, sources returns array
-  const sources = result.results || result || [];
-  console.log('[UniMemory] Fetched', sources.length, 'sources');
-  
-  return sources;
-}
 
-async function ingestPrompt(prompt, platform) {
-  let session = await getSession();
-  
-  if (!session) {
-    console.log('[UniMemory] Not authenticated, skipping prompt ingestion');
-    return { success: false, reason: 'not_authenticated' };
-  }
-  
-  console.log('[UniMemory] Creating memory from', platform, ':', prompt.substring(0, 50) + '...');
-  
-  // Create memory via unified POST /memories endpoint
-  // Supports both API key (B2B) and session token (consumer) auth
-  const memoryData = {
-    content: prompt,
-    user_id: 'consumer',  // Identifies as consumer extension user
-    app_id: platform,     // Platform where prompt was captured
-    tags: []
-  };
-  
-  try {
-    const response = await fetch(`${API_BASE_URL}/memories`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${session.token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(memoryData)
-    });
-    
-    // If 401 Unauthorized, session might be expired
     if (response.status === 401) {
       await clearSession();
-      console.error('[UniMemory] Session expired during memory creation');
+      console.error('[UniMemory] Session expired during ingest');
       return { success: false, reason: 'session_expired' };
     }
-    
+
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      console.error('[UniMemory] Memory creation failed:', error);
+      console.error('[UniMemory] Ingest failed:', error);
       return { success: false, reason: 'api_error', error };
     }
-    
+
     const result = await response.json();
-    console.log('[UniMemory] Memory created:', result.id);
-    
+    console.log('[UniMemory] Ingest result:', result);
     return { success: true, data: result };
   } catch (error) {
-    console.error('[UniMemory] Memory creation error:', error);
+    console.error('[UniMemory] Ingest network error:', error);
     return { success: false, reason: 'network_error', error: error.message };
   }
 }
@@ -317,9 +332,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           break;
         }
         
-        case 'SEARCH_MEMORIES': {
-          const result = await searchMemories(message.query, message.limit || 5);
-          sendResponse({ success: true, data: result });
+        case 'SEARCH_NUCLEAR_MEMORIES': {
+          const result = await searchNuclearMemories(message.query, message.limit || 5);
+          sendResponse({ success: true, memories: result });
+          break;
+        }
+        case 'SEARCH_SOURCES': {
+          const result = await searchSources(message.limit || 10);
+          sendResponse({ success: true, sources: result });
           break;
         }
         

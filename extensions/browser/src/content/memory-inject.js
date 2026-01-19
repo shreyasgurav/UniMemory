@@ -141,7 +141,7 @@
     try {
       // Search for memories via background script
       const response = await chrome.runtime.sendMessage({
-        type: 'SEARCH_MEMORIES',
+        type: 'SEARCH_NUCLEAR_MEMORIES',
         query: promptText
       });
 
@@ -154,7 +154,9 @@
         return;
       }
 
-      const memories = response.data?.results || [];
+      const memories = Array.isArray(response.memories)
+        ? response.memories
+        : [];
       
       if (memories.length === 0) {
         showNotification('No related memories found', 'info');

@@ -47,6 +47,8 @@ class IngestTextRequest(BaseModel):
     user_id: Optional[str] = Field("anonymous", max_length=100)
     app_id: Optional[str] = Field(None, max_length=100)
     source_id: Optional[str] = Field(None, max_length=255)
+    # When False, skip creating a Source row and only store extracted memories
+    create_source: bool = Field(True)
 
 
 class IngestChatRequest(BaseModel):
@@ -307,6 +309,7 @@ async def ingest_text(
     summarizer = SourceSummarizer()
     content = request.content
     total_tokens = 0
+    create_source = request.create_source
     
     # Step 1: Check worthiness
     worthiness = await extractor.check_worthiness(content)
@@ -333,35 +336,38 @@ async def ingest_text(
             source_id=None
         )
     
-    # Step 2: Create Source record with raw content + summary + embedding
-    summary, summary_embedding, summary_tokens = await summarizer.summarize_and_embed(content, "text")
-    total_tokens += summary_tokens
-    
-    # Get or create end_user
+    # Get or create end_user (needed for memories regardless of source creation)
     end_user = await get_or_create_end_user(
         session=session,
         owner_id=owner_id,
         external_user_id=request.user_id or "anonymous"
     )
-    
-    source_uuid = str(uuid.uuid4())
-    source = Source(
-        id=source_uuid,
-        owner_id=owner_id,
-        end_user_id=str(end_user.id),
-        type="text",
-        source_app=request.app_id or source_app,
-        title=None,
-        raw_content={"content": content},
-        summary=summary,
-        summary_embedding=summary_embedding,
-        source_metadata={},
-        external_ref=request.source_id,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow()
-    )
-    session.add(source)
-    await session.flush()
+
+    source_uuid: Optional[str] = None
+
+    if create_source:
+        # Step 2: Create Source record with raw content + summary + embedding
+        summary, summary_embedding, summary_tokens = await summarizer.summarize_and_embed(content, "text")
+        total_tokens += summary_tokens
+
+        source_uuid = str(uuid.uuid4())
+        source = Source(
+            id=source_uuid,
+            owner_id=owner_id,
+            end_user_id=str(end_user.id),
+            type="text",
+            source_app=request.app_id or source_app,
+            title=None,
+            raw_content={"content": content},
+            summary=summary,
+            summary_embedding=summary_embedding,
+            source_metadata={},
+            external_ref=request.source_id,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
+        session.add(source)
+        await session.flush()
     
     # Step 3: Extract memories
     extraction = await extractor.extract_memories(content)
@@ -408,7 +414,8 @@ async def ingest_text(
         memory_ids=memory_ids,
         tokens_used=total_tokens,
         source_id=source_uuid,
-        source_title=generated_title
+        # For /ingest/text we don't generate a display title; keep this None
+        source_title=None
     )
 
 

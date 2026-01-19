@@ -382,7 +382,7 @@
     
     try {
       const response = await chrome.runtime.sendMessage({
-        type: 'SEARCH_MEMORIES',
+        type: 'SEARCH_SOURCES',
         query: query
       });
       
@@ -391,7 +391,9 @@
         return;
       }
       
-      const sources = response.data || [];
+      const sources = Array.isArray(response.sources)
+        ? response.sources
+        : [];
       
       if (sources.length === 0) {
         listEl.innerHTML = '<div class="unimemory-popup-empty">No memories found</div>';
