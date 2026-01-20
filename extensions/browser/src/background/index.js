@@ -154,7 +154,7 @@ async function searchNuclearMemories(query, limit = 5) {
   return memories;
 }
 
-async function searchSources(limit = 10) {
+async function searchSources(limit = 50) {
   let session = await getSession();
 
   if (!session) {
@@ -163,7 +163,8 @@ async function searchSources(limit = 10) {
 
   console.log('[UniMemory] Fetching sources (limit', limit + ')');
 
-  const response = await fetch(`${API_BASE_URL}/consumer/sources?limit=${limit}`, {
+  // Use consumer session token variant for extension
+  const response = await fetch(`${API_BASE_URL}/consumer/session/sources?limit=${limit}`, {
     headers: {
       'Authorization': `Bearer ${session.token}`
     }
@@ -184,6 +185,45 @@ async function searchSources(limit = 10) {
   const sources = await response.json();
   console.log('[UniMemory] Fetched', sources.length, 'sources');
   return sources;
+}
+
+async function getSource(sourceId) {
+  let session = await getSession();
+
+  if (!session) {
+    throw new Error('Not authenticated');
+  }
+
+  console.log('[UniMemory] Fetching source details for', sourceId);
+
+  // Use consumer session token variant for extension
+  const response = await fetch(`${API_BASE_URL}/consumer/session/sources/${sourceId}`, {
+    headers: {
+      'Authorization': `Bearer ${session.token}`
+    }
+  });
+
+  if (response.status === 401) {
+    await clearSession();
+    console.error('[UniMemory] Session expired, please log in again');
+    throw new Error('Not authenticated');
+  }
+
+  if (!response.ok) {
+    let errorDetail = `HTTP ${response.status}`;
+    try {
+      const error = await response.json();
+      errorDetail = error.detail || JSON.stringify(error);
+    } catch (e) {
+      // ignore parse error
+    }
+    console.error('[UniMemory] Failed to fetch source details:', errorDetail);
+    throw new Error('Failed to fetch source');
+  }
+
+  const source = await response.json();
+  console.log('[UniMemory] Fetched source details for', sourceId);
+  return source;
 }
 
 async function ingestPrompt(prompt, platform) {
@@ -338,8 +378,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           break;
         }
         case 'SEARCH_SOURCES': {
-          const result = await searchSources(message.limit || 10);
+          const result = await searchSources(message.limit || 50);
           sendResponse({ success: true, sources: result });
+          break;
+        }
+        case 'GET_SOURCE': {
+          const result = await getSource(message.sourceId);
+          sendResponse({ success: true, source: result });
           break;
         }
         

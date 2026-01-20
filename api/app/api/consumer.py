@@ -302,6 +302,54 @@ async def get_sources(
     ]
 
 
+@router.get("/consumer/session/sources", response_model=List[SourceResponse])
+async def get_session_sources(
+    limit: int = 50,
+    offset: int = 0,
+    user: User = Depends(verify_consumer_session_token),
+    session: AsyncSession = Depends(get_db)
+):
+    """Get all sources for the current extension user (consumer session token)."""
+    # Subquery to count memories per source
+    memory_count_subq = (
+        select(
+            MemorySource.source_id,
+            func.count(MemorySource.memory_id).label('memory_count')
+        )
+        .join(Memory, Memory.id == MemorySource.memory_id)
+        .where(Memory.is_active == True)
+        .group_by(MemorySource.source_id)
+        .subquery()
+    )
+    
+    # Main query with left join to get memory counts
+    result = await session.execute(
+        select(Source, memory_count_subq.c.memory_count)
+        .outerjoin(memory_count_subq, Source.id == memory_count_subq.c.source_id)
+        .where(Source.owner_id == str(user.id))
+        .order_by(Source.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    sources_with_counts = result.all()
+    
+    return [
+        SourceResponse(
+            id=str(s.id),
+            type=s.type,
+            title=s.title,
+            raw_content=s.raw_content or {},
+            summary=s.summary,
+            source_metadata=s.source_metadata,
+            end_user_id=s.end_user_id,
+            owner_id=str(s.owner_id),
+            created_at=str(s.created_at),
+            updated_at=str(s.updated_at) if s.updated_at else None,
+            memory_count=count or 0
+        ) for s, count in sources_with_counts
+    ]
+
+
 @router.get("/consumer/sources/count", response_model=CountResponse)
 async def get_sources_count(
     user: User = Depends(get_current_user),
@@ -323,6 +371,60 @@ async def get_source(
     session: AsyncSession = Depends(get_db)
 ):
     """Get a single source with linked memories"""
+    result = await session.execute(
+        select(Source)
+        .where(Source.id == source_id)
+        .where(Source.owner_id == str(user.id))
+    )
+    source = result.scalar_one_or_none()
+    
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+    
+    # Get linked memories
+    memories_result = await session.execute(
+        select(Memory)
+        .join(MemorySource, MemorySource.memory_id == Memory.id)
+        .where(MemorySource.source_id == source_id)
+        .where(Memory.is_active == True)
+    )
+    memories = memories_result.scalars().all()
+    
+    return SourceWithMemoriesResponse(
+        id=str(source.id),
+        type=source.type,
+        title=source.title,
+        raw_content=source.raw_content or {},
+        summary=source.summary,
+        source_metadata=source.source_metadata,
+        end_user_id=source.end_user_id,
+        owner_id=str(source.owner_id),
+        created_at=str(source.created_at),
+        updated_at=str(source.updated_at) if source.updated_at else None,
+        memories=[
+            MemoryResponse(
+                id=str(m.id),
+                content=m.content,
+                sector=m.sector,
+                salience=m.salience or 0.5,
+                tags=m.tags or [],
+                user_id=m.user_id or "",
+                is_active=m.is_active,
+                created_at=str(m.created_at),
+                updated_at=str(m.updated_at) if m.updated_at else None
+            ) for m in memories
+        ],
+        memory_count=len(memories)
+    )
+
+
+@router.get("/consumer/session/sources/{source_id}", response_model=SourceWithMemoriesResponse)
+async def get_session_source(
+    source_id: str,
+    user: User = Depends(verify_consumer_session_token),
+    session: AsyncSession = Depends(get_db)
+):
+    """Get a single source with linked memories (extension / consumer session token)."""
     result = await session.execute(
         select(Source)
         .where(Source.id == source_id)
@@ -1386,7 +1488,7 @@ async def get_consumer_session(
     )
 
 
-async def verify_consumer_session_token(token: str) -> dict:
+async def verify_consumer_session_token_payload(token: str) -> dict:
     """
     Verify a consumer session token and return the payload.
     Used by ingest endpoints when called from the extension.

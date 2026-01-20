@@ -387,7 +387,15 @@
       });
       
       if (!response.success) {
-        listEl.innerHTML = '<div class="unimemory-popup-empty">Failed to load memories</div>';
+        const errorMsg = response.error || '';
+        // If not authenticated, prompt login and show a clear message
+        if (typeof errorMsg === 'string' && errorMsg.includes('Not authenticated')) {
+          listEl.innerHTML = '<div class="unimemory-popup-empty">Please log in to UniMemory to use the popup.</div>';
+          // Trigger login flow in background (opens extension welcome page)
+          chrome.runtime.sendMessage({ type: 'LOGIN' });
+        } else {
+          listEl.innerHTML = '<div class="unimemory-popup-empty">Failed to load memories</div>';
+        }
         return;
       }
       
@@ -431,7 +439,7 @@
       </div>
     `;
     
-    card.addEventListener('click', () => insertDocumentContent(source));
+    card.addEventListener('click', () => handleSourceClick(source));
     
     return card;
   }
@@ -440,6 +448,46 @@
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+  }
+  
+  async function handleSourceClick(sourceSummary) {
+    if (!activeInputElement) return;
+    
+    // If raw content is already present on this source, insert directly
+    if (sourceSummary.raw_content && Object.keys(sourceSummary.raw_content).length > 0) {
+      await insertDocumentContent(sourceSummary);
+      return;
+    }
+    
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'GET_SOURCE',
+        sourceId: sourceSummary.id
+      });
+      
+      if (!response.success) {
+        const errorMsg = response.error || '';
+        if (typeof errorMsg === 'string' && errorMsg.includes('Not authenticated')) {
+          showToast('Session expired. Please log in again.', 'error');
+          chrome.runtime.sendMessage({ type: 'LOGIN' });
+        } else {
+          showToast('Failed to load memory', 'error');
+        }
+        return;
+      }
+      
+      const fullSource = response.source || sourceSummary;
+      await insertDocumentContent(fullSource);
+    } catch (error) {
+      console.error('Failed to load source details:', error);
+      const msg = error?.message || '';
+      if (typeof msg === 'string' && msg.includes('Not authenticated')) {
+        showToast('Session expired. Please log in again.', 'error');
+        chrome.runtime.sendMessage({ type: 'LOGIN' });
+      } else {
+        showToast('Failed to load memory', 'error');
+      }
+    }
   }
   
   async function insertDocumentContent(source) {

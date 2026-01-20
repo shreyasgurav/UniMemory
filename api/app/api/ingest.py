@@ -25,7 +25,7 @@ from app.core.simhash import compute_simhash, hamming_distance
 from app.core.sector import classify_sector, get_sector_decay_lambda, calculate_initial_salience
 from app.core.waypoints import create_waypoint_for_memory
 from app.core.auth import validate_api_key_optimized
-from app.api.consumer import verify_consumer_session_token
+from app.api.consumer import verify_consumer_session_token_payload
 from app.core.end_user import get_or_create_end_user
 from app.core.summarizer import SourceSummarizer
 from app.config import settings
@@ -112,7 +112,7 @@ async def get_ingest_auth(
     # Try consumer session bearer token
     if authorization and authorization.lower().startswith("bearer "):
         token = authorization.split(" ", 1)[1].strip()
-        payload = await verify_consumer_session_token(token)
+        payload = await verify_consumer_session_token_payload(token)
         # Lookup user by payload["sub"] which stores owner/user id
         stmt = select(User).where(User.id == payload.get("sub"))
         result = await session.execute(stmt)
