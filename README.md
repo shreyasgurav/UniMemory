@@ -10,7 +10,6 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Python](https://img.shields.io/badge/Python-3.8+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 
-[📖 Documentation](#documentation) • [🚀 Quick Start](#quick-start) • [📦 npm](https://www.npmjs.com/package/unimemory) • [🐍 PyPI](https://pypi.org/project/unimemory/)
 
 </div>
 
