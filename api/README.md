@@ -2,13 +2,13 @@
 
 FastAPI backend for intelligent memory management with semantic search, automatic deduplication, and memory extraction.
 
-## 🚀 Production API
+## Production API
 
 **Base URL**: `https://unimemory.up.railway.app/api/v1`
 
 **Health Check**: [https://unimemory.up.railway.app/api/v1/health](https://unimemory.up.railway.app/api/v1/health)
 
-## ✨ Features
+## Features
 
 - **LLM-based Extraction**: Automatically extract structured memories from raw text
 - **Semantic Search**: Vector similarity search with hybrid ranking
@@ -21,7 +21,7 @@ FastAPI backend for intelligent memory management with semantic search, automati
 - **Firebase Authentication**: Secure user authentication
 - **API Key Management**: Per-project API keys
 
-## 🏗️ Tech Stack
+## Tech Stack
 
 - **FastAPI** - Modern Python web framework
 - **PostgreSQL + pgvector** - Vector database for embeddings
@@ -30,7 +30,7 @@ FastAPI backend for intelligent memory management with semantic search, automati
 - **Firebase Admin** - User authentication
 - **Docker** - Containerized deployment
 
-## 📦 Installation
+## Installation
 
 ### 1. Install Dependencies
 
@@ -298,7 +298,7 @@ OpenAI API
   - LLM Extraction (gpt-4o-mini)
 ```
 
-## 🚢 Deployment
+## Deployment
 
 ### Railway (Production)
 
@@ -333,7 +333,7 @@ docker run -p 8000:8000 \
 docker-compose up -d
 ```
 
-## 🧪 Testing
+## Testing
 
 ```bash
 # Test health endpoint
@@ -349,7 +349,7 @@ curl -X POST https://unimemory.up.railway.app/api/v1/memories \
   }'
 ```
 
-## 🔧 Development
+## Development
 
 ```bash
 # Install dependencies
@@ -365,7 +365,7 @@ mypy app/
 pytest
 ```
 
-## 📊 Database Schema
+## Database Schema
 
 The API automatically creates tables on startup. Key models:
 
@@ -376,7 +376,7 @@ The API automatically creates tables on startup. Key models:
 - **waypoints** - Memory relationship links
 - **memory_embeddings** - Vector embeddings (pgvector)
 
-## 🔐 Security
+## Security
 
 - Firebase authentication for dashboard users
 - API key authentication for SDK clients
@@ -385,11 +385,11 @@ The API automatically creates tables on startup. Key models:
 - Rate limiting (planned)
 - Input validation with Pydantic
 
-## 📝 License
+## License
 
 MIT
 
-## 🔗 Links
+## Links
 
 - **Production API**: [https://unimemory.up.railway.app](https://unimemory.up.railway.app)
 - **API Docs**: [https://unimemory.up.railway.app/docs](https://unimemory.up.railway.app/docs)
