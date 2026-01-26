@@ -729,6 +729,7 @@
       <div class="unimemory-extension-popup-tabs">
         <button class="unimemory-extension-popup-tab active" data-tab="save">Save</button>
         <button class="unimemory-extension-popup-tab" data-tab="settings">Settings</button>
+        <button class="unimemory-extension-popup-tab" data-tab="guide">Guide</button>
       </div>
       <div class="unimemory-extension-popup-content">
         <!-- Save Tab -->
@@ -782,6 +783,37 @@
             </button>
           </div>
         </div>
+        
+        <!-- Guide Tab -->
+        <div id="ext-tab-guide" class="ext-tab-content unimemory-extension-popup-hidden">
+          <div class="unimemory-extension-popup-guide-section">
+            <h3 class="unimemory-extension-popup-guide-title">Keyboard Shortcuts</h3>
+            
+            <div class="unimemory-extension-popup-guide-item">
+              <div class="unimemory-extension-popup-guide-shortcut">
+                <kbd class="unimemory-extension-popup-kbd">⌘</kbd>
+                <span class="unimemory-extension-popup-guide-plus">+</span>
+                <kbd class="unimemory-extension-popup-kbd">]</kbd>
+              </div>
+              <div class="unimemory-extension-popup-guide-desc">
+                <span class="unimemory-extension-popup-guide-label">Search Sources</span>
+                <span class="unimemory-extension-popup-guide-text">Open popup to search and insert saved sources</span>
+              </div>
+            </div>
+            
+            <div class="unimemory-extension-popup-guide-item">
+              <div class="unimemory-extension-popup-guide-shortcut">
+                <kbd class="unimemory-extension-popup-kbd">⌘</kbd>
+                <span class="unimemory-extension-popup-guide-plus">+</span>
+                <kbd class="unimemory-extension-popup-kbd">\\</kbd>
+              </div>
+              <div class="unimemory-extension-popup-guide-desc">
+                <span class="unimemory-extension-popup-guide-label">Add Memories</span>
+                <span class="unimemory-extension-popup-guide-text">Insert relevant memories into your input field</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     `;
     
@@ -803,13 +835,20 @@
         // Update visible content
         const saveTab = extensionPopup.querySelector('#ext-tab-save');
         const settingsTab = extensionPopup.querySelector('#ext-tab-settings');
+        const guideTab = extensionPopup.querySelector('#ext-tab-guide');
         
+        // Hide all tabs
+        saveTab.classList.add('unimemory-extension-popup-hidden');
+        settingsTab.classList.add('unimemory-extension-popup-hidden');
+        guideTab.classList.add('unimemory-extension-popup-hidden');
+        
+        // Show selected tab
         if (targetTab === 'save') {
           saveTab.classList.remove('unimemory-extension-popup-hidden');
-          settingsTab.classList.add('unimemory-extension-popup-hidden');
-        } else {
-          saveTab.classList.add('unimemory-extension-popup-hidden');
+        } else if (targetTab === 'settings') {
           settingsTab.classList.remove('unimemory-extension-popup-hidden');
+        } else if (targetTab === 'guide') {
+          guideTab.classList.remove('unimemory-extension-popup-hidden');
         }
       });
     });
