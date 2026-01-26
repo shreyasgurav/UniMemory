@@ -1317,26 +1317,37 @@ async def get_activity_feed(
     except Exception as e:
         logger.warning(f"Failed to fetch activity logs (table may not exist yet): {e}")
     
-    # 2. Get recent sources (legacy ingestion events)
+    # 2. Get recent sources with memory counts in a SINGLE query (no N+1)
+    from sqlalchemy.orm import load_only
+    
+    # Subquery to count memories per source
+    memory_count_subq = (
+        select(
+            MemorySource.source_id,
+            func.count(MemorySource.memory_id).label('memory_count')
+        )
+        .group_by(MemorySource.source_id)
+        .subquery()
+    )
+    
+    # Use load_only to exclude large columns (raw_content, summary_embedding)
     sources_result = await session.execute(
-        select(Source)
+        select(Source, memory_count_subq.c.memory_count)
+        .options(load_only(
+            Source.id, Source.type, Source.title, Source.source_app,
+            Source.source_metadata, Source.created_at
+        ))
+        .outerjoin(memory_count_subq, Source.id == memory_count_subq.c.source_id)
         .where(Source.owner_id == str(user.id))
         .order_by(Source.created_at.desc())
         .limit(limit)
         .offset(offset)
     )
-    sources = sources_result.scalars().all()
+    sources_with_counts = sources_result.all()
     
-    for source in sources:
+    for source, mem_count in sources_with_counts:
         if str(source.id) in seen_ids:
             continue  # Skip if already in activity_logs
-            
-        # Count linked memories
-        mem_count_result = await session.execute(
-            select(func.count(MemorySource.memory_id))
-            .where(MemorySource.source_id == str(source.id))
-        )
-        mem_count = mem_count_result.scalar() or 0
         
         # Extract metadata for display
         metadata = source.source_metadata or {}
@@ -1349,8 +1360,8 @@ async def get_activity_feed(
             type="source_created",
             source=source.source_app or "extension",
             agent=None,
-            memory_count=mem_count,
-            details=f"Saved {mem_count} memories",
+            memory_count=mem_count or 0,
+            details=f"Saved {mem_count or 0} memories",
             tool_name=None,
             created_at=str(source.created_at),
             title=title,
