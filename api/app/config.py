@@ -17,11 +17,12 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/unimemory"
     
-    # Connection Pool (production-tuned for Railway)
-    DB_POOL_SIZE: int = 10  # Reduced for Railway's connection limits
-    DB_MAX_OVERFLOW: int = 20  # Allow burst connections
-    DB_POOL_TIMEOUT: int = 20  # Faster timeout to fail fast
-    DB_POOL_RECYCLE: int = 900  # Recycle connections every 15 min (Railway stability)
+    # Connection Pool (production-tuned for Railway + Supabase)
+    DB_POOL_SIZE: int = 5  # Reduced for Supabase connection limits (free tier: 60 max)
+    DB_MAX_OVERFLOW: int = 10  # Allow burst connections
+    DB_POOL_TIMEOUT: int = 10  # Faster timeout to fail fast
+    DB_POOL_RECYCLE: int = 300  # Recycle connections every 5 min (Railway stability)
+    DB_QUERY_TIMEOUT: int = 30  # Max query execution time in seconds
     
     # PostgreSQL + pgvector
     DB_HOST: str = "localhost"

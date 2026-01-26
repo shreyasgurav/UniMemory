@@ -261,7 +261,13 @@ async def get_sources(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db)
 ):
-    """Get all sources for the current user, ordered by created_at desc"""
+    """Get all sources for the current user, ordered by created_at desc
+    
+    PERFORMANCE: Excludes raw_content from list queries to reduce data transfer.
+    Use GET /consumer/sources/{source_id} to get full source with raw_content.
+    """
+    from sqlalchemy.orm import load_only
+    
     # Subquery to count memories per source
     memory_count_subq = (
         select(
@@ -274,9 +280,14 @@ async def get_sources(
         .subquery()
     )
     
-    # Main query with left join to get memory counts
+    # Main query with left join to get memory counts (exclude raw_content for speed)
     result = await session.execute(
         select(Source, memory_count_subq.c.memory_count)
+        .options(load_only(
+            Source.id, Source.type, Source.title, Source.summary,
+            Source.source_metadata, Source.end_user_id, Source.owner_id,
+            Source.created_at, Source.updated_at
+        ))
         .outerjoin(memory_count_subq, Source.id == memory_count_subq.c.source_id)
         .where(Source.owner_id == str(user.id))
         .order_by(Source.created_at.desc())
@@ -290,7 +301,7 @@ async def get_sources(
             id=str(s.id),
             type=s.type,
             title=s.title,
-            raw_content=s.raw_content or {},
+            raw_content={},  # Exclude raw_content from list queries for speed
             summary=s.summary,
             source_metadata=s.source_metadata,
             end_user_id=s.end_user_id,
@@ -312,8 +323,12 @@ async def get_session_sources(
 ):
     """
     Get sources for the current extension user (consumer session token).
-    If query is provided, performs semantic search on title and summary.
+    If query is provided, performs semantic search using pgvector similarity.
+    
+    PERFORMANCE: Uses database-level vector search instead of N+1 embedding calls.
     """
+    from sqlalchemy.orm import load_only
+    
     # Subquery to count memories per source
     memory_count_subq = (
         select(
@@ -326,10 +341,15 @@ async def get_session_sources(
         .subquery()
     )
     
-    # If no query, return recent sources
+    # If no query, return recent sources (exclude raw_content for speed)
     if not query or not query.strip():
         result = await session.execute(
             select(Source, memory_count_subq.c.memory_count)
+            .options(load_only(
+                Source.id, Source.type, Source.title, Source.summary,
+                Source.source_metadata, Source.end_user_id, Source.owner_id,
+                Source.created_at, Source.updated_at
+            ))
             .outerjoin(memory_count_subq, Source.id == memory_count_subq.c.source_id)
             .where(Source.owner_id == str(user.id))
             .order_by(Source.created_at.desc())
@@ -343,7 +363,7 @@ async def get_session_sources(
                 id=str(s.id),
                 type=s.type,
                 title=s.title,
-                raw_content=s.raw_content or {},
+                raw_content={},  # Exclude raw_content from list queries for speed
                 summary=s.summary,
                 source_metadata=s.source_metadata,
                 end_user_id=s.end_user_id,
@@ -354,46 +374,41 @@ async def get_session_sources(
             ) for s, count in sources_with_counts
         ]
     
-    # Semantic search on title and summary
+    # Semantic search using pgvector (single embedding call + database similarity search)
     from app.core.embeddings import get_embedding_service
-    import math
     
     embedding_service = get_embedding_service()
     query_embedding = await embedding_service.get_embedding(query.strip())
-    
-    # Fetch all sources for the user
-    result = await session.execute(
-        select(Source, memory_count_subq.c.memory_count)
-        .outerjoin(memory_count_subq, Source.id == memory_count_subq.c.source_id)
-        .where(Source.owner_id == str(user.id))
-    )
-    sources_with_counts = result.all()
-    
-    # Calculate relevance scores
-    scored_sources = []
     query_lower = query.strip().lower()
     
-    for source, count in sources_with_counts:
+    # Use pgvector cosine distance for similarity search
+    # Distance < 0.7 means similarity > 0.3
+    result = await session.execute(
+        select(
+            Source,
+            memory_count_subq.c.memory_count,
+            (1 - Source.summary_embedding.cosine_distance(query_embedding)).label('similarity')
+        )
+        .options(load_only(
+            Source.id, Source.type, Source.title, Source.summary,
+            Source.source_metadata, Source.end_user_id, Source.owner_id,
+            Source.created_at, Source.updated_at, Source.summary_embedding
+        ))
+        .outerjoin(memory_count_subq, Source.id == memory_count_subq.c.source_id)
+        .where(Source.owner_id == str(user.id))
+        .where(Source.summary_embedding.isnot(None))  # Only sources with embeddings
+        .order_by(Source.summary_embedding.cosine_distance(query_embedding))
+        .limit(limit * 2)  # Fetch extra for keyword filtering
+    )
+    sources_with_similarity = result.all()
+    
+    # Apply keyword boost and filter
+    scored_sources = []
+    for source, count, similarity in sources_with_similarity:
         title = source.title or ""
         summary = source.summary or ""
         
-        # Skip sources with no title and no summary
-        if not title and not summary:
-            continue
-        
-        # Combine title and summary for semantic matching
-        combined_text = f"{title} {summary}"
-        
-        # Calculate semantic similarity
-        text_embedding = await embedding_service.get_embedding(combined_text)
-        
-        # Cosine similarity
-        dot = sum(x * y for x, y in zip(query_embedding, text_embedding))
-        norm_q = math.sqrt(sum(x * x for x in query_embedding))
-        norm_t = math.sqrt(sum(x * x for x in text_embedding))
-        semantic_score = dot / (norm_q * norm_t) if norm_q > 0 and norm_t > 0 else 0.0
-        
-        # Keyword matching boost (exact matches in title/summary)
+        # Calculate keyword boost
         keyword_score = 0.0
         if query_lower in title.lower():
             keyword_score += 0.3
@@ -401,16 +416,14 @@ async def get_session_sources(
             keyword_score += 0.2
         
         # Combined score (70% semantic, 30% keyword)
-        final_score = (semantic_score * 0.7) + (keyword_score * 0.3)
+        final_score = (float(similarity or 0) * 0.7) + (keyword_score * 0.3)
         
         # Only include sources with relevance > 0.3
         if final_score > 0.3:
             scored_sources.append((source, count, final_score))
     
-    # Sort by score descending
+    # Sort by final score and apply limit
     scored_sources.sort(key=lambda x: x[2], reverse=True)
-    
-    # Apply limit
     scored_sources = scored_sources[:limit]
     
     return [
@@ -418,7 +431,7 @@ async def get_session_sources(
             id=str(s.id),
             type=s.type,
             title=s.title,
-            raw_content=s.raw_content or {},
+            raw_content={},  # Exclude raw_content from search results for speed
             summary=s.summary,
             source_metadata=s.source_metadata,
             end_user_id=s.end_user_id,

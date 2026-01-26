@@ -4,6 +4,7 @@ Production-ready with proper middleware and error handling
 """
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from contextlib import asynccontextmanager
@@ -119,6 +120,7 @@ app = FastAPI(
 # Add middleware (order matters - first added = outermost)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(GZipMiddleware, minimum_size=1000)  # Compress responses > 1KB
 
 # CORS middleware - configure properly for production
 if settings.is_production and settings.CORS_ORIGINS != ["*"]:

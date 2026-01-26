@@ -22,12 +22,13 @@ engine = create_async_engine(
     pool_timeout=settings.DB_POOL_TIMEOUT,
     pool_recycle=settings.DB_POOL_RECYCLE,
     poolclass=QueuePool,
-    # Connection arguments for reliability
+    # Connection arguments for reliability and performance
     connect_args={
-        "command_timeout": 60,  # Query timeout
+        "command_timeout": settings.DB_QUERY_TIMEOUT,  # Query timeout (default 30s)
         "server_settings": {
             "application_name": "unimemory-api",
             "jit": "off",  # Disable JIT for consistent performance
+            "statement_timeout": f"{settings.DB_QUERY_TIMEOUT * 1000}",  # Statement timeout in ms
         }
     } if "asyncpg" in settings.DATABASE_URL else {}
 )
