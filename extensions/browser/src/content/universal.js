@@ -683,6 +683,11 @@
       <div class="unimemory-extension-popup-content">
         <div class="unimemory-extension-popup-login">
           <p class="unimemory-extension-popup-login-subtitle">Unified Memory for all your AI applications.</p>
+          <ul class="unimemory-extension-popup-features">
+            <li>Save AI conversations and chats</li>
+            <li>Search and retrieve your memories</li>
+            <li>Insert context into any AI chat</li>
+          </ul>
           <button class="unimemory-extension-popup-btn unimemory-extension-popup-btn-primary" id="ext-login-btn">
             Log in to UniMemory
           </button>

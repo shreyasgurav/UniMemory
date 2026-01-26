@@ -330,7 +330,7 @@
   position: fixed;
   top: 16px;
   right: 20px;
-  width: 440px;
+  width: 380px;
   background: white;
   border-radius: 16px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
@@ -396,7 +396,6 @@
 
 .unimemory-extension-popup-login {
   text-align: center;
-  padding: 40px 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -404,10 +403,34 @@
 }
 
 .unimemory-extension-popup-login-subtitle {
-  font-size: 14px;
+  font-size: 15px;
   color: #737373;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
   line-height: 1.5;
+  max-width: 100%;
+}
+
+.unimemory-extension-popup-features {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 24px 0;
+  text-align: left;
+}
+
+.unimemory-extension-popup-features li {
+  font-size: 14px;
+  color: #171717;
+  padding: 8px 0;
+  position: relative;
+  padding-left: 24px;
+}
+
+.unimemory-extension-popup-features li:before {
+  content: "•";
+  position: absolute;
+  left: 8px;
+  color: #171717;
+  font-weight: bold;
 }
 
 .unimemory-extension-popup-btn {
@@ -430,9 +453,10 @@
 }
 
 .unimemory-extension-popup-login .unimemory-extension-popup-btn-primary {
-  padding: 12px 24px;
+  padding: 12px 32px;
   font-size: 14px;
-  max-width: 280px;
+  width: 100%;
+  max-width: 100%;
 }
 
 .unimemory-extension-popup-btn-primary:hover {
