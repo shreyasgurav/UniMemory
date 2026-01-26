@@ -63,18 +63,18 @@ ON waypoints(dst_id);
 -- Activity Logs Table Indexes
 -- ============================================
 
--- Index for user activity timeline
-CREATE INDEX IF NOT EXISTS idx_activity_logs_owner_created 
-ON activity_logs(owner_id, created_at DESC);
+-- Index for user activity timeline (ActivityLog uses user_id, not owner_id)
+CREATE INDEX IF NOT EXISTS idx_activity_logs_user_action_created 
+ON activity_logs(user_id, action, created_at DESC);
 
 
 -- ============================================
 -- Processing Logs Table Indexes
 -- ============================================
 
--- Index for processing log queries
-CREATE INDEX IF NOT EXISTS idx_processing_logs_processed_at 
-ON processing_logs(processed_at DESC);
+-- Index for processing log queries by hash (for deduplication)
+CREATE INDEX IF NOT EXISTS idx_processing_logs_hash_processed 
+ON processing_logs(raw_content_hash, processed_at DESC);
 
 
 -- ============================================
