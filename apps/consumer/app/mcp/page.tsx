@@ -20,6 +20,12 @@ interface MCPToken {
   created_at: string;
 }
 
+interface TokenCreatedResponse {
+  id: string;
+  token: string;
+  cursor_deep_link?: string;
+}
+
 export default function MCPSetupPage() {
   const router = useRouter();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -28,6 +34,7 @@ export default function MCPSetupPage() {
   const [selectedClient, setSelectedClient] = useState<string>("cursor");
   const [copied, setCopied] = useState<string | null>(null);
   const [creatingToken, setCreatingToken] = useState(false);
+  const [cursorDeepLink, setCursorDeepLink] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -59,11 +66,11 @@ export default function MCPSetupPage() {
     }
   };
 
-  const createToken = async (clientType: string) => {
+  const createTokenAndConnect = async (clientType: string): Promise<TokenCreatedResponse | null> => {
     setCreatingToken(true);
     try {
       const user = auth.currentUser;
-      if (!user) return;
+      if (!user) return null;
       const token = await user.getIdToken();
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/consumer/mcp/tokens`, {
         method: "POST",
@@ -74,11 +81,32 @@ export default function MCPSetupPage() {
         body: JSON.stringify({ client_type: clientType }),
       });
       if (response.ok) {
+        const data = await response.json();
         await fetchTokens();
+        return data;
       }
     } catch (error) {
       console.error("Failed to create token:", error);
     }
+    setCreatingToken(false);
+    return null;
+  };
+
+  const addToCursor = async () => {
+    const data = await createTokenAndConnect("cursor");
+    if (data?.cursor_deep_link) {
+      window.location.href = data.cursor_deep_link;
+    } else if (data?.token) {
+      // Fallback: generate deep link manually
+      const config = JSON.stringify({ url: MCP_URL, headers: { Authorization: `Bearer ${data.token}` } });
+      const configBase64 = btoa(config);
+      window.location.href = `cursor://anysphere.cursor-deeplink/mcp/install?name=unimemory&config=${configBase64}`;
+    }
+    setCreatingToken(false);
+  };
+
+  const createToken = async (clientType: string) => {
+    await createTokenAndConnect(clientType);
     setCreatingToken(false);
   };
 
@@ -186,15 +214,36 @@ export default function MCPSetupPage() {
           </p>
         </div>
 
-        {/* Quick Install */}
+        {/* One-Click Install for Cursor */}
+        <div className="bg-gradient-to-br from-neutral-900 to-neutral-800 rounded-2xl p-8 mb-8 text-white">
+          <div className="text-center">
+            <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <span className="text-3xl">⚡</span>
+            </div>
+            <h2 className="text-2xl font-semibold mb-2">Add to Cursor</h2>
+            <p className="text-neutral-400 mb-6">One click to connect your memories</p>
+            <button
+              onClick={addToCursor}
+              disabled={creatingToken}
+              className="px-8 py-4 bg-white text-neutral-900 rounded-xl font-semibold text-lg hover:bg-neutral-100 disabled:opacity-50 transition-all"
+            >
+              {creatingToken ? "Connecting..." : "Connect to Cursor →"}
+            </button>
+            <p className="text-xs text-neutral-500 mt-4">
+              Opens Cursor and automatically adds UniMemory MCP
+            </p>
+          </div>
+        </div>
+
+        {/* Other Clients */}
         <div className="bg-neutral-50 rounded-2xl p-8 mb-8">
           <div className="flex items-center gap-3 mb-6">
             <div className="w-10 h-10 bg-neutral-900 rounded-xl flex items-center justify-center">
               <Zap className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h2 className="text-xl font-semibold text-neutral-900">Quick Install</h2>
-              <p className="text-sm text-neutral-500">One command to connect</p>
+              <h2 className="text-xl font-semibold text-neutral-900">Other AI Clients</h2>
+              <p className="text-sm text-neutral-500">Manual setup for other tools</p>
             </div>
           </div>
 
