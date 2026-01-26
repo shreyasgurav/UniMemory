@@ -520,7 +520,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 0;
+  padding: 14px;
+  background: #fafafa;
+  border-radius: 10px;
   margin-bottom: 16px;
 }
 
