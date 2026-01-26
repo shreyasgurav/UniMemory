@@ -733,15 +733,28 @@
       <div class="unimemory-extension-popup-content">
         <!-- Save Tab -->
         <div id="ext-tab-save" class="ext-tab-content">
+          <div class="unimemory-extension-popup-setting">
+            <div class="unimemory-extension-popup-setting-info">
+              <span class="unimemory-extension-popup-setting-label">Save long-term memories</span>
+              <span class="unimemory-extension-popup-setting-desc">Auto-save memories from your AI conversations</span>
+            </div>
+            <label class="unimemory-extension-popup-toggle">
+              <input type="checkbox" id="ext-auto-save-toggle" ${currentSettings.autoSave ? 'checked' : ''}>
+              <span class="unimemory-extension-popup-toggle-slider"></span>
+            </label>
+          </div>
+          
           <div class="unimemory-extension-popup-page-info">
             <div class="unimemory-extension-popup-page-title">${escapeHtml(pageInfo.title)}</div>
             <div class="unimemory-extension-popup-page-url">${escapeHtml(pageInfo.url)}</div>
           </div>
+          
           <button class="unimemory-extension-popup-btn unimemory-extension-popup-btn-primary" id="ext-save-btn">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: inline-block; vertical-align: middle; margin-right: 6px;">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
             </svg>
-            Save this Chat
+            Save to UniMemory
           </button>
         </div>
         
@@ -753,17 +766,6 @@
               <span class="unimemory-extension-popup-user-name">${escapeHtml(userName)}</span>
               <span class="unimemory-extension-popup-user-email">${escapeHtml(userEmail)}</span>
             </div>
-          </div>
-          
-          <div class="unimemory-extension-popup-setting">
-            <div class="unimemory-extension-popup-setting-info">
-              <span class="unimemory-extension-popup-setting-label">Save long-term memories</span>
-              <span class="unimemory-extension-popup-setting-desc">Auto-save memories from your AI conversations</span>
-            </div>
-            <label class="unimemory-extension-popup-toggle">
-              <input type="checkbox" id="ext-auto-save-toggle" ${currentSettings.autoSave ? 'checked' : ''}>
-              <span class="unimemory-extension-popup-toggle-slider"></span>
-            </label>
           </div>
           
           <div class="unimemory-extension-popup-buttons">
