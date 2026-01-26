@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, update, or_, and_
+from sqlalchemy.orm import selectinload
 from pydantic import BaseModel, Field
 import logging
 
@@ -574,9 +575,19 @@ async def get_memories(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db)
 ):
-    """Get all memories for the current user"""
+    """Get all memories for the current user
+    
+    PERFORMANCE: Excludes embedding column from list queries to reduce data transfer.
+    """
+    from sqlalchemy.orm import load_only
+    
     result = await session.execute(
         select(Memory)
+        .options(load_only(
+            Memory.id, Memory.content, Memory.sector, Memory.salience,
+            Memory.tags, Memory.user_id, Memory.is_active,
+            Memory.created_at, Memory.updated_at
+        ))
         .where(Memory.owner_id == str(user.id))
         .where(Memory.is_active == True)
         .order_by(Memory.created_at.desc())
