@@ -792,7 +792,6 @@
         <!-- Guide Tab -->
         <div id="ext-tab-guide" class="ext-tab-content unimemory-extension-popup-hidden">
           <div class="unimemory-extension-popup-guide-section">
-            <h3 class="unimemory-extension-popup-guide-title">Keyboard Shortcuts</h3>
             
             <div class="unimemory-extension-popup-guide-item">
               <div class="unimemory-extension-popup-guide-shortcut">
