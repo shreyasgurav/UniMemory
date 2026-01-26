@@ -154,17 +154,24 @@ async function searchNuclearMemories(query, limit = 5) {
   return memories;
 }
 
-async function searchSources(limit = 50) {
+async function searchSources(query = '', limit = 50) {
   let session = await getSession();
 
   if (!session) {
     throw new Error('Not authenticated');
   }
 
-  console.log('[UniMemory] Fetching sources (limit', limit + ')');
+  // Build URL with query parameter if provided
+  let url = `${API_BASE_URL}/consumer/session/sources?limit=${limit}`;
+  if (query && query.trim()) {
+    url += `&query=${encodeURIComponent(query.trim())}`;
+    console.log('[UniMemory] Searching sources for:', query);
+  } else {
+    console.log('[UniMemory] Fetching recent sources (limit', limit + ')');
+  }
 
   // Use consumer session token variant for extension
-  const response = await fetch(`${API_BASE_URL}/consumer/session/sources?limit=${limit}`, {
+  const response = await fetch(url, {
     headers: {
       'Authorization': `Bearer ${session.token}`
     }
@@ -378,7 +385,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           break;
         }
         case 'SEARCH_SOURCES': {
-          const result = await searchSources(message.limit || 50);
+          const result = await searchSources(message.query || '', message.limit || 50);
           sendResponse({ success: true, sources: result });
           break;
         }
@@ -429,6 +436,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   // Return true to indicate async response
   return true;
+});
+
+// ============ Extension Icon Click Handler ============
+
+chrome.action.onClicked.addListener(async (tab) => {
+  try {
+    // Send message to content script to show the extension popup
+    await chrome.tabs.sendMessage(tab.id, { type: 'SHOW_EXTENSION_POPUP' });
+  } catch (error) {
+    console.error('Failed to show extension popup:', error);
+    // If content script not ready, inject it
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ['src/content/universal.js']
+      });
+      // Try again after injection
+      setTimeout(async () => {
+        await chrome.tabs.sendMessage(tab.id, { type: 'SHOW_EXTENSION_POPUP' });
+      }, 100);
+    } catch (injectError) {
+      console.error('Failed to inject content script:', injectError);
+    }
+  }
 });
 
 // ============ Extension Install/Update ============

@@ -306,10 +306,14 @@ async def get_sources(
 async def get_session_sources(
     limit: int = 50,
     offset: int = 0,
+    query: Optional[str] = None,
     user: User = Depends(verify_consumer_session_token),
     session: AsyncSession = Depends(get_db)
 ):
-    """Get all sources for the current extension user (consumer session token)."""
+    """
+    Get sources for the current extension user (consumer session token).
+    If query is provided, performs semantic search on title and summary.
+    """
     # Subquery to count memories per source
     memory_count_subq = (
         select(
@@ -322,16 +326,92 @@ async def get_session_sources(
         .subquery()
     )
     
-    # Main query with left join to get memory counts
+    # If no query, return recent sources
+    if not query or not query.strip():
+        result = await session.execute(
+            select(Source, memory_count_subq.c.memory_count)
+            .outerjoin(memory_count_subq, Source.id == memory_count_subq.c.source_id)
+            .where(Source.owner_id == str(user.id))
+            .order_by(Source.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        sources_with_counts = result.all()
+        
+        return [
+            SourceResponse(
+                id=str(s.id),
+                type=s.type,
+                title=s.title,
+                raw_content=s.raw_content or {},
+                summary=s.summary,
+                source_metadata=s.source_metadata,
+                end_user_id=s.end_user_id,
+                owner_id=str(s.owner_id),
+                created_at=str(s.created_at),
+                updated_at=str(s.updated_at) if s.updated_at else None,
+                memory_count=count or 0
+            ) for s, count in sources_with_counts
+        ]
+    
+    # Semantic search on title and summary
+    from app.core.embeddings import get_embedding_service
+    import math
+    
+    embedding_service = get_embedding_service()
+    query_embedding = await embedding_service.get_embedding(query.strip())
+    
+    # Fetch all sources for the user
     result = await session.execute(
         select(Source, memory_count_subq.c.memory_count)
         .outerjoin(memory_count_subq, Source.id == memory_count_subq.c.source_id)
         .where(Source.owner_id == str(user.id))
-        .order_by(Source.created_at.desc())
-        .limit(limit)
-        .offset(offset)
     )
     sources_with_counts = result.all()
+    
+    # Calculate relevance scores
+    scored_sources = []
+    query_lower = query.strip().lower()
+    
+    for source, count in sources_with_counts:
+        title = source.title or ""
+        summary = source.summary or ""
+        
+        # Skip sources with no title and no summary
+        if not title and not summary:
+            continue
+        
+        # Combine title and summary for semantic matching
+        combined_text = f"{title} {summary}"
+        
+        # Calculate semantic similarity
+        text_embedding = await embedding_service.get_embedding(combined_text)
+        
+        # Cosine similarity
+        dot = sum(x * y for x, y in zip(query_embedding, text_embedding))
+        norm_q = math.sqrt(sum(x * x for x in query_embedding))
+        norm_t = math.sqrt(sum(x * x for x in text_embedding))
+        semantic_score = dot / (norm_q * norm_t) if norm_q > 0 and norm_t > 0 else 0.0
+        
+        # Keyword matching boost (exact matches in title/summary)
+        keyword_score = 0.0
+        if query_lower in title.lower():
+            keyword_score += 0.3
+        if query_lower in summary.lower():
+            keyword_score += 0.2
+        
+        # Combined score (70% semantic, 30% keyword)
+        final_score = (semantic_score * 0.7) + (keyword_score * 0.3)
+        
+        # Only include sources with relevance > 0.3
+        if final_score > 0.3:
+            scored_sources.append((source, count, final_score))
+    
+    # Sort by score descending
+    scored_sources.sort(key=lambda x: x[2], reverse=True)
+    
+    # Apply limit
+    scored_sources = scored_sources[:limit]
     
     return [
         SourceResponse(
@@ -346,7 +426,7 @@ async def get_session_sources(
             created_at=str(s.created_at),
             updated_at=str(s.updated_at) if s.updated_at else None,
             memory_count=count or 0
-        ) for s, count in sources_with_counts
+        ) for s, count, score in scored_sources
     ]
 
 

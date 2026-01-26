@@ -38,7 +38,6 @@
     }
   ],
   "action": {
-    "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
@@ -52,14 +51,11 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["icons/unimemory-logo.png"],
-      "matches": [
-        "https://chat.openai.com/*",
-        "https://chatgpt.com/*",
-        "https://claude.ai/*",
-        "https://gemini.google.com/*",
-        "https://bard.google.com/*"
-      ]
+      "resources": [
+        "icons/unimemory-logo.png",
+        "Unimemory-Name-Logo-NoBG.png"
+      ],
+      "matches": ["<all_urls>"]
     }
   ]
 }

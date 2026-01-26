@@ -338,7 +338,13 @@
     memoryPopup.className = 'unimemory-popup';
     memoryPopup.innerHTML = `
       <div class="unimemory-popup-content">
-        <input type="text" class="unimemory-popup-search" placeholder="Search your memories..." autofocus />
+        <div class="unimemory-popup-search-container">
+          <svg class="unimemory-popup-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <path d="m21 21-4.35-4.35"></path>
+          </svg>
+          <input type="text" class="unimemory-popup-search" placeholder="Search your memories..." autofocus />
+        </div>
         <div class="unimemory-popup-list">
           <div class="unimemory-popup-loading">Loading...</div>
         </div>
@@ -378,7 +384,18 @@
     const listEl = memoryPopup?.querySelector('.unimemory-popup-list');
     if (!listEl) return;
     
-    listEl.innerHTML = '<div class="unimemory-popup-loading">Loading...</div>';
+    // Show skeleton loading
+    listEl.innerHTML = `
+      ${Array(3).fill(0).map(() => `
+        <div class="unimemory-popup-skeleton">
+          <div class="unimemory-popup-skeleton-title"></div>
+          <div class="unimemory-popup-skeleton-line"></div>
+          <div class="unimemory-popup-skeleton-line"></div>
+          <div class="unimemory-popup-skeleton-line"></div>
+          <div class="unimemory-popup-skeleton-meta"></div>
+        </div>
+      `).join('')}
+    `;
     
     try {
       const response = await chrome.runtime.sendMessage({
@@ -439,7 +456,7 @@
       </div>
     `;
     
-    card.addEventListener('click', () => handleSourceClick(source));
+    card.addEventListener('click', () => handleSourceClick(source, card));
     
     return card;
   }
@@ -450,16 +467,22 @@
     return div.innerHTML;
   }
   
-  async function handleSourceClick(sourceSummary) {
+  async function handleSourceClick(sourceSummary, cardElement) {
     if (!activeInputElement) return;
     
-    // If raw content is already present on this source, insert directly
-    if (sourceSummary.raw_content && Object.keys(sourceSummary.raw_content).length > 0) {
-      await insertDocumentContent(sourceSummary);
-      return;
-    }
+    // Close popup immediately for better UX
+    closeMemoryPopup();
+    
+    // Show loading toast
+    showToast('Adding memory to chat...', 'loading');
     
     try {
+      // If raw content is already present on this source, insert directly
+      if (sourceSummary.raw_content && Object.keys(sourceSummary.raw_content).length > 0) {
+        await insertDocumentContent(sourceSummary);
+        return;
+      }
+      
       const response = await chrome.runtime.sendMessage({
         type: 'GET_SOURCE',
         sourceId: sourceSummary.id
@@ -498,7 +521,11 @@
     
     // First add raw content
     if (source.raw_content?.messages) {
-      const rawText = source.raw_content.messages.map(m => m.content).join('\n\n');
+      const fullRawText = source.raw_content.messages.map(m => m.content).join('\n\n');
+      const MAX_INSERT_CHARS = 12000;
+      const rawText = fullRawText.length > MAX_INSERT_CHARS
+        ? fullRawText.slice(fullRawText.length - MAX_INSERT_CHARS)
+        : fullRawText;
       content = rawText;
     }
     
@@ -588,11 +615,239 @@
     }
   }
   
+  // ============ Extension Control Popup ============
+  
+  let extensionPopup = null;
+  let currentUser = null;
+  let currentSettings = null;
+  
+  async function showExtensionPopup() {
+    // Remove existing popup
+    closeExtensionPopup();
+    
+    // Create popup
+    extensionPopup = document.createElement('div');
+    extensionPopup.className = 'unimemory-extension-popup';
+    
+    // Show loading state initially
+    extensionPopup.innerHTML = `
+      <div class="unimemory-extension-popup-loading">
+        <div class="unimemory-extension-popup-spinner"></div>
+      </div>
+    `;
+    
+    document.body.appendChild(extensionPopup);
+    
+    // Check auth status
+    try {
+      const authResponse = await chrome.runtime.sendMessage({ type: 'GET_AUTH_STATUS' });
+      
+      if (authResponse.authenticated && authResponse.user) {
+        currentUser = authResponse.user;
+        await showAuthenticatedPopup();
+      } else {
+        showNotAuthenticatedPopup();
+      }
+    } catch (error) {
+      console.error('Failed to check auth:', error);
+      showNotAuthenticatedPopup();
+    }
+    
+    // Close on click outside
+    document.addEventListener('click', handleOutsideClick);
+  }
+  
+  function handleOutsideClick(e) {
+    if (extensionPopup && !extensionPopup.contains(e.target)) {
+      closeExtensionPopup();
+    }
+  }
+  
+  function closeExtensionPopup() {
+    if (extensionPopup) {
+      extensionPopup.remove();
+      extensionPopup = null;
+      document.removeEventListener('click', handleOutsideClick);
+    }
+  }
+  
+  function showNotAuthenticatedPopup() {
+    if (!extensionPopup) return;
+    
+    const logoUrl = chrome.runtime.getURL('Unimemory-Name-Logo-NoBG.png');
+    
+    extensionPopup.innerHTML = `
+      <div class="unimemory-extension-popup-header">
+        <img src="${logoUrl}" alt="UniMemory" class="unimemory-extension-popup-logo" />
+      </div>
+      <div class="unimemory-extension-popup-content">
+        <div class="unimemory-extension-popup-login">
+          <p class="unimemory-extension-popup-login-subtitle">Unified Memory for all your AI applications.</p>
+          <button class="unimemory-extension-popup-btn unimemory-extension-popup-btn-primary" id="ext-login-btn">
+            Log in to UniMemory
+          </button>
+        </div>
+      </div>
+    `;
+    
+    // Add event listener
+    const loginBtn = extensionPopup.querySelector('#ext-login-btn');
+    loginBtn.addEventListener('click', () => {
+      chrome.runtime.sendMessage({ type: 'LOGIN' });
+      closeExtensionPopup();
+    });
+  }
+  
+  async function showAuthenticatedPopup() {
+    if (!extensionPopup) return;
+    
+    // Get current page info
+    const pageInfo = {
+      title: document.title || 'Current Page',
+      url: window.location.href
+    };
+    
+    // Load settings
+    try {
+      const settingsResponse = await chrome.runtime.sendMessage({ type: 'GET_SETTINGS' });
+      currentSettings = settingsResponse.settings || { autoSave: false };
+    } catch (error) {
+      currentSettings = { autoSave: false };
+    }
+    
+    const userName = currentUser.display_name || currentUser.email?.split('@')[0] || 'User';
+    const userEmail = currentUser.email || '';
+    const avatarContent = currentUser.avatar_url 
+      ? `<img src="${currentUser.avatar_url}" alt="Avatar">`
+      : userName.charAt(0).toUpperCase();
+    const logoUrl = chrome.runtime.getURL('Unimemory-Name-Logo-NoBG.png');
+    
+    extensionPopup.innerHTML = `
+      <div class="unimemory-extension-popup-header">
+        <img src="${logoUrl}" alt="UniMemory" class="unimemory-extension-popup-logo" />
+      </div>
+      <div class="unimemory-extension-popup-tabs">
+        <button class="unimemory-extension-popup-tab active" data-tab="save">Save</button>
+        <button class="unimemory-extension-popup-tab" data-tab="settings">Settings</button>
+      </div>
+      <div class="unimemory-extension-popup-content">
+        <!-- Save Tab -->
+        <div id="ext-tab-save" class="ext-tab-content">
+          <div class="unimemory-extension-popup-page-info">
+            <div class="unimemory-extension-popup-page-title">${escapeHtml(pageInfo.title)}</div>
+            <div class="unimemory-extension-popup-page-url">${escapeHtml(pageInfo.url)}</div>
+          </div>
+          <button class="unimemory-extension-popup-btn unimemory-extension-popup-btn-primary" id="ext-save-btn">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: inline-block; vertical-align: middle; margin-right: 6px;">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>
+            Save this Chat
+          </button>
+        </div>
+        
+        <!-- Settings Tab -->
+        <div id="ext-tab-settings" class="ext-tab-content unimemory-extension-popup-hidden">
+          <div class="unimemory-extension-popup-user-info">
+            <div class="unimemory-extension-popup-avatar">${avatarContent}</div>
+            <div class="unimemory-extension-popup-user-details">
+              <span class="unimemory-extension-popup-user-name">${escapeHtml(userName)}</span>
+              <span class="unimemory-extension-popup-user-email">${escapeHtml(userEmail)}</span>
+            </div>
+          </div>
+          
+          <div class="unimemory-extension-popup-setting">
+            <div class="unimemory-extension-popup-setting-info">
+              <span class="unimemory-extension-popup-setting-label">Save long-term memories</span>
+              <span class="unimemory-extension-popup-setting-desc">Auto-save memories from your AI conversations</span>
+            </div>
+            <label class="unimemory-extension-popup-toggle">
+              <input type="checkbox" id="ext-auto-save-toggle" ${currentSettings.autoSave ? 'checked' : ''}>
+              <span class="unimemory-extension-popup-toggle-slider"></span>
+            </label>
+          </div>
+          
+          <div class="unimemory-extension-popup-buttons">
+            <a href="https://unimemory-app.vercel.app" target="_blank" class="unimemory-extension-popup-btn unimemory-extension-popup-btn-secondary">
+              Open Dashboard
+            </a>
+            <button class="unimemory-extension-popup-btn unimemory-extension-popup-btn-logout" id="ext-logout-btn">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                <polyline points="16 17 21 12 16 7"/>
+                <line x1="21" y1="12" x2="9" y2="12"/>
+              </svg>
+              Log out
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    // Add event listeners
+    setupExtensionPopupListeners();
+  }
+  
+  function setupExtensionPopupListeners() {
+    // Tab switching
+    const tabs = extensionPopup.querySelectorAll('.unimemory-extension-popup-tab');
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        const targetTab = tab.getAttribute('data-tab');
+        
+        // Update active tab
+        tabs.forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        
+        // Update visible content
+        const saveTab = extensionPopup.querySelector('#ext-tab-save');
+        const settingsTab = extensionPopup.querySelector('#ext-tab-settings');
+        
+        if (targetTab === 'save') {
+          saveTab.classList.remove('unimemory-extension-popup-hidden');
+          settingsTab.classList.add('unimemory-extension-popup-hidden');
+        } else {
+          saveTab.classList.add('unimemory-extension-popup-hidden');
+          settingsTab.classList.remove('unimemory-extension-popup-hidden');
+        }
+      });
+    });
+    
+    // Save button
+    const saveBtn = extensionPopup.querySelector('#ext-save-btn');
+    saveBtn.addEventListener('click', () => {
+      closeExtensionPopup();
+      saveCurrentPage();
+    });
+    
+    // Auto-save toggle
+    const autoSaveToggle = extensionPopup.querySelector('#ext-auto-save-toggle');
+    autoSaveToggle.addEventListener('change', async () => {
+      try {
+        await chrome.runtime.sendMessage({
+          type: 'UPDATE_SETTINGS',
+          settings: { autoSave: autoSaveToggle.checked }
+        });
+      } catch (error) {
+        console.error('Failed to save settings:', error);
+      }
+    });
+    
+    // Logout button
+    const logoutBtn = extensionPopup.querySelector('#ext-logout-btn');
+    logoutBtn.addEventListener('click', async () => {
+      await chrome.runtime.sendMessage({ type: 'LOGOUT' });
+      showNotAuthenticatedPopup();
+    });
+  }
+  
   // ============ Message Listener ============
   
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'SAVE_CURRENT_PAGE') {
       saveCurrentPage();
+      sendResponse({ success: true });
+    } else if (message.type === 'SHOW_EXTENSION_POPUP') {
+      showExtensionPopup();
       sendResponse({ success: true });
     }
     return true;

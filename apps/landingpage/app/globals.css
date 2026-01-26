@@ -1,0 +1,185 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&family=Outfit:wght@400;500;600;700&family=Unbounded:wght@300;400;500;600;700;800;900&display=swap');
+
+:root {
+  /* Dark theme by default */
+  --foreground: #ffffff;
+  --background: #000000;
+  --muted: #a3a3a3;
+  --muted-foreground: #737373;
+  --border: #333333;
+  --accent: #ededed;
+  --card: #111111;
+  --card-hover: #1f1f1f;
+  --primary: #ffffff;
+  --primary-foreground: #000000;
+  --success: #22c55e;
+  --danger: #ef4444;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: 'Geist', system-ui, -apple-system, sans-serif;
+  overscroll-behavior: none;
+}
+
+/* ... keep existing styles but adjust for dark theme where necessary ... */
+
+.code,
+.font-mono {
+  font-family: 'Geist Mono', 'JetBrains Mono', monospace;
+}
+
+.font-geometric {
+  font-family: 'Unbounded', sans-serif;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #333333;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555555;
+}
+
+/* Animations */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 0% center;
+  }
+
+  to {
+    background-position: -200% center;
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 5s linear infinite;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out forwards;
+}
+
+.animate-slide-up {
+  animation: slide-up 0.4s ease-out forwards;
+}
+
+.animate-scale-in {
+  animation: scale-in 0.2s ease-out forwards;
+}
+
+/* Staggered animations */
+.stagger-1 {
+  animation-delay: 0.05s;
+}
+
+.stagger-2 {
+  animation-delay: 0.1s;
+}
+
+.stagger-3 {
+  animation-delay: 0.15s;
+}
+
+.stagger-4 {
+  animation-delay: 0.2s;
+}
+
+.stagger-5 {
+  animation-delay: 0.25s;
+}
+
+/* Card hover effects */
+.card-hover {
+  transition: all 0.2s ease;
+}
+
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(255, 255, 255, 0.05);
+}
+
+/* Button styles */
+.btn-primary {
+  @apply px-4 py-2 bg-white text-black text-sm font-medium rounded-lg hover:bg-neutral-200 active:scale-[0.98] transition-all duration-150;
+}
+
+.btn-secondary {
+  @apply px-4 py-2 bg-black text-white text-sm font-medium rounded-lg border border-neutral-800 hover:bg-neutral-900 active:scale-[0.98] transition-all duration-150;
+}
+
+/* Input styles */
+.input {
+  @apply w-full px-3 py-2 bg-neutral-900 border border-neutral-800 rounded-lg text-white placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-white/10 focus:border-neutral-600 transition-all duration-150;
+}
+
+/* Liquid Glass Header/Footer */
+.glass-nav {
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.glass-nav-footer {
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
