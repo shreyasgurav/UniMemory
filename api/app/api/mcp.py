@@ -1034,13 +1034,15 @@ async def execute_tool(
                     session.add(memory)
                     simhash_to_memory[simhash] = memory
                     
-                    # Link to source
+                    # Link to source (same pattern as ingest.py)
                     if source_uuid:
                         link = MemorySource(
+                            id=str(uuid_module.uuid4()),
                             memory_id=memory_id,
                             source_id=source_uuid,
                         )
                         session.add(link)
+                        await session.commit()  # Commit each link individually like ingest.py
                     
                     stored_count += 1
                 
