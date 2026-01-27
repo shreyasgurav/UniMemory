@@ -902,6 +902,10 @@ async def execute_tool(
         source_type = args.get("type")
         metadata = args.get("metadata", {})
         
+        # Add client_type to metadata for frontend display
+        if client_type:
+            metadata["client_type"] = client_type
+        
         # Determine type if not provided
         if not source_type:
             if isinstance(raw_content, dict) and "messages" in raw_content:

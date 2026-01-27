@@ -118,6 +118,21 @@ export default function MemoriesPage() {
   const getPlatformName = (source: Source) => {
     const metadata = (source as any).source_metadata || {};
     
+    // For MCP sources, show the client type nicely formatted
+    if (source.source_app === "mcp") {
+      const clientType = metadata.client_type || metadata.mcp_client || "";
+      const mcpClientNames: Record<string, string> = {
+        cursor: "Cursor",
+        windsurf: "Windsurf",
+        claude: "Claude Desktop",
+        "claude-code": "Claude Code",
+        vscode: "VS Code",
+        cline: "Cline",
+        antigravity: "Antigravity",
+      };
+      return mcpClientNames[clientType.toLowerCase()] || "MCP";
+    }
+    
     // Use platform from metadata if available
     if (metadata.platform) return metadata.platform;
     
@@ -258,7 +273,7 @@ export default function MemoriesPage() {
                                   <span>{source.memory_count} {source.memory_count === 1 ? 'memory' : 'memories'}</span>
                                 </>
                               )}
-                              {sourceUrl && (
+                              {sourceUrl ? (
                                 <>
                                   <span>•</span>
                                   <a
@@ -277,7 +292,12 @@ export default function MemoriesPage() {
                                     })()}
                                   </a>
                                 </>
-                              )}
+                              ) : source.source_app === "mcp" ? (
+                                <>
+                                  <span>•</span>
+                                  <span className="text-neutral-500">{getPlatformName(source)}</span>
+                                </>
+                              ) : null}
                             </div>
                           </button>
                         </div>
@@ -390,9 +410,17 @@ export default function MemoriesPage() {
                   {/* Left: Raw Content */}
                   <div className="w-1/2 overflow-y-auto bg-white">
                     <div className="p-6">
-                      {selectedSource.type === "chat" && selectedSource.raw_content.messages ? (
+                      {selectedSource.type === "chat" && selectedSource.raw_content?.messages ? (
                         <div className="text-neutral-700 leading-relaxed whitespace-pre-wrap text-sm">
                           {selectedSource.raw_content.messages.map((msg: any) => msg.content).join('\n\n')}
+                        </div>
+                      ) : typeof selectedSource.raw_content === "string" ? (
+                        <div className="text-neutral-700 leading-relaxed whitespace-pre-wrap text-sm">
+                          {selectedSource.raw_content}
+                        </div>
+                      ) : selectedSource.raw_content?.content ? (
+                        <div className="text-neutral-700 leading-relaxed whitespace-pre-wrap text-sm">
+                          {selectedSource.raw_content.content}
                         </div>
                       ) : (
                         <pre className="whitespace-pre-wrap font-mono text-xs text-neutral-600">

@@ -70,17 +70,20 @@ export default function ActivityPage() {
       return "UniMemory";
     }
     
-    // MCP activity
-    if (event.source === "mcp" && event.agent) {
+    // MCP activity - check multiple fields for client type
+    if (event.source === "mcp" || event.source_app === "mcp") {
+      const clientType = event.agent || (event.source_metadata as any)?.client_type || "";
       const agentMap: Record<string, string> = {
         cursor: "Cursor",
         claude: "Claude Desktop",
+        "claude-code": "Claude Code",
         vscode: "VS Code",
         windsurf: "Windsurf",
         cline: "Cline",
+        antigravity: "Antigravity",
         gemini: "Gemini CLI"
       };
-      return agentMap[event.agent] || event.agent;
+      return agentMap[clientType.toLowerCase()] || clientType || "MCP";
     }
     
     // Use platform field from backend if available
@@ -262,7 +265,19 @@ export default function ActivityPage() {
                 const truncatedPreview = rawPreview.length > 100 ? rawPreview.substring(0, 100) + "..." : rawPreview;
                 
                 // Get action label and color based on event type
-                const getActionInfo = (type: string) => {
+                const getActionInfo = (type: string, toolName?: string) => {
+                  // Handle MCP tool-specific actions
+                  if (type === "mcp_call" && toolName) {
+                    const toolActions: Record<string, { label: string; color: string; bgColor: string }> = {
+                      add_source: { label: "Saved Source", color: "text-green-700", bgColor: "bg-green-50" },
+                      add_memory: { label: "Saved Memory", color: "text-green-700", bgColor: "bg-green-50" },
+                      search_memory: { label: "Searched", color: "text-blue-700", bgColor: "bg-blue-50" },
+                      get_source: { label: "Retrieved", color: "text-purple-700", bgColor: "bg-purple-50" },
+                      get_memory_context: { label: "Viewed Context", color: "text-purple-700", bgColor: "bg-purple-50" },
+                    };
+                    return toolActions[toolName] || { label: "MCP Call", color: "text-orange-700", bgColor: "bg-orange-50" };
+                  }
+                  
                   const actions: Record<string, { label: string; color: string; bgColor: string }> = {
                     source_created: { label: "Saved", color: "text-green-700", bgColor: "bg-green-50" },
                     memory_created: { label: "Added Memory", color: "text-green-700", bgColor: "bg-green-50" },
@@ -277,7 +292,7 @@ export default function ActivityPage() {
                   return actions[type] || { label: type.replace(/_/g, " "), color: "text-neutral-700", bgColor: "bg-neutral-100" };
                 };
                 
-                const actionInfo = getActionInfo(event.type);
+                const actionInfo = getActionInfo(event.type, event.tool_name);
                 
                 return (
                   <div key={event.id} className="flex gap-4 relative">
