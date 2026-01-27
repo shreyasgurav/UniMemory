@@ -935,7 +935,7 @@ async def execute_tool(
             # Get or create end_user
             end_user = await get_or_create_end_user(
                 session=session,
-                owner_id=owner_id,
+                owner_id=str(user.id),  # Convert UUID to string
                 external_user_id="mcp_user"
             )
             
