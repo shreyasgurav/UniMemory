@@ -172,6 +172,24 @@ export default function ConnectorsPage() {
 
   const getConfigJson = () => {
     if (!mcpToken?.token) return "";
+    
+    // Antigravity uses different format (serverUrl instead of url)
+    if (selectedClient === "antigravity") {
+      return JSON.stringify(
+        {
+          mcpServers: {
+            unimemory: {
+              serverUrl: mcpToken.mcp_url || MCP_URL,
+              headers: { Authorization: `Bearer ${mcpToken.token}` },
+            },
+          },
+        },
+        null,
+        2
+      );
+    }
+    
+    // Standard format for other clients
     return JSON.stringify(
       {
         mcpServers: {
