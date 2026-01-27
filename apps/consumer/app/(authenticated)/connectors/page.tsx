@@ -40,27 +40,27 @@ const MCP_CLIENTS = [
     hasOneClick: false 
   },
   { 
-    id: "claude", 
+    id: "antigravity", 
+    name: "Antigravity", 
+    logo: "https://assets-global.website-files.com/6734e1e4e6e1e5e5e6e1e5e5/6734e1e4e6e1e5e5e6e1e5e5_antigravity-logo.svg",
+    hasOneClick: false 
+  },
+  { 
+    id: "claude-code", 
+    name: "Claude Code", 
+    logo: "https://claude.ai/favicon.ico",
+    hasOneClick: false 
+  },
+  { 
+    id: "claude-desktop", 
     name: "Claude Desktop", 
     logo: "https://claude.ai/favicon.ico",
     hasOneClick: false 
   },
   { 
-    id: "vscode", 
-    name: "VS Code", 
-    logo: "https://code.visualstudio.com/favicon.ico",
-    hasOneClick: false 
-  },
-  { 
     id: "cline", 
     name: "Cline", 
-    logo: "https://raw.githubusercontent.com/cline/cline/main/assets/icon.png",
-    hasOneClick: false 
-  },
-  { 
-    id: "antigravity", 
-    name: "Antigravity", 
-    logo: "https://antigravity.dev/favicon.ico",
+    logo: "https://github.com/cline/cline/raw/main/assets/icon.png",
     hasOneClick: false 
   },
 ];
@@ -212,11 +212,11 @@ export default function ConnectorsPage() {
   const getConfigPath = () => {
     const paths: Record<string, string> = {
       cursor: "~/.cursor/mcp.json",
-      claude: "~/Library/Application Support/Claude/claude_desktop_config.json",
       windsurf: "MCP Marketplace or ~/.codeium/windsurf/mcp_config.json",
-      vscode: "Settings → MCP Configuration",
-      cline: "Cline Settings → MCP Servers",
       antigravity: "Antigravity Sidebar → MCP Configuration",
+      "claude-code": "Claude Code Settings → MCP Configuration",
+      "claude-desktop": "~/Library/Application Support/Claude/claude_desktop_config.json",
+      cline: "Cline Settings → MCP Servers",
     };
     return paths[selectedClient] || "";
   };
