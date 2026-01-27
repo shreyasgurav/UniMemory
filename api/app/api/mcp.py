@@ -1005,9 +1005,9 @@ async def execute_tool(
                         user_id="mcp_user",
                         end_user_id=str(end_user.id),
                         content=mem_content,
-                        category=mem_item.category,
+                        category=mem_item.memory_type,  # Use memory_type instead of category
                         embedding=embedding,
-                        salience=mem_item.salience or 0.5,
+                        salience=mem_item.confidence or 0.5,  # Use confidence instead of salience
                         simhash=simhash,
                         source_app="mcp",
                         api_key_id=None,
