@@ -27,11 +27,36 @@ interface MCPToken {
 const MCP_URL = "https://unimemory.up.railway.app/api/v1/mcp";
 
 const MCP_CLIENTS = [
-  { id: "cursor", name: "Cursor", icon: "⚡", hasOneClick: true },
-  { id: "windsurf", name: "Windsurf", icon: "🏄", hasOneClick: false },
-  { id: "claude", name: "Claude Desktop", icon: "🤖", hasOneClick: false },
-  { id: "vscode", name: "VS Code", icon: "💻", hasOneClick: false },
-  { id: "cline", name: "Cline", icon: "🔷", hasOneClick: false },
+  { 
+    id: "cursor", 
+    name: "Cursor", 
+    logo: "https://cursor.sh/favicon.ico",
+    hasOneClick: true 
+  },
+  { 
+    id: "windsurf", 
+    name: "Windsurf", 
+    logo: "https://www.codeium.com/favicon.ico",
+    hasOneClick: false 
+  },
+  { 
+    id: "claude", 
+    name: "Claude Desktop", 
+    logo: "https://claude.ai/favicon.ico",
+    hasOneClick: false 
+  },
+  { 
+    id: "vscode", 
+    name: "VS Code", 
+    logo: "https://code.visualstudio.com/favicon.ico",
+    hasOneClick: false 
+  },
+  { 
+    id: "cline", 
+    name: "Cline", 
+    logo: "https://raw.githubusercontent.com/cline/cline/main/assets/icon.png",
+    hasOneClick: false 
+  },
 ];
 
 export default function ConnectorsPage() {
@@ -175,7 +200,7 @@ export default function ConnectorsPage() {
 
         <div className="space-y-8">
           {/* Extensions Section */}
-          <div className="max-w-2xl">
+          <div>
             <h2 className="text-sm font-medium text-neutral-500 mb-3">Extensions</h2>
             <a
               href="https://chromewebstore.google.com/detail/unimemory/your-extension-id"
@@ -209,166 +234,109 @@ export default function ConnectorsPage() {
           </div>
 
           {/* MCP Section */}
-          <div className="max-w-2xl">
+          <div>
             <h2 className="text-sm font-medium text-neutral-500 mb-3">MCP</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-lg">
+            
+            {/* Client Selector */}
+            <div className="flex flex-wrap gap-2 mb-4">
               {MCP_CLIENTS.map((client) => (
                 <button
                   key={client.id}
-                  onClick={() => openMcpModal(client.id)}
-                  className="group flex items-center justify-between bg-white rounded-lg p-4 hover:shadow-md transition-all text-left"
+                  onClick={() => {
+                    setSelectedClient(client.id);
+                    setConfigMode(client.id === "cursor" ? "oneclick" : "manual");
+                    if (!mcpToken) fetchOrCreateToken(client.id);
+                  }}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+                    selectedClient === client.id
+                      ? "bg-neutral-900 text-white"
+                      : "bg-white text-neutral-700 hover:bg-neutral-50"
+                  }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl">{client.icon}</span>
-                    <div>
-                      <h3 className="font-medium text-neutral-900">{client.name}</h3>
-                      <p className="text-xs text-neutral-500">Connect via MCP</p>
-                    </div>
-                  </div>
+                  <img 
+                    src={client.logo} 
+                    alt={client.name}
+                    className="w-4 h-4"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
+                  {client.name}
                 </button>
               ))}
+            </div>
+
+            {/* Installation Section */}
+            <div className="max-w-2xl">
+              {loading ? (
+                <div className="space-y-3 bg-white rounded-lg p-6">
+                  <div className="h-4 bg-neutral-100 rounded animate-pulse w-3/4" />
+                  <div className="h-4 bg-neutral-100 rounded animate-pulse w-1/2" />
+                  <div className="h-10 bg-neutral-100 rounded animate-pulse w-full mt-4" />
+                </div>
+              ) : (
+                <>
+                  {/* One-Click Install for Cursor */}
+                  {selectedClientInfo?.hasOneClick && configMode === "oneclick" ? (
+                    <div className="text-center bg-white rounded-lg p-6">
+                      <p className="text-sm text-neutral-600 mb-4">
+                        Click to automatically install UniMemory in {selectedClientInfo.name}
+                      </p>
+                      <button
+                        onClick={handleOneClickInstall}
+                        disabled={installing || !mcpToken}
+                        className="px-6 py-3 bg-neutral-900 text-white rounded-lg font-medium hover:bg-neutral-800 disabled:opacity-50 transition-colors inline-flex items-center gap-2"
+                      >
+                        <img 
+                          src={selectedClientInfo.logo} 
+                          alt={selectedClientInfo.name}
+                          className="w-4 h-4"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                          }}
+                        />
+                        {installing ? "Opening..." : `Add to ${selectedClientInfo.name}`}
+                      </button>
+                      <button
+                        onClick={() => setConfigMode("manual")}
+                        className="block mx-auto mt-3 text-xs text-neutral-500 hover:text-neutral-700"
+                      >
+                        Or configure manually
+                      </button>
+                    </div>
+                  ) : (
+                    /* Manual Config */
+                    <div>
+                      <p className="text-sm text-neutral-600 mb-3">
+                        Add to <code className="bg-neutral-100 px-2 py-1 rounded text-xs">{getConfigPath()}</code>
+                      </p>
+                      <div className="relative">
+                        <pre className="text-xs text-green-400 overflow-x-auto bg-neutral-900 rounded-lg p-4 pr-12">
+                          {getConfigJson()}
+                        </pre>
+                        <button
+                          onClick={() => copyToClipboard(getConfigJson(), "config")}
+                          className="absolute top-3 right-3 p-2 bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors"
+                        >
+                          {copied === "config" ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3 text-neutral-400" />}
+                        </button>
+                      </div>
+                      {selectedClientInfo?.hasOneClick && (
+                        <button
+                          onClick={() => setConfigMode("oneclick")}
+                          className="block mx-auto mt-3 text-xs text-neutral-500 hover:text-neutral-700"
+                        >
+                          Use one-click install instead
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
         </div>
       </div>
-
-      {/* MCP Setup Modal */}
-      {mcpModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-neutral-900 rounded-2xl w-full max-w-xl text-white overflow-hidden">
-            {/* Header */}
-            <div className="flex items-center justify-between p-6 pb-4">
-              <div>
-                <h2 className="text-xl font-semibold">Connect UniMemory to Your AI</h2>
-                <p className="text-sm text-neutral-400 mt-1">
-                  Access your memories directly using MCP
-                </p>
-              </div>
-              <button
-                onClick={() => setMcpModalOpen(false)}
-                className="p-2 hover:bg-neutral-800 rounded-lg transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Step 1: Select Client */}
-            <div className="px-6 pb-4">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="w-6 h-6 bg-neutral-800 rounded-full flex items-center justify-center text-xs font-medium">1</span>
-                <span className="text-sm font-medium">Select Your AI Client</span>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {MCP_CLIENTS.map((client) => (
-                  <button
-                    key={client.id}
-                    onClick={() => {
-                      setSelectedClient(client.id);
-                      setConfigMode(client.id === "cursor" ? "oneclick" : "manual");
-                    }}
-                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
-                      selectedClient === client.id
-                        ? "bg-white text-neutral-900"
-                        : "bg-neutral-800 text-neutral-300 hover:bg-neutral-700"
-                    }`}
-                  >
-                    <span>{client.icon}</span>
-                    {client.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Step 2: Install */}
-            <div className="px-6 pb-6">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <span className="w-6 h-6 bg-neutral-800 rounded-full flex items-center justify-center text-xs font-medium">2</span>
-                  <span className="text-sm font-medium">Install UniMemory MCP</span>
-                </div>
-                {selectedClientInfo?.hasOneClick && (
-                  <div className="flex items-center gap-1 text-xs text-neutral-500">
-                    <span>Having trouble?</span>
-                    <button
-                      onClick={() => setConfigMode(configMode === "oneclick" ? "manual" : "oneclick")}
-                      className={`px-2 py-1 rounded ${configMode === "oneclick" ? "bg-neutral-800" : "bg-white text-neutral-900"}`}
-                    >
-                      One Click Install
-                    </button>
-                    <button
-                      onClick={() => setConfigMode(configMode === "manual" ? "oneclick" : "manual")}
-                      className={`px-2 py-1 rounded ${configMode === "manual" ? "bg-neutral-800" : "text-neutral-400"}`}
-                    >
-                      Manual Config
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {loading ? (
-                <div className="bg-neutral-800/50 rounded-xl p-8 border border-neutral-700">
-                  <div className="space-y-3">
-                    <div className="h-4 bg-neutral-700 rounded animate-pulse w-3/4" />
-                    <div className="h-4 bg-neutral-700 rounded animate-pulse w-1/2" />
-                    <div className="h-10 bg-neutral-700 rounded animate-pulse w-full mt-4" />
-                  </div>
-                </div>
-              ) : configMode === "oneclick" && selectedClientInfo?.hasOneClick ? (
-                <div className="bg-neutral-800/50 rounded-xl p-6 border border-neutral-700 text-center">
-                  <p className="text-sm text-neutral-400 mb-4">
-                    Click the button below to automatically install and configure UniMemory in {selectedClientInfo.name}
-                  </p>
-                  <button
-                    onClick={handleOneClickInstall}
-                    disabled={installing || !mcpToken}
-                    className="px-6 py-3 bg-white text-neutral-900 rounded-lg font-medium hover:bg-neutral-100 disabled:opacity-50 transition-colors flex items-center gap-2 mx-auto"
-                  >
-                    <span>{selectedClientInfo.icon}</span>
-                    {installing ? "Opening..." : `Add to ${selectedClientInfo.name}`}
-                  </button>
-                </div>
-              ) : (
-                <div className="bg-neutral-800/50 rounded-xl p-4 border border-neutral-700">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs text-neutral-500">
-                      Add to <code className="bg-neutral-700 px-1.5 py-0.5 rounded">{getConfigPath()}</code>
-                    </span>
-                    <button
-                      onClick={() => copyToClipboard(getConfigJson(), "config")}
-                      className="text-xs text-neutral-400 hover:text-white flex items-center gap-1"
-                    >
-                      {copied === "config" ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                      {copied === "config" ? "Copied!" : "Copy"}
-                    </button>
-                  </div>
-                  <pre className="text-xs text-green-400 overflow-x-auto bg-neutral-900 rounded-lg p-3 max-h-40">
-                    {getConfigJson()}
-                  </pre>
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="px-6 py-4 border-t border-neutral-800 flex items-center justify-between">
-              <a
-                href="https://docs.unimemory.app/mcp"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm text-neutral-400 hover:text-white flex items-center gap-1"
-              >
-                <ExternalLink className="w-4 h-4" />
-                Learn More
-              </a>
-              <button
-                onClick={() => setMcpModalOpen(false)}
-                className="px-4 py-2 text-sm font-medium hover:bg-neutral-800 rounded-lg transition-colors"
-              >
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
