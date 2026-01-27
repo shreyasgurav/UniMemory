@@ -943,8 +943,8 @@ async def execute_tool(
             source_uuid = str(uuid_module.uuid4())
             source = Source(
                 id=source_uuid,
-                owner_id=user.id,  # Use UUID object
-                end_user_id=end_user.id,  # Use UUID object
+                owner_id=str(user.id),  # Convert to string (UUID(as_uuid=False))
+                end_user_id=end_user.id,  # Already a string from get_or_create_end_user
                 type=source_type,
                 source_app="mcp",
                 title=generated_title,
@@ -1021,8 +1021,8 @@ async def execute_tool(
                         extra_metadata={},
                         source_app="mcp",
                         user_id="mcp_user",
-                        end_user_id=end_user.id,  # Keep as UUID object, not string
-                        owner_id=user.id,  # Keep as UUID object, not string
+                        end_user_id=end_user.id,  # Already a string from get_or_create_end_user
+                        owner_id=str(user.id),  # Convert to string (UUID(as_uuid=False))
                         api_key_id=None,
                         embedding=embedding,
                         embedding_model=settings.EMBEDDING_MODEL,
@@ -1110,7 +1110,7 @@ async def execute_tool(
                 source_app="mcp",
                 user_id="mcp_user",
                 end_user_id=None,
-                owner_id=user.id,  # Use UUID object
+                owner_id=str(user.id),  # Convert to string (UUID(as_uuid=False))
                 api_key_id=None,
                 embedding=embedding,
                 embedding_model=settings.EMBEDDING_MODEL,
