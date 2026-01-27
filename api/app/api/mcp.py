@@ -963,18 +963,70 @@ async def execute_tool(
             memories_count = 0
             
             if extraction.memories:
-                stored, skipped, memory_ids = await store_extracted_memories(
-                    session=session,
-                    extracted=extraction.memories,
-                    owner_id=owner_id,
-                    user_id="mcp_user",
-                    end_user_id=str(end_user.id),
-                    app_id="mcp",
-                    api_key_id=None,
-                    source_uuid=source_uuid,
-                    background_tasks=None
-                )
-                memories_count = stored
+                # Store memories without background tasks (MCP context doesn't have BackgroundTasks)
+                embedding_service = get_embedding_service()
+                from app.api.ingest import compute_simhash, hamming_distance
+                
+                # Fetch existing memories for deduplication
+                stmt = select(Memory).where(
+                    Memory.simhash.isnot(None),
+                    Memory.is_active == True,
+                    Memory.owner_id == owner_id,
+                    Memory.user_id == "mcp_user"
+                ).order_by(Memory.salience.desc()).limit(500)
+                
+                result = await session.execute(stmt)
+                existing_memories = result.scalars().all()
+                simhash_to_memory = {em.simhash: em for em in existing_memories if em.simhash}
+                
+                stored_count = 0
+                for mem_item in extraction.memories:
+                    mem_content = mem_item.content.strip()
+                    if not mem_content:
+                        continue
+                    
+                    simhash = compute_simhash(mem_content)
+                    
+                    # Check for duplicates
+                    is_duplicate = False
+                    for existing_hash in simhash_to_memory.keys():
+                        if hamming_distance(simhash, existing_hash) <= 3:
+                            is_duplicate = True
+                            break
+                    
+                    if is_duplicate:
+                        continue
+                    
+                    # Create new memory
+                    embedding, _ = await embedding_service.embed(mem_content)
+                    memory = Memory(
+                        id=uuid_module.uuid4(),
+                        owner_id=owner_id,
+                        user_id="mcp_user",
+                        end_user_id=str(end_user.id),
+                        content=mem_content,
+                        category=mem_item.category,
+                        embedding=embedding,
+                        salience=mem_item.salience or 0.5,
+                        simhash=simhash,
+                        source_app="mcp",
+                        api_key_id=None,
+                        is_active=True,
+                    )
+                    session.add(memory)
+                    await session.flush()
+                    
+                    # Link to source
+                    if source_uuid:
+                        link = MemorySource(
+                            memory_id=memory.id,
+                            source_id=source_uuid,
+                        )
+                        session.add(link)
+                    
+                    stored_count += 1
+                
+                memories_count = stored_count
             
             await session.commit()
             
