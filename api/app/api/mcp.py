@@ -967,7 +967,7 @@ async def execute_tool(
                 embedding_service = get_embedding_service()
                 from app.core.simhash import compute_simhash, hamming_distance
                 from app.core.sector import classify_sector, get_sector_decay_lambda, calculate_initial_salience
-                from app.core.config import settings
+                from app.config import settings
                 
                 # Fetch existing memories for deduplication
                 stmt = select(Memory).where(
@@ -1074,7 +1074,7 @@ async def execute_tool(
         from app.core.embeddings import get_embedding_service
         from app.core.simhash import compute_simhash
         from app.core.sector import classify_sector, get_sector_decay_lambda, calculate_initial_salience
-        from app.core.config import settings
+        from app.config import settings
         import uuid as uuid_mod
         
         content = args.get("content", "")
