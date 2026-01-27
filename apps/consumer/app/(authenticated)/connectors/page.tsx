@@ -42,7 +42,7 @@ const MCP_CLIENTS = [
   { 
     id: "antigravity", 
     name: "Antigravity", 
-    logo: "https://assets-global.website-files.com/6734e1e4e6e1e5e5e6e1e5e5/6734e1e4e6e1e5e5e6e1e5e5_antigravity-logo.svg",
+    logo: "https://hkaxeegiulfeyddprlod.supabase.co/storage/v1/object/public/brandicon/12./google_antigravity-logo_brandlogos.net_qu4jc.png",
     hasOneClick: false 
   },
   { 
@@ -60,7 +60,7 @@ const MCP_CLIENTS = [
   { 
     id: "cline", 
     name: "Cline", 
-    logo: "https://github.com/cline/cline/raw/main/assets/icon.png",
+    logo: "https://raw.githubusercontent.com/lobehub/lobe-icons/refs/heads/master/packages/static-png/light/cline.png",
     hasOneClick: false 
   },
 ];

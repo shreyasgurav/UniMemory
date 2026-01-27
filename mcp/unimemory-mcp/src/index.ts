@@ -34,6 +34,16 @@ import {
   executeGetSource,
   GetSourceInput,
 } from './tools/getSource.js';
+import {
+  addSourceTool,
+  executeAddSource,
+  AddSourceInput,
+} from './tools/addSource.js';
+import {
+  addMemoryTool,
+  executeAddMemory,
+  AddMemoryInput,
+} from './tools/addMemory.js';
 
 // Configuration from environment
 const API_URL = process.env.UNIMEMORY_API_URL || 'https://unimemory.up.railway.app';
@@ -50,7 +60,7 @@ function createMCPServer(client: UniMemoryClient): Server {
   const server = new Server(
     {
       name: 'unimemory',
-      version: '0.2.0',
+      version: '0.3.0',
     },
     {
       capabilities: {
@@ -62,7 +72,13 @@ function createMCPServer(client: UniMemoryClient): Server {
   // Register tool list handler
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     return {
-      tools: [searchMemoryTool, getMemoryContextTool, getSourceTool],
+      tools: [
+        searchMemoryTool,
+        getMemoryContextTool,
+        getSourceTool,
+        addSourceTool,
+        addMemoryTool,
+      ],
     };
   });
 
@@ -101,6 +117,32 @@ function createMCPServer(client: UniMemoryClient): Server {
         case 'get_source': {
           const input = args as unknown as GetSourceInput;
           const result = await executeGetSource(client, input);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(result, null, 2),
+              },
+            ],
+          };
+        }
+
+        case 'add_source': {
+          const input = args as unknown as AddSourceInput;
+          const result = await executeAddSource(client, input);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(result, null, 2),
+              },
+            ],
+          };
+        }
+
+        case 'add_memory': {
+          const input = args as unknown as AddMemoryInput;
+          const result = await executeAddMemory(client, input);
           return {
             content: [
               {
@@ -156,7 +198,7 @@ async function startSSEServer() {
 
   // Health check endpoint
   app.get('/health', (req: Request, res: Response) => {
-    res.json({ status: 'ok', version: '0.2.0', transport: 'sse' });
+    res.json({ status: 'ok', version: '0.3.0', transport: 'sse' });
   });
 
   // SSE endpoint for MCP connections

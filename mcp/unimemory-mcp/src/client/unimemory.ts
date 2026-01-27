@@ -192,6 +192,31 @@ export class UniMemoryClient {
   }
 
   /**
+   * Ingest a source (chat, document, or text)
+   * This triggers full ingestion pipeline: title, summary, memory extraction
+   */
+  async ingestSource(
+    endpoint: string,
+    payload: {
+      raw_content: string | Record<string, any>;
+      metadata?: Record<string, any>;
+    }
+  ): Promise<{
+    source_id: string;
+    title?: string;
+    summary?: string;
+    memories_count?: number;
+  }> {
+    const response = await this.request<{
+      source_id: string;
+      title?: string;
+      summary?: string;
+      memories_count?: number;
+    }>('POST', endpoint, payload);
+    return response;
+  }
+
+  /**
    * Health check
    */
   async healthCheck(): Promise<boolean> {
