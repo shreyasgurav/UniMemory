@@ -102,6 +102,11 @@ export default function ConnectorsPage() {
     return () => window.removeEventListener('focus', handleFocus);
   }, []);
 
+  // Fetch token for default selected client on mount
+  useEffect(() => {
+    fetchOrCreateToken(selectedClient);
+  }, []);
+
   const openMcpModal = async (clientId: string) => {
     setSelectedClient(clientId);
     setMcpModalOpen(true);
