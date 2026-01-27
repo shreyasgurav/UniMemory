@@ -246,6 +246,31 @@ MCP_TOOLS = [
             },
             "required": ["source_id"]
         }
+    },
+    {
+        "name": "add_source",
+        "description": "Save a full document, chat, or conversation as a source. The system will automatically generate a title, summary, and extract nuclear memories from the content. Use this for saving entire conversations, documents, or any substantial content.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "raw_content": {"type": ["string", "object"], "description": "The full content to save. Can be a string (for text/documents) or an object with messages array (for chats)."},
+                "type": {"type": "string", "enum": ["chat", "document", "text"], "description": "Type of source. Defaults to 'chat' if raw_content has messages, otherwise 'text'."},
+                "metadata": {"type": "object", "description": "Optional metadata like tags, context, or custom fields."}
+            },
+            "required": ["raw_content"]
+        }
+    },
+    {
+        "name": "add_memory",
+        "description": "Save a single atomic fact, preference, or piece of information as a memory. Use this for explicit facts like 'User prefers FastAPI', 'Birthday is Aug 12', or 'Uses dark mode'. For full conversations or documents, use add_source instead.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "content": {"type": "string", "description": "The fact or information to remember. Should be a single, clear statement."},
+                "category": {"type": "string", "description": "Optional category like 'preference', 'fact', 'decision', or 'personal'."}
+            },
+            "required": ["content"]
+        }
     }
 ]
 
@@ -865,6 +890,164 @@ async def execute_tool(
             "raw_content": source.raw_content if isinstance(source.raw_content, dict) else None,
             "found": True,
         }
+    
+    elif tool_name == "add_source":
+        from app.core.embeddings import get_embedding_service
+        from app.core.summarizer import SourceSummarizer
+        from app.core.extractor import get_extractor
+        from app.api.ingest import store_extracted_memories, get_or_create_end_user
+        import uuid as uuid_module
+        
+        raw_content = args.get("raw_content", "")
+        source_type = args.get("type")
+        metadata = args.get("metadata", {})
+        
+        # Determine type if not provided
+        if not source_type:
+            if isinstance(raw_content, dict) and "messages" in raw_content:
+                source_type = "chat"
+            else:
+                source_type = "text"
+        
+        try:
+            summarizer = SourceSummarizer()
+            extractor = get_extractor()
+            owner_id = str(user.id)
+            
+            # Convert to conversation text for processing
+            if source_type == "chat" and isinstance(raw_content, dict) and "messages" in raw_content:
+                messages = raw_content.get("messages", [])
+                conversation = "\n".join([
+                    f"{msg.get('role', 'user')}: {msg.get('content', '')}"
+                    for msg in messages
+                ])
+                raw_content_store = {"messages": messages}
+            else:
+                conversation = raw_content if isinstance(raw_content, str) else json.dumps(raw_content)
+                raw_content_store = {"content": conversation}
+            
+            # Generate title
+            generated_title, _ = await summarizer.generate_title(conversation, source_type, metadata=metadata)
+            
+            # Generate summary and embedding
+            summary, summary_embedding, _ = await summarizer.summarize_and_embed(conversation, source_type, metadata=metadata)
+            
+            # Get or create end_user
+            end_user = await get_or_create_end_user(
+                session=session,
+                owner_id=owner_id,
+                external_user_id="mcp_user"
+            )
+            
+            # Create Source record
+            source_uuid = str(uuid_module.uuid4())
+            source = Source(
+                id=source_uuid,
+                owner_id=owner_id,
+                end_user_id=str(end_user.id),
+                type=source_type,
+                source_app="mcp",
+                title=generated_title,
+                raw_content=raw_content_store,
+                summary=summary,
+                summary_embedding=summary_embedding,
+                source_metadata=metadata,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
+            session.add(source)
+            await session.flush()
+            
+            # Extract memories
+            extraction = await extractor.extract_memories(conversation, metadata=metadata)
+            memories_count = 0
+            
+            if extraction.memories:
+                stored, skipped, memory_ids = await store_extracted_memories(
+                    session=session,
+                    extracted=extraction.memories,
+                    owner_id=owner_id,
+                    user_id="mcp_user",
+                    end_user_id=str(end_user.id),
+                    app_id="mcp",
+                    api_key_id=None,
+                    source_uuid=source_uuid,
+                    background_tasks=None
+                )
+                memories_count = stored
+            
+            await session.commit()
+            
+            await log_mcp_activity(
+                user_id=str(user.id),
+                mcp_token_id=mcp_token_id,
+                tool_name=tool_name,
+                client_type=client_type,
+                tool_args={"type": source_type, "content_length": len(str(raw_content))},
+                result_count=memories_count,
+                session=session
+            )
+            
+            return {
+                "success": True,
+                "source_id": source_uuid,
+                "title": generated_title,
+                "summary": summary,
+                "memories_extracted": memories_count,
+                "message": "Source saved successfully. Title, summary, and memories were automatically generated.",
+            }
+        except Exception as e:
+            logger.error(f"add_source error: {e}")
+            return {"success": False, "error": str(e)}
+    
+    elif tool_name == "add_memory":
+        from app.core.embeddings import get_embedding_service
+        import uuid
+        
+        content = args.get("content", "")
+        category = args.get("category")
+        
+        if not content:
+            return {"success": False, "error": "Content is required"}
+        
+        try:
+            # Generate embedding
+            embedding_service = get_embedding_service()
+            embedding, _ = await embedding_service.embed(content)
+            
+            # Create memory
+            memory = Memory(
+                id=uuid.uuid4(),
+                owner_id=user.id,
+                content=content,
+                category=category,
+                embedding=embedding,
+                salience=0.5,
+            )
+            session.add(memory)
+            await session.commit()
+            await session.refresh(memory)
+            
+            await log_mcp_activity(
+                user_id=str(user.id),
+                mcp_token_id=mcp_token_id,
+                tool_name=tool_name,
+                client_type=client_type,
+                tool_args={"content_length": len(content), "category": category},
+                result_count=1,
+                session=session
+            )
+            
+            return {
+                "success": True,
+                "memory_id": str(memory.id),
+                "content": memory.content,
+                "category": memory.category,
+                "message": "Memory saved successfully.",
+            }
+        except Exception as e:
+            logger.error(f"add_memory error: {e}")
+            return {"success": False, "error": str(e)}
     
     else:
         return {"error": f"Unknown tool: {tool_name}"}
