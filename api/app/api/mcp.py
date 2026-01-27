@@ -965,7 +965,9 @@ async def execute_tool(
             if extraction.memories:
                 # Store memories without background tasks (MCP context doesn't have BackgroundTasks)
                 embedding_service = get_embedding_service()
-                from app.api.ingest import compute_simhash, hamming_distance
+                from app.core.simhash import compute_simhash, hamming_distance
+                from app.core.sector import classify_sector, get_sector_decay_lambda, calculate_initial_salience
+                from app.core.config import settings
                 
                 # Fetch existing memories for deduplication
                 stmt = select(Memory).where(
@@ -997,29 +999,45 @@ async def execute_tool(
                     if is_duplicate:
                         continue
                     
-                    # Create new memory
+                    # Classify sector and calculate salience
+                    sector, additional_sectors, confidence = classify_sector(mem_content)
+                    decay_lambda = get_sector_decay_lambda(sector)
+                    initial_salience = calculate_initial_salience(sector, additional_sectors)
+                    
+                    # Generate embedding
                     embedding, _ = await embedding_service.embed(mem_content)
+                    memory_id = str(uuid_module.uuid4())
+                    
+                    # Create memory with all required fields (matching ingest.py pattern)
                     memory = Memory(
-                        id=uuid_module.uuid4(),
-                        owner_id=owner_id,
+                        id=memory_id,
+                        content=mem_content,
+                        simhash=simhash,
+                        sector=sector,
+                        salience=initial_salience,
+                        decay_lambda=decay_lambda,
+                        segment=0,
+                        tags=mem_item.tags or [],
+                        extra_metadata={},
+                        source_app="mcp",
                         user_id="mcp_user",
                         end_user_id=str(end_user.id),
-                        content=mem_content,
-                        category=mem_item.memory_type,  # Use memory_type instead of category
-                        embedding=embedding,
-                        salience=mem_item.confidence or 0.5,  # Use confidence instead of salience
-                        simhash=simhash,
-                        source_app="mcp",
+                        owner_id=owner_id,
                         api_key_id=None,
+                        embedding=embedding,
+                        embedding_model=settings.EMBEDDING_MODEL,
                         is_active=True,
+                        created_at=datetime.utcnow(),
+                        updated_at=datetime.utcnow(),
+                        last_seen_at=datetime.utcnow()
                     )
                     session.add(memory)
-                    await session.flush()
+                    simhash_to_memory[simhash] = memory
                     
                     # Link to source
                     if source_uuid:
                         link = MemorySource(
-                            memory_id=memory.id,
+                            memory_id=memory_id,
                             source_id=source_uuid,
                         )
                         session.add(link)
@@ -1054,31 +1072,55 @@ async def execute_tool(
     
     elif tool_name == "add_memory":
         from app.core.embeddings import get_embedding_service
-        import uuid
+        from app.core.simhash import compute_simhash
+        from app.core.sector import classify_sector, get_sector_decay_lambda, calculate_initial_salience
+        from app.core.config import settings
+        import uuid as uuid_mod
         
         content = args.get("content", "")
-        category = args.get("category")
+        category = args.get("category")  # Used for extra_metadata
         
         if not content:
             return {"success": False, "error": "Content is required"}
         
         try:
-            # Generate embedding
+            # Generate embedding and simhash
             embedding_service = get_embedding_service()
             embedding, _ = await embedding_service.embed(content)
+            simhash = compute_simhash(content)
             
-            # Create memory
+            # Classify sector and calculate salience
+            sector, additional_sectors, confidence = classify_sector(content)
+            decay_lambda = get_sector_decay_lambda(sector)
+            initial_salience = calculate_initial_salience(sector, additional_sectors)
+            
+            memory_id = str(uuid_mod.uuid4())
+            
+            # Create memory with all required fields (matching ingest.py pattern)
             memory = Memory(
-                id=uuid.uuid4(),
-                owner_id=user.id,
+                id=memory_id,
                 content=content,
-                category=category,
+                simhash=simhash,
+                sector=sector,
+                salience=initial_salience,
+                decay_lambda=decay_lambda,
+                segment=0,
+                tags=[],
+                extra_metadata={"category": category} if category else {},
+                source_app="mcp",
+                user_id="mcp_user",
+                end_user_id=None,
+                owner_id=str(user.id),
+                api_key_id=None,
                 embedding=embedding,
-                salience=0.5,
+                embedding_model=settings.EMBEDDING_MODEL,
+                is_active=True,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+                last_seen_at=datetime.utcnow()
             )
             session.add(memory)
             await session.commit()
-            await session.refresh(memory)
             
             await log_mcp_activity(
                 user_id=str(user.id),
@@ -1092,9 +1134,10 @@ async def execute_tool(
             
             return {
                 "success": True,
-                "memory_id": str(memory.id),
-                "content": memory.content,
-                "category": memory.category,
+                "memory_id": memory_id,
+                "content": content,
+                "sector": sector,
+                "salience": initial_salience,
                 "message": "Memory saved successfully.",
             }
         except Exception as e:
