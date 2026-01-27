@@ -267,21 +267,56 @@ export default function ConnectorsPage() {
             </div>
 
             {/* Installation Section */}
-            <div className="max-w-2xl">
+            <div className="bg-white rounded-lg p-6 max-w-2xl">
               {loading ? (
-                <div className="space-y-3 bg-white rounded-lg p-6">
-                  <div className="h-4 bg-neutral-100 rounded animate-pulse w-3/4" />
-                  <div className="h-4 bg-neutral-100 rounded animate-pulse w-1/2" />
-                  <div className="h-10 bg-neutral-100 rounded animate-pulse w-full mt-4" />
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="h-4 bg-neutral-100 rounded animate-pulse w-48" />
+                    <div className="h-8 bg-neutral-100 rounded-full animate-pulse w-48" />
+                  </div>
+                  <div className="h-32 bg-neutral-100 rounded-lg animate-pulse" />
                 </div>
               ) : (
                 <>
+                  {/* Header with title and toggle */}
+                  <div className="flex items-center justify-between mb-4">
+                    <p className="text-sm text-neutral-600">
+                      {selectedClientInfo?.hasOneClick && configMode === "oneclick" 
+                        ? `Click to automatically install UniMemory in ${selectedClientInfo.name}`
+                        : <>Add to <code className="bg-neutral-100 px-2 py-1 rounded text-xs">{getConfigPath()}</code></>
+                      }
+                    </p>
+                    
+                    {/* Toggle for Cursor */}
+                    {selectedClientInfo?.hasOneClick && (
+                      <div className="inline-flex rounded-full bg-neutral-100 p-0.5">
+                        <button
+                          onClick={() => setConfigMode("oneclick")}
+                          className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                            configMode === "oneclick"
+                              ? "bg-white text-neutral-900 shadow-sm"
+                              : "text-neutral-600 hover:text-neutral-900"
+                          }`}
+                        >
+                          Quick Setup
+                        </button>
+                        <button
+                          onClick={() => setConfigMode("manual")}
+                          className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                            configMode === "manual"
+                              ? "bg-white text-neutral-900 shadow-sm"
+                              : "text-neutral-600 hover:text-neutral-900"
+                          }`}
+                        >
+                          Manual Config
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
                   {/* One-Click Install for Cursor */}
                   {selectedClientInfo?.hasOneClick && configMode === "oneclick" ? (
-                    <div className="text-center bg-white rounded-lg p-6">
-                      <p className="text-sm text-neutral-600 mb-4">
-                        Click to automatically install UniMemory in {selectedClientInfo.name}
-                      </p>
+                    <div className="text-center">
                       <button
                         onClick={handleOneClickInstall}
                         disabled={installing || !mcpToken}
@@ -297,38 +332,19 @@ export default function ConnectorsPage() {
                         />
                         {installing ? "Opening..." : `Add to ${selectedClientInfo.name}`}
                       </button>
-                      <button
-                        onClick={() => setConfigMode("manual")}
-                        className="block mx-auto mt-3 text-xs text-neutral-500 hover:text-neutral-700"
-                      >
-                        Or configure manually
-                      </button>
                     </div>
                   ) : (
                     /* Manual Config */
-                    <div>
-                      <p className="text-sm text-neutral-600 mb-3">
-                        Add to <code className="bg-neutral-100 px-2 py-1 rounded text-xs">{getConfigPath()}</code>
-                      </p>
-                      <div className="relative">
-                        <pre className="text-xs text-green-400 overflow-x-auto bg-neutral-900 rounded-lg p-4 pr-12">
-                          {getConfigJson()}
-                        </pre>
-                        <button
-                          onClick={() => copyToClipboard(getConfigJson(), "config")}
-                          className="absolute top-3 right-3 p-2 bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors"
-                        >
-                          {copied === "config" ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3 text-neutral-400" />}
-                        </button>
-                      </div>
-                      {selectedClientInfo?.hasOneClick && (
-                        <button
-                          onClick={() => setConfigMode("oneclick")}
-                          className="block mx-auto mt-3 text-xs text-neutral-500 hover:text-neutral-700"
-                        >
-                          Use one-click install instead
-                        </button>
-                      )}
+                    <div className="relative">
+                      <pre className="text-xs text-green-400 overflow-x-auto bg-neutral-900 rounded-lg p-4 pr-12">
+                        {getConfigJson()}
+                      </pre>
+                      <button
+                        onClick={() => copyToClipboard(getConfigJson(), "config")}
+                        className="absolute top-3 right-3 p-2 bg-neutral-800 hover:bg-neutral-700 rounded-lg transition-colors"
+                      >
+                        {copied === "config" ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3 text-neutral-400" />}
+                      </button>
                     </div>
                   )}
                 </>
