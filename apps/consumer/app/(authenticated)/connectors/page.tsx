@@ -57,6 +57,12 @@ const MCP_CLIENTS = [
     logo: "https://raw.githubusercontent.com/cline/cline/main/assets/icon.png",
     hasOneClick: false 
   },
+  { 
+    id: "antigravity", 
+    name: "Antigravity", 
+    logo: "https://antigravity.dev/favicon.ico",
+    hasOneClick: false 
+  },
 ];
 
 export default function ConnectorsPage() {
@@ -187,6 +193,7 @@ export default function ConnectorsPage() {
       windsurf: "MCP Marketplace or ~/.codeium/windsurf/mcp_config.json",
       vscode: "Settings → MCP Configuration",
       cline: "Cline Settings → MCP Servers",
+      antigravity: "Antigravity Sidebar → MCP Configuration",
     };
     return paths[selectedClient] || "";
   };
