@@ -220,6 +220,8 @@ class MemoryResponse(BaseModel):
     id: str
     content: str
     sector: Optional[str]
+    memory_type: Optional[str] = None
+    priority: Optional[str] = None
     salience: float
     tags: List[str]
     user_id: str

@@ -21,6 +21,8 @@ interface Memory {
   id: string;
   content: string;
   sector?: string;
+  memory_type?: string;
+  priority?: string;
   salience: number;
   tags: string[];
   created_at: string;
@@ -321,10 +323,16 @@ export default function MemoriesPage() {
                         </p>
                         <div className="flex items-center gap-2 text-xs text-neutral-400">
                           <span>{new Date(memory.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                          {memory.sector && (
+                          {memory.memory_type && (
                             <>
                               <span>•</span>
-                              <span className="capitalize">{memory.sector}</span>
+                              <span className="capitalize">{memory.memory_type}</span>
+                            </>
+                          )}
+                          {memory.priority === 'core' && (
+                            <>
+                              <span>•</span>
+                              <span className="text-amber-600 font-medium">Core</span>
                             </>
                           )}
                         </div>
