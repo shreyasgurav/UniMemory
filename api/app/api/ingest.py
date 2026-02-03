@@ -18,11 +18,15 @@ import uuid
 import logging
 
 from app.db.database import get_db, AsyncSessionLocal
-from app.db.models import Memory, ProcessingLog, MemorySource, User, Source, EndUser
+from app.db.models import Memory, ProcessingLog, MemorySource, User, Source, EndUser, EntitySource
 from app.core.extractor import get_extractor, ExtractedMemoryItem
 from app.core.embeddings import get_embedding_service
 from app.core.simhash import compute_simhash, hamming_distance
-from app.core.sector import classify_sector, get_sector_decay_lambda, calculate_initial_salience
+from app.core.sector import (
+    classify_sector, get_sector_decay_lambda, calculate_initial_salience, 
+    get_sector_relationship_weight, classify_memory_type, determine_priority
+)
+from app.core.entities import EntityExtractor
 from app.core.waypoints import create_waypoint_for_memory
 from app.core.auth import validate_api_key_optimized
 from app.api.consumer import verify_consumer_session_token_payload
@@ -206,10 +210,12 @@ async def store_extracted_memories(
         if is_duplicate:
             continue
         
-        # Classify sector
+        # Classify sector and memory type
         sector, additional_sectors, confidence = classify_sector(mem_content)
         decay_lambda = get_sector_decay_lambda(sector)
         initial_salience = calculate_initial_salience(sector, additional_sectors)
+        memory_type = classify_memory_type(mem_content, sector)
+        priority = determine_priority(memory_type, initial_salience, sector)
         
         # Generate embedding
         try:
@@ -238,6 +244,15 @@ async def store_extracted_memories(
             api_key_id=api_key_id,
             embedding=embedding,
             embedding_model=settings.EMBEDDING_MODEL,
+            # New fields
+            memory_type=memory_type,
+            priority=priority,
+            recall_count=0,
+            last_recalled_at=None,
+            coactivation_score=0.0,
+            valid_from=datetime.utcnow(),
+            valid_to=None,
+            # Standard fields
             is_active=True,
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow(),
@@ -363,13 +378,46 @@ async def ingest_text(
             summary_embedding=summary_embedding,
             source_metadata={},
             external_ref=request.source_id,
+            event_at=datetime.utcnow(),  # When the content was created
+            ingested_at=datetime.utcnow(),  # When we processed it
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow()
         )
         session.add(source)
         await session.flush()
     
-    # Step 3: Extract memories
+    # Step 3: Extract entities and facts  
+    entity_extractor = EntityExtractor()
+    event_time = datetime.utcnow()  # Can be extracted from metadata if available
+    
+    # Extract entities
+    extracted_entities = await entity_extractor.extract_entities(content, request.source_metadata)
+    
+    # Resolve entities and store
+    entity_map = await entity_extractor.resolve_entities(
+        session, extracted_entities, owner_id, str(end_user.id)
+    )
+    
+    # Link entities to source
+    if source_uuid and entity_map:
+        for entity in entity_map.values():
+            entity_source = EntitySource(
+                id=str(uuid.uuid4()),
+                entity_id=entity.id,
+                source_id=source_uuid,
+                created_at=datetime.utcnow()
+            )
+            session.add(entity_source)
+    
+    # Extract facts
+    extracted_facts = await entity_extractor.extract_facts(content, list(entity_map.values()), event_time)
+    
+    # Store facts with conflict resolution
+    created_facts = await entity_extractor.resolve_and_store_facts(
+        session, extracted_facts, entity_map, owner_id, str(end_user.id), source_uuid
+    )
+    
+    # Step 4: Extract memories
     extraction = await extractor.extract_memories(content)
     total_tokens += extraction.tokens_used
     
@@ -499,6 +547,8 @@ async def ingest_chat(
         summary_embedding=summary_embedding,
         source_metadata=request.source_metadata or {},
         external_ref=request.source_id,
+        event_at=datetime.utcnow(),  # When the content was created
+        ingested_at=datetime.utcnow(),  # When we processed it
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow()
     )
@@ -609,6 +659,8 @@ async def ingest_document(
         summary_embedding=summary_embedding,
         source_metadata={},
         external_ref=request.source_id,
+        event_at=datetime.utcnow(),  # When the content was created
+        ingested_at=datetime.utcnow(),  # When we processed it
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow()
     )

@@ -57,6 +57,10 @@ class Source(Base):
     source_metadata = Column(JSONB, default=dict)
     external_ref = Column(String(500))  # chat_id, file_path, url, etc.
     
+    # Temporal fields (NEW)
+    event_at = Column(DateTime(timezone=True))  # When the event occurred
+    ingested_at = Column(DateTime(timezone=True), server_default=func.now())  # When recorded
+    
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
@@ -94,6 +98,17 @@ class Memory(Base):
     salience = Column(Float, default=0.5, index=True)  # Importance score (0.0 - 1.0)
     decay_lambda = Column(Float, default=0.02)  # Decay rate
     segment = Column(Integer, default=0)  # Memory segment number
+    
+    # Enhanced memory fields (NEW)
+    memory_type = Column(String(50))  # preference, fact, event, skill, insight
+    priority = Column(String(20), default='archival')  # core, archival
+    recall_count = Column(Integer, default=0)  # Times retrieved
+    last_recalled_at = Column(DateTime(timezone=True))  # Last retrieval time
+    coactivation_score = Column(Float, default=0.0)  # Reinforcement strength
+    
+    # Temporal fields (NEW)
+    valid_from = Column(DateTime(timezone=True))
+    valid_to = Column(DateTime(timezone=True))  # NULL = still valid
     
     # Metadata
     tags = Column(JSONB, default=list)  # Tags array
@@ -153,6 +168,11 @@ class Waypoint(Base):
     src_id = Column(UUID(as_uuid=False), ForeignKey("memories.id", ondelete="CASCADE"), nullable=False)
     dst_id = Column(UUID(as_uuid=False), ForeignKey("memories.id", ondelete="CASCADE"), nullable=False)
     weight = Column(Float, default=0.5, nullable=False)  # Similarity weight (0.0 - 1.0)
+    
+    # Coactivation fields (NEW)
+    coactivation_count = Column(Integer, default=0)  # Times co-recalled
+    last_coactivated_at = Column(DateTime(timezone=True))  # Last co-recall time
+    relationship_type = Column(String(50), default='similar')  # similar, sequential, causal, hierarchical
     
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
@@ -425,4 +445,231 @@ class ActivityLog(Base):
     
     def __repr__(self):
         return f"<ActivityLog(id={self.id}, action={self.action}, source={self.source})>"
+
+
+class Entity(Base):
+    """Named entities extracted from sources (people, places, concepts)"""
+    __tablename__ = "entities"
+    
+    id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    owner_id = Column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    end_user_id = Column(UUID(as_uuid=False), ForeignKey("end_users.id", ondelete="SET NULL"), nullable=True, index=True)
+    
+    # Entity identification
+    name = Column(String(500), nullable=False)
+    entity_type = Column(String(50), nullable=False, index=True)  # person, organization, concept, place, thing
+    summary = Column(Text)
+    embedding = Column(Vector(1536))
+    aliases = Column(JSONB, default=list)
+    
+    # Coactivation
+    mention_count = Column(Integer, default=0)
+    first_seen_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_seen_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Status
+    is_active = Column(Boolean, default=True)
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # Relationships
+    owner = relationship("User")
+    end_user = relationship("EndUser")
+    
+    __table_args__ = (
+        Index("idx_entities_owner", "owner_id"),
+        Index("idx_entities_name", "owner_id", "name"),
+        Index("idx_entities_type", "entity_type"),
+        Index("idx_entities_embedding", "embedding", postgresql_using="ivfflat", postgresql_with={"lists": 100}),
+    )
+    
+    def __repr__(self):
+        return f"<Entity(id={self.id}, name={self.name}, type={self.entity_type})>"
+
+
+class EntitySource(Base):
+    """Links entities to their source episodes (N:N relationship)"""
+    __tablename__ = "entity_sources"
+    
+    id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    entity_id = Column(UUID(as_uuid=False), ForeignKey("entities.id", ondelete="CASCADE"), nullable=False, index=True)
+    source_id = Column(UUID(as_uuid=False), ForeignKey("sources.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    # Relationships
+    entity = relationship("Entity")
+    source = relationship("Source")
+    
+    __table_args__ = (
+        Index("idx_entity_sources_entity", "entity_id"),
+        Index("idx_entity_sources_source", "source_id"),
+        Index("idx_entity_sources_unique", "entity_id", "source_id", unique=True),
+    )
+    
+    def __repr__(self):
+        return f"<EntitySource(entity={self.entity_id}, source={self.source_id})>"
+
+
+class Community(Base):
+    """Clusters of related entities"""
+    __tablename__ = "communities"
+    
+    id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    owner_id = Column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    name = Column(String(255), nullable=False)
+    summary = Column(Text)
+    embedding = Column(Vector(1536))
+    entity_ids = Column(JSONB, default=list)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # Relationships
+    owner = relationship("User")
+    
+    __table_args__ = (
+        Index("idx_communities_owner", "owner_id"),
+        Index("idx_communities_embedding", "embedding", postgresql_using="ivfflat", postgresql_with={"lists": 100}),
+    )
+    
+    def __repr__(self):
+        return f"<Community(id={self.id}, name={self.name})>"
+
+
+class Fact(Base):
+    """Temporal facts with Subject-Predicate-Object structure"""
+    __tablename__ = "facts"
+    
+    id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    owner_id = Column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    end_user_id = Column(UUID(as_uuid=False), ForeignKey("end_users.id", ondelete="SET NULL"), nullable=True, index=True)
+    
+    # Triple (Subject-Predicate-Object)
+    subject_entity_id = Column(UUID(as_uuid=False), ForeignKey("entities.id", ondelete="CASCADE"), nullable=False)
+    predicate = Column(String(255), nullable=False, index=True)
+    object_entity_id = Column(UUID(as_uuid=False), ForeignKey("entities.id", ondelete="SET NULL"), nullable=True)
+    object_value = Column(Text)  # For non-entity objects
+    
+    # Human-readable
+    fact_text = Column(Text, nullable=False)
+    embedding = Column(Vector(1536))
+    
+    # Bi-temporal (KEY INNOVATION)
+    valid_from = Column(DateTime(timezone=True), nullable=False)
+    valid_to = Column(DateTime(timezone=True))  # NULL = still current
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    invalidated_at = Column(DateTime(timezone=True))
+    
+    # Confidence and Source
+    confidence = Column(Float, default=1.0)
+    source_id = Column(UUID(as_uuid=False), ForeignKey("sources.id", ondelete="SET NULL"), nullable=True)
+    
+    # Status
+    is_valid = Column(Boolean, default=True, index=True)
+    invalidation_reason = Column(String(100))  # superseded, contradicted, expired, manual
+    
+    # Relationships
+    owner = relationship("User")
+    end_user = relationship("EndUser")
+    subject_entity = relationship("Entity", foreign_keys=[subject_entity_id])
+    object_entity = relationship("Entity", foreign_keys=[object_entity_id])
+    source = relationship("Source")
+    
+    __table_args__ = (
+        Index("idx_facts_owner", "owner_id"),
+        Index("idx_facts_subject", "subject_entity_id"),
+        Index("idx_facts_object", "object_entity_id"),
+        Index("idx_facts_predicate", "predicate"),
+        Index("idx_facts_valid", "valid_from", "valid_to"),
+        Index("idx_facts_is_valid", "is_valid"),
+        Index("idx_facts_embedding", "embedding", postgresql_using="ivfflat", postgresql_with={"lists": 100}),
+    )
+    
+    def __repr__(self):
+        return f"<Fact(id={self.id}, fact={self.fact_text})>"
+
+
+class MemoryEntity(Base):
+    """Links memories to entities (N:N relationship)"""
+    __tablename__ = "memory_entities"
+    
+    id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    memory_id = Column(UUID(as_uuid=False), ForeignKey("memories.id", ondelete="CASCADE"), nullable=False, index=True)
+    entity_id = Column(UUID(as_uuid=False), ForeignKey("entities.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    # Relationships
+    memory = relationship("Memory")
+    entity = relationship("Entity")
+    
+    __table_args__ = (
+        Index("idx_memory_entities_memory", "memory_id"),
+        Index("idx_memory_entities_entity", "entity_id"),
+        Index("idx_memory_entities_unique", "memory_id", "entity_id", unique=True),
+    )
+    
+    def __repr__(self):
+        return f"<MemoryEntity(memory={self.memory_id}, entity={self.entity_id})>"
+
+
+class MemoryFact(Base):
+    """Links memories to facts (N:N relationship)"""
+    __tablename__ = "memory_facts"
+    
+    id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    memory_id = Column(UUID(as_uuid=False), ForeignKey("memories.id", ondelete="CASCADE"), nullable=False, index=True)
+    fact_id = Column(UUID(as_uuid=False), ForeignKey("facts.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    # Relationships
+    memory = relationship("Memory")
+    fact = relationship("Fact")
+    
+    __table_args__ = (
+        Index("idx_memory_facts_memory", "memory_id"),
+        Index("idx_memory_facts_fact", "fact_id"),
+        Index("idx_memory_facts_unique", "memory_id", "fact_id", unique=True),
+    )
+    
+    def __repr__(self):
+        return f"<MemoryFact(memory={self.memory_id}, fact={self.fact_id})>"
+
+
+class EntityLink(Base):
+    """Entity-to-entity graph relationships"""
+    __tablename__ = "entity_links"
+    
+    id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    owner_id = Column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    src_entity_id = Column(UUID(as_uuid=False), ForeignKey("entities.id", ondelete="CASCADE"), nullable=False)
+    dst_entity_id = Column(UUID(as_uuid=False), ForeignKey("entities.id", ondelete="CASCADE"), nullable=False)
+    
+    relationship_type = Column(String(50), nullable=False, index=True)  # knows, related_to, part_of, owns
+    weight = Column(Float, default=0.5)
+    fact_count = Column(Integer, default=0)  # How many facts connect them
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # Relationships
+    owner = relationship("User")
+    src_entity = relationship("Entity", foreign_keys=[src_entity_id])
+    dst_entity = relationship("Entity", foreign_keys=[dst_entity_id])
+    
+    __table_args__ = (
+        Index("idx_entity_links_src", "src_entity_id"),
+        Index("idx_entity_links_dst", "dst_entity_id"),
+        Index("idx_entity_links_relationship", "relationship_type"),
+        Index("idx_entity_links_unique", "src_entity_id", "dst_entity_id", unique=True),
+    )
+    
+    def __repr__(self):
+        return f"<EntityLink(src={self.src_entity_id}, dst={self.dst_entity_id}, type={self.relationship_type})>"
 

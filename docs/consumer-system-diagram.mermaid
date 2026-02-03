@@ -1,0 +1,180 @@
+graph TB
+    subgraph USER["👤 USER LAYER"]
+        U[End Users]
+    end
+
+    subgraph AITOOLS["🤖 AI TOOLS & SOURCES LAYER"]
+        ChatGPT[ChatGPT<br/>Conversations]
+        Claude[Claude<br/>Chats]
+        Websites[Websites<br/>Web Pages]
+        Cursor[Cursor<br/>AI Editor]
+        Windsurf[Windsurf<br/>AI Editor]
+        Cline[Cline<br/>AI Agent]
+    end
+
+    subgraph CONNECTORS["🔌 CONNECTORS LAYER"]
+        subgraph EXT["Chrome Extension"]
+            EXT1[Content Script]
+            EXT2[Background Worker]
+            EXT3[Cmd+] Popup]
+            EXT4[Extension Popup]
+            EXT5[Session Token Auth]
+        end
+        
+        subgraph MCP["MCP Servers"]
+            MCP1[Cursor MCP]
+            MCP2[Windsurf MCP]
+            MCP3[Claude MCP]
+            MCP4[Bearer Token Auth]
+            MCP5[5 Tools:<br/>search_memory<br/>get_memory_context<br/>get_source<br/>add_source<br/>add_memory]
+        end
+    end
+
+    subgraph DASHBOARD["💻 CONSUMER DASHBOARD<br/>(Next.js - app.unimemory.app)"]
+        subgraph PAGES["Pages"]
+            P1[Memories Page]
+            P2[Activity Feed]
+            P3[Connectors Page]
+        end
+        
+        subgraph AUTH["Authentication"]
+            A1[Firebase Auth]
+            A2[Google Sign-In]
+            A3[Protected Routes]
+        end
+    end
+
+    subgraph BACKEND["⚙️ BACKEND API LAYER<br/>(FastAPI - Railway)"]
+        subgraph AUTHSVC["Authentication Services"]
+            AS1[Firebase Token Verification]
+            AS2[Session Token Generation]
+            AS3[MCP Token Management]
+            AS4[User Cache 5min TTL]
+        end
+        
+        subgraph CONSUMERAPI["Consumer API"]
+            CA1[GET /consumer/sources]
+            CA2[GET /consumer/memories]
+            CA3[POST /consumer/search]
+            CA4[GET /consumer/activity]
+            CA5[POST /consumer/mcp/tokens]
+        end
+        
+        subgraph MCPAPI["MCP API"]
+            MA1[POST /mcp JSON-RPC]
+            MA2[tools/list]
+            MA3[tools/call]
+            MA4[OAuth endpoints]
+        end
+        
+        subgraph INGEST["Ingestion Pipeline"]
+            I1[POST /v1/ingest/chat]
+            I2[POST /v1/ingest/text]
+            I3[Worthiness Check LLM]
+            I4[Title Generation LLM]
+            I5[Summary Generation LLM]
+            I6[Memory Extraction LLM]
+            I7[Source Storage]
+            I8[Memory Storage]
+            I9[Linking]
+        end
+        
+        subgraph CORE["Core Services"]
+            C1[Embedding Service<br/>OpenAI 1536d]
+            C2[Summarizer<br/>GPT-4o-mini]
+            C3[Memory Extractor<br/>GPT-4o-mini]
+            C4[SimHash Dedup]
+            C5[Sector Classifier]
+            C6[Salience Calculator]
+            C7[Waypoint Generator]
+        end
+    end
+
+    subgraph STORAGE["💾 STORAGE LAYER<br/>(PostgreSQL + pgvector)"]
+        subgraph TABLES["Core Tables"]
+            T1[(users<br/>id, firebase_uid<br/>email, plan)]
+            T2[(sources<br/>Raw Truth Layer<br/>raw_content JSONB<br/>summary_embedding)]
+            T3[(memories<br/>Distilled Knowledge<br/>content, embedding<br/>simhash, sector<br/>salience)]
+            T4[(memory_sources<br/>N:N Linking<br/>memory_id<br/>source_id)]
+            T5[(waypoints<br/>Memory Graph<br/>src_id, dst_id<br/>weight)]
+        end
+        
+        subgraph AUTHTABLES["Auth & Activity"]
+            T6[(mcp_tokens<br/>token_hash<br/>client_type)]
+            T7[(mcp_activity<br/>tool_name<br/>tool_args)]
+            T8[(activity_logs<br/>action, source<br/>agent)]
+        end
+        
+        subgraph INDEXES["Vector Indexes"]
+            IDX1[IVFFlat<br/>memories.embedding]
+            IDX2[IVFFlat<br/>sources.summary_embedding]
+        end
+    end
+
+    %% User to AI Tools
+    U --> ChatGPT
+    U --> Claude
+    U --> Websites
+    U --> Cursor
+    U --> Windsurf
+    U --> Cline
+
+    %% AI Tools to Connectors
+    ChatGPT --> EXT
+    Claude --> EXT
+    Websites --> EXT
+    Cursor --> MCP
+    Windsurf --> MCP
+    Cline --> MCP
+
+    %% Connectors to Dashboard
+    EXT --> DASHBOARD
+    MCP --> DASHBOARD
+
+    %% Dashboard to Backend
+    PAGES --> CONSUMERAPI
+    AUTH --> AUTHSVC
+
+    %% Connectors to Backend
+    EXT --> CONSUMERAPI
+    EXT --> INGEST
+    MCP --> MCPAPI
+    MCP --> INGEST
+
+    %% Backend Internal
+    CONSUMERAPI --> CORE
+    MCPAPI --> CORE
+    INGEST --> CORE
+    AUTHSVC --> STORAGE
+
+    %% Backend to Storage
+    CONSUMERAPI --> TABLES
+    MCPAPI --> TABLES
+    INGEST --> TABLES
+    CORE --> TABLES
+    CORE --> INDEXES
+
+    %% Storage Internal
+    T3 --> T4
+    T2 --> T4
+    T3 --> T5
+
+    style USER fill:#e1f5ff
+    style AITOOLS fill:#fff4e6
+    style CONNECTORS fill:#f3e5f5
+    style DASHBOARD fill:#e8f5e9
+    style BACKEND fill:#fff3e0
+    style STORAGE fill:#fce4ec
+    
+    style EXT fill:#e1bee7
+    style MCP fill:#ce93d8
+    style PAGES fill:#a5d6a7
+    style AUTH fill:#81c784
+    style AUTHSVC fill:#ffcc80
+    style CONSUMERAPI fill:#ffb74d
+    style MCPAPI fill:#ffa726
+    style INGEST fill:#ff9800
+    style CORE fill:#ff8a65
+    style TABLES fill:#f48fb1
+    style AUTHTABLES fill:#f06292
+    style INDEXES fill:#ec407a

@@ -50,13 +50,14 @@ def remove_stop_words(text: str) -> str:
     return ' '.join(meaningful_words)
 
 
-# Scoring weights (OpenMemory-style)
+# Scoring weights (Brain-like with coactivation)
 SCORING_WEIGHTS = {
-    "similarity": 0.35,
-    "overlap": 0.20,
-    "waypoint": 0.15,
+    "similarity": 0.30,
+    "overlap": 0.15,
+    "waypoint": 0.10,
     "recency": 0.10,
-    "tag_match": 0.20,
+    "tag_match": 0.15,
+    "coactivation": 0.20,  # Hebbian learning boost
 }
 
 HYBRID_PARAMS = {
@@ -117,14 +118,30 @@ def sigmoid(x: float) -> float:
     return 1.0 / (1.0 + math.exp(-x))
 
 
+def compute_coactivation_boost(recall_count: int, coactivation_score: float = 0.0) -> float:
+    """
+    Calculate coactivation boost based on recall count (Hebbian learning).
+    Memories that are frequently recalled get higher scores.
+    """
+    if not recall_count or recall_count == 0:
+        return coactivation_score or 0.0
+    
+    # Logarithmic scale to avoid over-boosting
+    # 1 recall = 0.05, 10 recalls = 0.10, 100 recalls = 0.15
+    recall_boost = min(0.5, math.log10(recall_count + 1) * 0.05)
+    
+    return recall_boost + (coactivation_score or 0.0)
+
+
 def compute_hybrid_score(
     similarity: float,
     token_overlap: float,
     waypoint_weight: float,
     recency_score: float,
-    tag_match: float = 0.0
+    tag_match: float = 0.0,
+    coactivation: float = 0.0
 ) -> float:
-    """Compute final hybrid score (OpenMemory-style)"""
+    """Compute final hybrid score (Brain-like with coactivation)"""
     sim_boosted = boosted_sim(similarity)
     
     raw_score = (
@@ -132,7 +149,8 @@ def compute_hybrid_score(
         SCORING_WEIGHTS["overlap"] * token_overlap +
         SCORING_WEIGHTS["waypoint"] * waypoint_weight +
         SCORING_WEIGHTS["recency"] * recency_score +
-        SCORING_WEIGHTS["tag_match"] * tag_match
+        SCORING_WEIGHTS["tag_match"] * tag_match +
+        SCORING_WEIGHTS["coactivation"] * coactivation
     )
     
     return sigmoid(raw_score)
@@ -401,13 +419,20 @@ async def hybrid_search(
                     tag_match += 1.0
             tag_match = min(1.0, tag_match / max(1, len(mem.tags)))
         
+        # Calculate coactivation boost (Hebbian learning)
+        coactivation = compute_coactivation_boost(
+            getattr(mem, 'recall_count', 0) or 0,
+            getattr(mem, 'coactivation_score', 0.0) or 0.0
+        )
+        
         # Compute final hybrid score
         final_score = compute_hybrid_score(
             adjusted_similarity,
             token_overlap,
             waypoint_weight,
             recency,
-            tag_match
+            tag_match,
+            coactivation
         )
         
         scored_results.append({
@@ -439,30 +464,113 @@ async def reinforce_retrieved_memories(
     results: List[Dict[str, Any]]
 ):
     """
-    Boost salience of retrieved memories (same as Mac app)
-    Called after search to reinforce accessed memories
+    Reinforce retrieved memories with Hebbian learning.
+    - Boost salience
+    - Increment recall_count
+    - Update coactivation_score
+    - Update last_recalled_at
+    - Strengthen waypoints between co-recalled memories
     """
     from datetime import datetime
     
-    SALIENCE_BOOST = 0.1  # Same as Mac app
+    SALIENCE_BOOST = 0.1
+    COACTIVATION_BOOST = 0.05
     MAX_SALIENCE = 1.0
+    MAX_COACTIVATION = 1.0
+    
+    memory_ids = []
     
     for result in results:
         mem = result["memory"]
         current_salience = mem.salience or 0.0
         
-        # Boost salience (same as Mac app's reinforceOnRetrieval)
-        boosted_salience = min(MAX_SALIENCE, current_salience + SALIENCE_BOOST)
-        
-        mem.salience = boosted_salience
+        # Boost salience
+        mem.salience = min(MAX_SALIENCE, current_salience + SALIENCE_BOOST)
         mem.last_seen_at = datetime.utcnow()
         
-        # Update in database
+        # Increment recall count (Hebbian learning)
+        if hasattr(mem, 'recall_count'):
+            mem.recall_count = (mem.recall_count or 0) + 1
+        
+        # Update last_recalled_at
+        if hasattr(mem, 'last_recalled_at'):
+            mem.last_recalled_at = datetime.utcnow()
+        
+        # Boost coactivation score
+        if hasattr(mem, 'coactivation_score'):
+            mem.coactivation_score = min(
+                MAX_COACTIVATION, 
+                (mem.coactivation_score or 0.0) + COACTIVATION_BOOST
+            )
+        
+        # Promote to core if frequently recalled with high salience
+        if hasattr(mem, 'priority') and hasattr(mem, 'recall_count'):
+            if (mem.recall_count or 0) >= 10 and mem.salience >= 0.8:
+                mem.priority = 'core'
+        
         session.add(mem)
+        memory_ids.append(mem.id)
+    
+    # Strengthen waypoints between co-recalled memories
+    if len(memory_ids) > 1:
+        await strengthen_coactivated_waypoints(session, memory_ids)
     
     try:
         await session.commit()
     except Exception as e:
         print(f"[Search] Failed to reinforce memories: {e}")
         await session.rollback()
+
+
+async def strengthen_coactivated_waypoints(
+    session: AsyncSession,
+    memory_ids: List[str]
+):
+    """
+    Strengthen waypoints between memories that were recalled together.
+    This implements "neurons that fire together wire together".
+    """
+    from datetime import datetime
+    import uuid as uuid_module
+    
+    WEIGHT_BOOST = 0.05
+    MAX_WEIGHT = 1.0
+    
+    # Process pairs of co-recalled memories
+    for i, mem1_id in enumerate(memory_ids):
+        for mem2_id in memory_ids[i+1:]:
+            # Ensure consistent ordering
+            src_id = min(str(mem1_id), str(mem2_id))
+            dst_id = max(str(mem1_id), str(mem2_id))
+            
+            # Check if waypoint exists
+            stmt = select(Waypoint).where(
+                Waypoint.src_id == src_id,
+                Waypoint.dst_id == dst_id
+            )
+            result = await session.execute(stmt)
+            waypoint = result.scalar_one_or_none()
+            
+            if waypoint:
+                # Strengthen existing waypoint
+                waypoint.weight = min(MAX_WEIGHT, waypoint.weight + WEIGHT_BOOST)
+                if hasattr(waypoint, 'coactivation_count'):
+                    waypoint.coactivation_count = (waypoint.coactivation_count or 0) + 1
+                if hasattr(waypoint, 'last_coactivated_at'):
+                    waypoint.last_coactivated_at = datetime.utcnow()
+                waypoint.updated_at = datetime.utcnow()
+            else:
+                # Create new waypoint with low initial weight
+                new_waypoint = Waypoint(
+                    id=str(uuid_module.uuid4()),
+                    src_id=src_id,
+                    dst_id=dst_id,
+                    weight=0.3,
+                    coactivation_count=1,
+                    last_coactivated_at=datetime.utcnow(),
+                    relationship_type='coactivated',
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow()
+                )
+                session.add(new_waypoint)
 
