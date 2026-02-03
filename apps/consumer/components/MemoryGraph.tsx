@@ -9,8 +9,20 @@ interface GraphMemory {
   id: string;
   content: string;
   sector?: string;
+  memory_type?: string;
+  priority?: string;
   salience: number;
+  recall_count?: number;
+  coactivation_score?: number;
   created_at: string;
+}
+
+interface GraphEntity {
+  id: string;
+  name: string;
+  entity_type: string;
+  summary?: string;
+  mention_count?: number;
 }
 
 interface GraphSource {
@@ -32,10 +44,10 @@ interface GraphEdge {
 
 interface GraphNode {
   id: string;
-  type: "document" | "memory";
+  type: "document" | "memory" | "entity";
   x: number;
   y: number;
-  data: GraphSource | GraphMemory;
+  data: GraphSource | GraphMemory | GraphEntity;
   size: number;
   parentId?: string;
 }
@@ -57,9 +69,15 @@ const COLORS = {
     stroke: "rgba(147, 196, 253, 0.6)",
     glow: "rgba(147, 197, 253, 0.5)",
   },
+  entity: {
+    fill: "rgba(251, 191, 36, 0.2)",
+    stroke: "rgba(251, 191, 36, 0.8)",
+    glow: "rgba(251, 191, 36, 0.5)",
+  },
   edge: {
     docMemory: "rgba(148, 163, 184, 0.35)",
     memoryMemory: "rgba(35, 189, 255, 0.5)",
+    entityMemory: "rgba(251, 191, 36, 0.4)",
   },
   sectors: {
     episodic: "#3B82F6",
@@ -69,14 +87,31 @@ const COLORS = {
     reflective: "#8B5CF6",
     default: "#94A3B8",
   } as Record<string, string>,
+  memoryTypes: {
+    preference: "#F472B6",
+    fact: "#60A5FA",
+    event: "#34D399",
+    skill: "#FBBF24",
+    insight: "#A78BFA",
+    default: "#94A3B8",
+  } as Record<string, string>,
+  entityTypes: {
+    person: "#F472B6",
+    organization: "#60A5FA",
+    concept: "#A78BFA",
+    place: "#34D399",
+    thing: "#FBBF24",
+    default: "#FBBF24",
+  } as Record<string, string>,
 };
 
 // ============ Component ============
 export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
   const [sources, setSources] = useState<GraphSource[]>([]);
   const [atomicMemories, setAtomicMemories] = useState<GraphMemory[]>([]);
+  const [entities, setEntities] = useState<GraphEntity[]>([]);
   const [edges, setEdges] = useState<GraphEdge[]>([]);
-  const [stats, setStats] = useState({ sources: 0, memories: 0, atomic: 0, connections: 0 });
+  const [stats, setStats] = useState({ sources: 0, memories: 0, atomic: 0, entities: 0, connections: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -152,8 +187,9 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
         const data = await response.json();
         setSources(data.sources || []);
         setAtomicMemories(data.atomic_memories || []);
+        setEntities(data.entities || []);
         setEdges(data.edges || []);
-        setStats(data.stats || { sources: 0, memories: 0, atomic: 0, connections: 0 });
+        setStats(data.stats || { sources: 0, memories: 0, atomic: 0, entities: 0, connections: 0 });
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load graph");
       } finally {
@@ -166,7 +202,7 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
 
   // ============ Build Graph Nodes (Static Layout - No Animation) ============
   useEffect(() => {
-    if (sources.length === 0 && atomicMemories.length === 0) {
+    if (sources.length === 0 && atomicMemories.length === 0 && entities.length === 0) {
       nodesRef.current = [];
       setNodes([]);
       return;
@@ -255,9 +291,36 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
       });
     }
 
+    // 3. Create entity nodes at the TOP - clustered by type (Mem0 style)
+    if (entities.length > 0) {
+      const entityStartY = centerY - 350;
+      const entitySpacing = 80;
+      const entityRowSize = Math.min(entities.length, 8);
+      
+      entities.forEach((entity, i) => {
+        const row = Math.floor(i / entityRowSize);
+        const col = i % entityRowSize;
+        const x = centerX + (col - entityRowSize / 2 + 0.5) * entitySpacing;
+        const y = entityStartY + row * entitySpacing;
+        
+        // Size based on mention count (more mentions = larger)
+        const baseSize = 22;
+        const mentionBoost = Math.min((entity.mention_count || 0) * 2, 15);
+        
+        allNodes.push({
+          id: entity.id,
+          type: "entity",
+          x,
+          y,
+          data: entity,
+          size: baseSize + mentionBoost,
+        });
+      });
+    }
+
     nodesRef.current = allNodes;
     setNodes([...allNodes]);
-  }, [sources, atomicMemories, edges]);
+  }, [sources, atomicMemories, entities, edges]);
 
   // ============ Canvas Rendering ============
   useEffect(() => {
@@ -311,8 +374,8 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
       ctx.beginPath();
       ctx.moveTo(source.x, source.y);
 
-      // Curved lines for memory-memory
-      if (edge.edge_type === "memory-memory") {
+      // Curved lines for memory-memory and entity-memory
+      if (edge.edge_type === "memory-memory" || edge.edge_type === "entity-memory") {
         const midX = (source.x + target.x) / 2;
         const midY = (source.y + target.y) / 2;
         const dx = target.x - source.x;
@@ -320,8 +383,8 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
         const dist = Math.sqrt(dx * dx + dy * dy);
         const offset = Math.min(30, dist * 0.2);
         ctx.quadraticCurveTo(midX + offset * (dy / dist), midY - offset * (dx / dist), target.x, target.y);
-        ctx.strokeStyle = COLORS.edge.memoryMemory;
-        ctx.lineWidth = 1 + edge.weight;
+        ctx.strokeStyle = edge.edge_type === "entity-memory" ? COLORS.edge.entityMemory : COLORS.edge.memoryMemory;
+        ctx.lineWidth = 1 + edge.weight * 0.5;
       } else {
         ctx.lineTo(target.x, target.y);
         ctx.strokeStyle = COLORS.edge.docMemory;
@@ -356,16 +419,50 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
         ctx.stroke();
 
         ctx.shadowBlur = 0;
-      } else {
-        // Memory: Hexagon
-        const mem = node.data as GraphMemory;
-        const color = COLORS.sectors[mem.sector || "default"] || COLORS.sectors.default;
+      } else if (node.type === "entity") {
+        // Entity: Circle (Mem0 style)
+        const entity = node.data as GraphEntity;
+        const color = COLORS.entityTypes[entity.entity_type] || COLORS.entityTypes.default;
         const size = node.size;
 
         // Glow
         if (isHovered || isSelected) {
           ctx.shadowColor = color;
-          ctx.shadowBlur = 15;
+          ctx.shadowBlur = 20;
+        }
+
+        // Draw circle
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, size, 0, Math.PI * 2);
+        ctx.fillStyle = isHovered ? `${color}50` : `${color}25`;
+        ctx.fill();
+        ctx.strokeStyle = isSelected ? "#fff" : color;
+        ctx.lineWidth = isSelected ? 2.5 : 2;
+        ctx.stroke();
+
+        // Draw entity name inside (if large enough)
+        if (size > 20) {
+          ctx.fillStyle = "#fff";
+          ctx.font = `${Math.min(12, size * 0.5)}px Inter, system-ui, sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          const name = entity.name.length > 8 ? entity.name.slice(0, 7) + "…" : entity.name;
+          ctx.fillText(name, node.x, node.y);
+        }
+
+        ctx.shadowBlur = 0;
+      } else {
+        // Memory: Hexagon
+        const mem = node.data as GraphMemory;
+        const color = mem.priority === "core" 
+          ? "#F59E0B"  // Amber for core memories
+          : COLORS.sectors[mem.sector || "default"] || COLORS.sectors.default;
+        const size = node.size;
+
+        // Glow - stronger for core memories
+        if (isHovered || isSelected || mem.priority === "core") {
+          ctx.shadowColor = color;
+          ctx.shadowBlur = mem.priority === "core" ? 25 : 15;
         }
 
         // Draw hexagon
@@ -381,7 +478,7 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
         ctx.fillStyle = isHovered ? `${color}50` : `${color}30`;
         ctx.fill();
         ctx.strokeStyle = isSelected ? "#fff" : color;
-        ctx.lineWidth = isSelected ? 2 : 1;
+        ctx.lineWidth = isSelected ? 2 : (mem.priority === "core" ? 2 : 1);
         ctx.stroke();
 
         ctx.shadowBlur = 0;
@@ -484,6 +581,7 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
 
   const totalMemories = nodes.filter((n) => n.type === "memory").length;
   const totalDocs = nodes.filter((n) => n.type === "document").length;
+  const totalEntities = nodes.filter((n) => n.type === "entity").length;
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50" style={{ touchAction: 'none' }}>
@@ -493,7 +591,7 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
           <div>
             <h2 className="text-xl font-semibold text-white">Memory Graph</h2>
             <p className="text-sm text-neutral-400 mt-0.5">
-              {totalDocs} documents • {totalMemories} memories • {edges.length} connections
+              {totalDocs} documents • {totalMemories} memories • {totalEntities > 0 ? `${totalEntities} entities • ` : ''}{edges.length} connections
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -551,17 +649,25 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
                     <div className="w-3 h-3 bg-blue-400/30 border border-blue-400" style={{ clipPath: "polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)" }} />
                     <span className="text-xs text-neutral-300">Memory</span>
                   </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-amber-500/25 border-2 border-amber-500" />
+                    <span className="text-xs text-neutral-300">Entity</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 bg-amber-500/30 border border-amber-500" style={{ clipPath: "polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)" }} />
+                    <span className="text-xs text-neutral-300">Core Memory</span>
+                  </div>
                 </div>
               </div>
               <div>
-                <div className="text-[10px] text-neutral-500 mb-1.5">SECTORS</div>
+                <div className="text-[10px] text-neutral-500 mb-1.5">ENTITY TYPES</div>
                 <div className="space-y-1">
-                  {Object.entries(COLORS.sectors)
+                  {Object.entries(COLORS.entityTypes)
                     .filter(([k]) => k !== "default")
-                    .map(([sector, color]) => (
-                      <div key={sector} className="flex items-center gap-2">
+                    .map(([type, color]) => (
+                      <div key={type} className="flex items-center gap-2">
                         <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
-                        <span className="text-[11px] text-neutral-400 capitalize">{sector}</span>
+                        <span className="text-[11px] text-neutral-400 capitalize">{type}</span>
                       </div>
                     ))}
                 </div>
@@ -574,8 +680,14 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
           {selectedNode && (
             <div className="absolute top-4 right-4 w-80 bg-neutral-900/95 rounded-xl p-5 backdrop-blur-sm border border-neutral-800">
               <div className="flex items-center gap-2 mb-3">
-                {selectedNode.type === "document" ? <FileText className="w-5 h-5 text-white/70" /> : <Brain className="w-5 h-5 text-blue-400" />}
-                <span className="text-sm font-medium text-white">{selectedNode.type === "document" ? "Document" : "Memory"}</span>
+                {selectedNode.type === "document" ? (
+                  <FileText className="w-5 h-5 text-white/70" />
+                ) : selectedNode.type === "entity" ? (
+                  <div className="w-5 h-5 rounded-full bg-amber-500/30 border border-amber-500" />
+                ) : (
+                  <Brain className="w-5 h-5 text-blue-400" />
+                )}
+                <span className="text-sm font-medium text-white capitalize">{selectedNode.type}</span>
                 <button onClick={() => setSelectedNode(null)} className="ml-auto text-neutral-500 hover:text-neutral-300">
                   <X className="w-4 h-4" />
                 </button>
@@ -593,6 +705,34 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
                   )}
                   <div className="text-[10px] text-neutral-500 mb-1">MEMORY COUNT</div>
                   <p className="text-sm text-white">{(selectedNode.data as GraphSource).memory_count} memories</p>
+                  <div className="mt-3 pt-3 border-t border-neutral-800 text-xs text-neutral-500">
+                    {new Date((selectedNode.data as GraphSource).created_at).toLocaleDateString()}
+                  </div>
+                </>
+              ) : selectedNode.type === "entity" ? (
+                <>
+                  <div className="text-[10px] text-neutral-500 mb-1">NAME</div>
+                  <p className="text-sm text-white mb-3">{(selectedNode.data as GraphEntity).name}</p>
+                  <div className="flex items-center gap-2 mb-3">
+                    <span
+                      className="px-2 py-0.5 rounded text-xs font-medium capitalize"
+                      style={{
+                        backgroundColor: `${COLORS.entityTypes[(selectedNode.data as GraphEntity).entity_type] || COLORS.entityTypes.default}33`,
+                        color: COLORS.entityTypes[(selectedNode.data as GraphEntity).entity_type] || COLORS.entityTypes.default,
+                      }}
+                    >
+                      {(selectedNode.data as GraphEntity).entity_type}
+                    </span>
+                  </div>
+                  {(selectedNode.data as GraphEntity).summary && (
+                    <>
+                      <div className="text-[10px] text-neutral-500 mb-1">SUMMARY</div>
+                      <p className="text-xs text-neutral-300 leading-relaxed mb-3">{(selectedNode.data as GraphEntity).summary}</p>
+                    </>
+                  )}
+                  <div className="text-xs text-neutral-500">
+                    Mentioned {(selectedNode.data as GraphEntity).mention_count || 0} times
+                  </div>
                 </>
               ) : (
                 <>
@@ -606,17 +746,29 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
                     >
                       {(selectedNode.data as GraphMemory).sector || "unknown"}
                     </span>
+                    {(selectedNode.data as GraphMemory).memory_type && (
+                      <span className="px-2 py-0.5 rounded text-xs font-medium capitalize bg-neutral-700 text-neutral-300">
+                        {(selectedNode.data as GraphMemory).memory_type}
+                      </span>
+                    )}
+                    {(selectedNode.data as GraphMemory).priority === "core" && (
+                      <span className="px-2 py-0.5 rounded text-xs font-medium bg-amber-500/20 text-amber-400">
+                        Core
+                      </span>
+                    )}
                   </div>
                   <p className="text-sm text-neutral-200 leading-relaxed">{(selectedNode.data as GraphMemory).content}</p>
-                  <div className="mt-3 text-xs text-neutral-500">
-                    Salience: {((selectedNode.data as GraphMemory).salience * 100).toFixed(0)}%
+                  <div className="mt-3 flex items-center gap-4 text-xs text-neutral-500">
+                    <span>Salience: {((selectedNode.data as GraphMemory).salience * 100).toFixed(0)}%</span>
+                    {((selectedNode.data as GraphMemory).recall_count || 0) > 0 && (
+                      <span>Recalled: {(selectedNode.data as GraphMemory).recall_count}×</span>
+                    )}
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-neutral-800 text-xs text-neutral-500">
+                    {new Date((selectedNode.data as GraphMemory).created_at).toLocaleDateString()}
                   </div>
                 </>
               )}
-
-              <div className="mt-3 pt-3 border-t border-neutral-800 text-xs text-neutral-500">
-                {new Date(selectedNode.data.created_at).toLocaleDateString()}
-              </div>
             </div>
           )}
         </div>

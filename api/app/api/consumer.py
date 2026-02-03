@@ -998,8 +998,20 @@ class GraphMemory(BaseModel):
     id: str
     content: str
     sector: Optional[str]
+    memory_type: Optional[str] = None
+    priority: Optional[str] = None
     salience: float
+    recall_count: int = 0
+    coactivation_score: float = 0.0
     created_at: str
+
+
+class GraphEntity(BaseModel):
+    id: str
+    name: str
+    entity_type: str
+    summary: Optional[str] = None
+    mention_count: int = 0
 
 class GraphSource(BaseModel):
     id: str
@@ -1018,7 +1030,8 @@ class GraphEdge(BaseModel):
 
 class MemoryGraphResponse(BaseModel):
     sources: List[GraphSource]
-    atomic_memories: List[GraphMemory]  # Standalone memories not linked to any document
+    atomic_memories: List[GraphMemory]
+    entities: List[GraphEntity] = []
     edges: List[GraphEdge]
     stats: dict
 
@@ -1113,10 +1126,14 @@ async def get_memory_graph(
                     id=str(m.id),
                     content=m.content[:200] if m.content else "",
                     sector=m.sector,
+                    memory_type=getattr(m, 'memory_type', None),
+                    priority=getattr(m, 'priority', None),
                     salience=m.salience or 0.5,
+                    recall_count=getattr(m, 'recall_count', 0) or 0,
+                    coactivation_score=getattr(m, 'coactivation_score', 0.0) or 0.0,
                     created_at=m.created_at.isoformat() if m.created_at else ""
                 )
-                for m in source_mems[:20]  # Limit memories per source for performance
+                for m in source_mems[:20]
             ]
         ))
     
@@ -1127,10 +1144,14 @@ async def get_memory_graph(
             id=str(m.id),
             content=m.content[:200] if m.content else "",
             sector=m.sector,
+            memory_type=getattr(m, 'memory_type', None),
+            priority=getattr(m, 'priority', None),
             salience=m.salience or 0.5,
+            recall_count=getattr(m, 'recall_count', 0) or 0,
+            coactivation_score=getattr(m, 'coactivation_score', 0.0) or 0.0,
             created_at=m.created_at.isoformat() if m.created_at else ""
         )
-        for m in atomic_memories[:100]  # Show up to 100 atomic memories
+        for m in atomic_memories[:100]
     ]
     total_memories += len(atomic_graph_memories)
     
@@ -1147,7 +1168,7 @@ async def get_memory_graph(
                 edge_type="doc-memory"
             ))
     
-    # 2. Memory-memory edges (waypoints) - these will connect similar atomic memories
+    # 2. Memory-memory edges (waypoints)
     for w in waypoints:
         edges.append(GraphEdge(
             source=str(w.src_id),
@@ -1156,14 +1177,57 @@ async def get_memory_graph(
             edge_type="memory-memory"
         ))
     
+    # 3. Entity-memory edges (if entities exist)
+    try:
+        from app.db.models import Entity, MemoryEntity
+        entities_result = await session.execute(
+            select(Entity)
+            .where(Entity.owner_id == owner_id, Entity.is_active == True)
+            .order_by(Entity.mention_count.desc())
+            .limit(50)
+        )
+        entities = entities_result.scalars().all()
+        
+        graph_entities = [
+            GraphEntity(
+                id=str(e.id),
+                name=e.name,
+                entity_type=e.entity_type,
+                summary=e.summary[:200] if e.summary else None,
+                mention_count=e.mention_count or 0
+            )
+            for e in entities
+        ]
+        
+        if entities:
+            entity_ids = [str(e.id) for e in entities]
+            mem_entity_result = await session.execute(
+                select(MemoryEntity)
+                .where(MemoryEntity.entity_id.in_(entity_ids))
+            )
+            mem_entities = mem_entity_result.scalars().all()
+            
+            for me in mem_entities:
+                if str(me.memory_id) in all_memory_ids:
+                    edges.append(GraphEdge(
+                        source=str(me.entity_id),
+                        target=str(me.memory_id),
+                        weight=0.8,
+                        edge_type="entity-memory"
+                    ))
+    except Exception:
+        graph_entities = []
+    
     return MemoryGraphResponse(
         sources=graph_sources,
         atomic_memories=atomic_graph_memories,
+        entities=graph_entities,
         edges=edges,
         stats={
             "sources": len(graph_sources),
             "memories": total_memories,
             "atomic": len(atomic_graph_memories),
+            "entities": len(graph_entities),
             "connections": len(edges)
         }
     )
