@@ -1089,15 +1089,21 @@ async def get_memory_graph(
         if mid in memories and sid in source_memories_map:
             source_memories_map[sid].append(memories[mid])
     
-    # Fetch waypoints between ALL memories
+    # Fetch waypoints between ALL memories (both directions)
+    from sqlalchemy import or_
     waypoints_result = await session.execute(
         select(Waypoint)
         .where(
-            Waypoint.src_id.in_(all_memory_ids),
-            Waypoint.dst_id.in_(all_memory_ids)
+            or_(
+                Waypoint.src_id.in_(all_memory_ids),
+                Waypoint.dst_id.in_(all_memory_ids)
+            )
         )
     )
     waypoints = waypoints_result.scalars().all()
+    
+    # Filter to only waypoints where BOTH ends are in our memory set
+    waypoints = [w for w in waypoints if str(w.src_id) in all_memory_ids and str(w.dst_id) in all_memory_ids]
     
     # Track which memories are linked to sources
     linked_memory_ids = set()
@@ -1231,6 +1237,66 @@ async def get_memory_graph(
             "connections": len(edges)
         }
     )
+
+
+# ============ Waypoint Backfill Endpoint ============
+
+@router.post("/consumer/graph/backfill-waypoints")
+async def backfill_waypoints(
+    limit: int = 50,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Backfill waypoints for existing memories that don't have connections.
+    Creates similarity-based waypoints between memories.
+    """
+    from app.core.waypoints import create_waypoint_for_memory
+    
+    owner_id = str(user.id)
+    
+    # Get memories that have embeddings
+    memories_result = await session.execute(
+        select(Memory)
+        .where(
+            Memory.owner_id == owner_id,
+            Memory.is_active == True,
+            Memory.embedding.isnot(None)
+        )
+        .order_by(Memory.created_at.desc())
+        .limit(limit)
+    )
+    memories = memories_result.scalars().all()
+    
+    if not memories:
+        return {"message": "No memories found", "waypoints_created": 0}
+    
+    total_created = 0
+    
+    for mem in memories:
+        try:
+            if hasattr(mem.embedding, 'tolist'):
+                embedding = mem.embedding.tolist()
+            else:
+                embedding = list(mem.embedding)
+            
+            waypoints = await create_waypoint_for_memory(
+                session=session,
+                new_memory_id=str(mem.id),
+                new_embedding=embedding,
+                user_id=mem.user_id or "consumer"
+            )
+            total_created += len([w for w in waypoints if w])
+        except Exception as e:
+            logger.warning(f"Failed to create waypoints for {mem.id}: {e}")
+            continue
+    
+    await session.commit()
+    
+    return {
+        "message": f"Backfilled waypoints for {len(memories)} memories",
+        "waypoints_created": total_created
+    }
 
 
 # ============ Chat Context Endpoints ============

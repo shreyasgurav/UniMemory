@@ -3,15 +3,18 @@ Waypoint creation and management
 """
 from typing import List, Tuple, Optional, Dict
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, or_
 import numpy as np
 import uuid
 from datetime import datetime
+import logging
 
 from app.db.models import Memory, Waypoint
 
+logger = logging.getLogger(__name__)
 
-MIN_SIMILARITY_THRESHOLD = 0.5  # Minimum similarity to create waypoint
+MIN_SIMILARITY_THRESHOLD = 0.35  # Lowered from 0.5 - create more connections
+MAX_WAYPOINTS_PER_MEMORY = 5  # Create up to 5 waypoints per memory
 
 
 async def create_waypoint_for_memory(
@@ -19,22 +22,37 @@ async def create_waypoint_for_memory(
     new_memory_id: str,
     new_embedding: List[float],
     user_id: str,
-    limit: int = 10  # Reduced from 1000 - only check top 10 similar memories
-) -> Optional[Waypoint]:
+    limit: int = 15  # Check top 15 similar memories
+) -> List[Waypoint]:
     """
-    Find most similar existing memory and create a waypoint link
+    Find similar memories and create multiple waypoint links (graph edges)
     
     OPTIMIZED: Uses pgvector cosine distance to find top similar memories
-    instead of iterating through all memories
+    Creates multiple waypoints to all sufficiently similar memories (not just one)
     """
+    created_waypoints = []
+    
     try:
-        # Use pgvector to find top similar memories directly (MUCH faster)
+        # Get the new memory to find its owner_id
+        new_mem_result = await session.execute(
+            select(Memory).where(Memory.id == new_memory_id)
+        )
+        new_memory = new_mem_result.scalar_one_or_none()
+        
+        if not new_memory:
+            logger.warning(f"Memory {new_memory_id} not found for waypoint creation")
+            return []
+        
+        # Use owner_id for filtering (works for both API and consumer)
+        owner_id = new_memory.owner_id
+        
+        # Use pgvector to find top similar memories directly
         stmt = select(Memory).where(
             and_(
                 Memory.id != new_memory_id,
                 Memory.embedding.isnot(None),
                 Memory.is_active == True,
-                Memory.user_id == user_id
+                Memory.owner_id == owner_id  # Use owner_id instead of user_id
             )
         ).order_by(Memory.embedding.cosine_distance(new_embedding)).limit(limit)
         
@@ -42,16 +60,8 @@ async def create_waypoint_for_memory(
         similar_memories = result.scalars().all()
         
         if not similar_memories:
-            # No existing memories, create self-link
-            waypoint = Waypoint(
-                id=str(uuid.uuid4()),
-                src_id=new_memory_id,
-                dst_id=new_memory_id,
-                weight=1.0
-            )
-            session.add(waypoint)
-            await session.flush()
-            return waypoint
+            logger.info(f"No similar memories found for {new_memory_id[:8]}...")
+            return []
         
         # Helper function for cosine similarity
         def cosine_similarity(a: List[float], b: List[float]) -> float:
@@ -65,63 +75,68 @@ async def create_waypoint_for_memory(
                 return 0.0
             return dot / (norm_a * norm_b)
         
-        # Get the most similar memory (first result from ordered query)
-        best_mem = similar_memories[0]
-        best_target_id = str(best_mem.id)
+        # Create waypoints to ALL sufficiently similar memories (not just one)
+        waypoints_created = 0
         
-        # Calculate actual similarity for weight
-        try:
-            if hasattr(best_mem.embedding, 'tolist'):
-                mem_embedding = best_mem.embedding.tolist()
-            else:
-                mem_embedding = list(best_mem.embedding)
-            best_similarity = cosine_similarity(new_embedding, mem_embedding)
-        except Exception:
-            best_similarity = 0.6  # Default if calculation fails
-        
-        # Create waypoint if similarity is above threshold
-        if best_target_id and best_similarity >= MIN_SIMILARITY_THRESHOLD:
-            # Check if waypoint already exists
+        for mem in similar_memories:
+            if waypoints_created >= MAX_WAYPOINTS_PER_MEMORY:
+                break
+                
+            target_id = str(mem.id)
+            
+            # Calculate similarity for weight
+            try:
+                if hasattr(mem.embedding, 'tolist'):
+                    mem_embedding = mem.embedding.tolist()
+                else:
+                    mem_embedding = list(mem.embedding)
+                similarity = cosine_similarity(new_embedding, mem_embedding)
+            except Exception:
+                similarity = 0.4  # Default if calculation fails
+            
+            # Only create waypoint if above threshold
+            if similarity < MIN_SIMILARITY_THRESHOLD:
+                continue
+            
+            # Consistent ordering (smaller ID first) for bidirectional lookup
+            src_id = min(new_memory_id, target_id)
+            dst_id = max(new_memory_id, target_id)
+            
+            # Check if waypoint already exists (in either direction)
             existing_stmt = select(Waypoint).where(
-                and_(
-                    Waypoint.src_id == new_memory_id,
-                    Waypoint.dst_id == best_target_id
+                or_(
+                    and_(Waypoint.src_id == src_id, Waypoint.dst_id == dst_id),
+                    and_(Waypoint.src_id == dst_id, Waypoint.dst_id == src_id)
                 )
             )
             existing_result = await session.execute(existing_stmt)
             existing_waypoint = existing_result.scalar_one_or_none()
             
             if existing_waypoint:
-                # Update weight
-                existing_waypoint.weight = float(best_similarity)
-                existing_waypoint.updated_at = datetime.utcnow()
-                await session.flush()
-                return existing_waypoint
+                # Update weight if new similarity is higher
+                if similarity > existing_waypoint.weight:
+                    existing_waypoint.weight = float(similarity)
+                    existing_waypoint.updated_at = datetime.utcnow()
+                created_waypoints.append(existing_waypoint)
             else:
                 # Create new waypoint
                 waypoint = Waypoint(
                     id=str(uuid.uuid4()),
-                    src_id=new_memory_id,
-                    dst_id=best_target_id,
-                    weight=float(best_similarity)
+                    src_id=src_id,
+                    dst_id=dst_id,
+                    weight=float(similarity),
+                    relationship_type='similar'
                 )
                 session.add(waypoint)
-                await session.flush()
-                print(f"[Waypoint] Created: {new_memory_id} → {best_target_id} (sim: {best_similarity:.2f})")
-                return waypoint
-        else:
-            # No good match, create self-link (OpenMemory style)
-            waypoint = Waypoint(
-                id=str(uuid.uuid4()),
-                src_id=new_memory_id,
-                dst_id=new_memory_id,
-                weight=1.0
-            )
-            session.add(waypoint)
-            await session.flush()
-            return waypoint
+                created_waypoints.append(waypoint)
+                waypoints_created += 1
+                logger.info(f"[Waypoint] {src_id[:8]}... ↔ {dst_id[:8]}... (sim: {similarity:.2f})")
+        
+        await session.flush()
+        logger.info(f"Created {waypoints_created} waypoints for memory {new_memory_id[:8]}...")
+        return created_waypoints
             
     except Exception as e:
-        print(f"[Waypoint] Failed to create waypoint: {e}")
-        return None
+        logger.error(f"[Waypoint] Failed to create waypoints: {e}")
+        return []
 
