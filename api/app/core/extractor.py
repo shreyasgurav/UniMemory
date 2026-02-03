@@ -169,7 +169,7 @@ Return JSON object with memories array:
   ]
 }
 
-Extract at most 5 memories. Focus on the most important facts about the user."""
+Extract up to 15 memories. Focus on all important facts, preferences, and insights about the user. Don't miss any significant information."""
         else:
             # Web page or document
             content_type = self._detect_content_type(metadata)
@@ -196,7 +196,7 @@ Return JSON object with memories array:
   ]
 }}
 
-Extract at most 5 memories. Focus on the most important and useful information from this {content_type}."""
+Extract up to 15 memories. Capture all important facts, insights, and useful information from this {content_type}. Be thorough - don't miss key details."""
         
         try:
             # Truncate input to prevent token overflow
@@ -211,7 +211,7 @@ Extract at most 5 memories. Focus on the most important and useful information f
                     ],
                     temperature=0.3,
                     response_format={"type": "json_object"},
-                    max_tokens=1000,
+                    max_tokens=2000,  # Increased for more memories
                 ),
                 timeout=settings.OPENAI_TIMEOUT
             )

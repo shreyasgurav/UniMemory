@@ -60,7 +60,7 @@ class Settings(BaseSettings):
     SEGMENT_SIZE: int = 1000
     SUMMARY_MAX_LENGTH: int = 500
     MAX_CONTENT_LENGTH: int = 50000  # Max input content length (chars)
-    MAX_MEMORIES_PER_REQUEST: int = 10  # Max memories extracted per request
+    MAX_MEMORIES_PER_REQUEST: int = 15  # Max memories extracted per request
     
     # Search
     DEFAULT_SEARCH_LIMIT: int = 10
