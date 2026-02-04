@@ -136,19 +136,25 @@ async def create_waypoints_background(
     user_id: str
 ):
     """Background task to create waypoints (non-blocking, capped)"""
-    try:
-        async with session_factory() as session:
-            # Cap waypoints to prevent unbounded work
-            for memory_id, embedding in zip(memory_ids[:MAX_WAYPOINTS_PER_INGEST], embeddings[:MAX_WAYPOINTS_PER_INGEST]):
-                await create_waypoint_for_memory(
+    total_created = 0
+    
+    # Process each memory in its own session to avoid transaction issues
+    for memory_id, embedding in zip(memory_ids[:MAX_WAYPOINTS_PER_INGEST], embeddings[:MAX_WAYPOINTS_PER_INGEST]):
+        try:
+            async with session_factory() as session:
+                waypoints = await create_waypoint_for_memory(
                     session=session,
                     new_memory_id=memory_id,
                     new_embedding=embedding,
                     user_id=user_id
                 )
-            await session.commit()
-    except Exception as e:
-        logger.error(f"Background waypoint creation failed for memories {memory_ids[:3]}...: {e}")
+                await session.commit()
+                total_created += len(waypoints) if waypoints else 0
+        except Exception as e:
+            logger.error(f"Background waypoint creation failed for memory {memory_id[:8]}...: {e}")
+            continue
+    
+    logger.info(f"Background waypoint task completed: {total_created} waypoints for {len(memory_ids)} memories")
 
 
 async def store_extracted_memories(

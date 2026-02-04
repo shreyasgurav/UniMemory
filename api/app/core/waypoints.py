@@ -124,8 +124,7 @@ async def create_waypoint_for_memory(
                     id=str(uuid.uuid4()),
                     src_id=src_id,
                     dst_id=dst_id,
-                    weight=float(similarity),
-                    relationship_type='similar'
+                    weight=float(similarity)
                 )
                 session.add(waypoint)
                 created_waypoints.append(waypoint)
