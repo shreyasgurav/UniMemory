@@ -40,8 +40,8 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = "gpt-4o-mini"
     EMBEDDING_MODEL: str = "text-embedding-3-small"
     EMBEDDING_DIM: int = 1536
-    OPENAI_TIMEOUT: int = 15  # Reduced timeout for faster failure (embeddings are fast)
-    OPENAI_MAX_RETRIES: int = 2  # Reduced retries to fail faster
+    OPENAI_TIMEOUT: int = 60  # Increased for 15-memory extraction from long chats
+    OPENAI_MAX_RETRIES: int = 2  # Keep retries low to avoid long waits
     
     # Auth
     SECRET_KEY: str = "your-secret-key-change-in-production"
