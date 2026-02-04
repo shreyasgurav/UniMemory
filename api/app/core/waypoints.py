@@ -14,7 +14,7 @@ from app.db.models import Memory, Waypoint
 logger = logging.getLogger(__name__)
 
 MIN_SIMILARITY_THRESHOLD = 0.35  # Lowered from 0.5 - create more connections
-MAX_WAYPOINTS_PER_MEMORY = 5  # Create up to 5 waypoints per memory
+MAX_WAYPOINTS_PER_MEMORY = 8  # Create up to 8 waypoints per memory (increased for cross-doc)
 
 
 async def create_waypoint_for_memory(
@@ -22,7 +22,7 @@ async def create_waypoint_for_memory(
     new_memory_id: str,
     new_embedding: List[float],
     user_id: str,
-    limit: int = 15  # Check top 15 similar memories
+    limit: int = 30  # Check top 30 similar memories (increased for cross-doc)
 ) -> List[Waypoint]:
     """
     Find similar memories and create multiple waypoint links (graph edges)

@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # Maximum waypoints to create per ingest call (prevents unbounded background tasks)
-MAX_WAYPOINTS_PER_INGEST = 20
+MAX_WAYPOINTS_PER_INGEST = 50  # Increased to handle larger ingests
 
 
 # =============================================================================
