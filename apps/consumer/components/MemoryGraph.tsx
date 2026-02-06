@@ -650,24 +650,35 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
                     <span className="text-xs text-neutral-300">Memory</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full bg-amber-500/25 border-2 border-amber-500" />
-                    <span className="text-xs text-neutral-300">Entity</span>
-                  </div>
-                  <div className="flex items-center gap-2">
                     <div className="w-3 h-3 bg-amber-500/30 border border-amber-500" style={{ clipPath: "polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)" }} />
                     <span className="text-xs text-neutral-300">Core Memory</span>
                   </div>
                 </div>
               </div>
               <div>
-                <div className="text-[10px] text-neutral-500 mb-1.5">ENTITY TYPES</div>
+                <div className="text-[10px] text-neutral-500 mb-1.5">CONNECTIONS</div>
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-px bg-slate-500/35" />
+                    <span className="text-xs text-neutral-400">Doc-Memory</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <svg width="16" height="8" className="flex-shrink-0">
+                      <path d="M 0 4 Q 8 0, 16 4" stroke="rgba(35, 189, 255, 0.5)" strokeWidth="1.5" fill="none" />
+                    </svg>
+                    <span className="text-xs text-neutral-400">Waypoint</span>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] text-neutral-500 mb-1.5">MEMORY SECTORS</div>
                 <div className="space-y-1">
-                  {Object.entries(COLORS.entityTypes)
+                  {Object.entries(COLORS.sectors)
                     .filter(([k]) => k !== "default")
-                    .map(([type, color]) => (
-                      <div key={type} className="flex items-center gap-2">
+                    .map(([sector, color]) => (
+                      <div key={sector} className="flex items-center gap-2">
                         <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
-                        <span className="text-[11px] text-neutral-400 capitalize">{type}</span>
+                        <span className="text-[11px] text-neutral-400 capitalize">{sector}</span>
                       </div>
                     ))}
                 </div>
