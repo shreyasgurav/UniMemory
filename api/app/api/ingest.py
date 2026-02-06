@@ -136,11 +136,13 @@ async def create_waypoints_background(
     user_id: str
 ):
     """Background task to create waypoints (non-blocking, capped)"""
+    logger.info(f"[Waypoint BG] Starting background task for {len(memory_ids)} memories")
     total_created = 0
     
     # Process each memory in its own session to avoid transaction issues
-    for memory_id, embedding in zip(memory_ids[:MAX_WAYPOINTS_PER_INGEST], embeddings[:MAX_WAYPOINTS_PER_INGEST]):
+    for i, (memory_id, embedding) in enumerate(zip(memory_ids[:MAX_WAYPOINTS_PER_INGEST], embeddings[:MAX_WAYPOINTS_PER_INGEST])):
         try:
+            logger.info(f"[Waypoint BG] Processing memory {i+1}/{len(memory_ids)}: {memory_id[:8]}...")
             async with session_factory() as session:
                 waypoints = await create_waypoint_for_memory(
                     session=session,
@@ -149,12 +151,14 @@ async def create_waypoints_background(
                     user_id=user_id
                 )
                 await session.commit()
-                total_created += len(waypoints) if waypoints else 0
+                count = len(waypoints) if waypoints else 0
+                total_created += count
+                logger.info(f"[Waypoint BG] Memory {memory_id[:8]}... created {count} waypoints")
         except Exception as e:
-            logger.error(f"Background waypoint creation failed for memory {memory_id[:8]}...: {e}")
+            logger.error(f"[Waypoint BG] FAILED for memory {memory_id[:8]}...: {e}", exc_info=True)
             continue
     
-    logger.info(f"Background waypoint task completed: {total_created} waypoints for {len(memory_ids)} memories")
+    logger.info(f"[Waypoint BG] COMPLETED: {total_created} total waypoints for {len(memory_ids)} memories")
 
 
 async def store_extracted_memories(

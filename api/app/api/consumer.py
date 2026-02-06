@@ -1100,10 +1100,13 @@ async def get_memory_graph(
             )
         )
     )
-    waypoints = waypoints_result.scalars().all()
+    all_waypoints = waypoints_result.scalars().all()
+    logger.info(f"[Graph] Found {len(all_waypoints)} total waypoints in DB for {len(all_memory_ids)} memories")
     
     # Filter to only waypoints where BOTH ends are in our memory set
-    waypoints = [w for w in waypoints if str(w.src_id) in all_memory_ids and str(w.dst_id) in all_memory_ids]
+    all_memory_ids_set = set(all_memory_ids)
+    waypoints = [w for w in all_waypoints if str(w.src_id) in all_memory_ids_set and str(w.dst_id) in all_memory_ids_set]
+    logger.info(f"[Graph] After filtering: {len(waypoints)} waypoints (filtered out {len(all_waypoints) - len(waypoints)})")
     
     # Track which memories are linked to sources
     linked_memory_ids = set()
@@ -1296,6 +1299,69 @@ async def backfill_waypoints(
     return {
         "message": f"Backfilled waypoints for {len(memories)} memories",
         "waypoints_created": total_created
+    }
+
+
+# ============ Debug Waypoints Endpoint ============
+
+@router.get("/consumer/debug/waypoints")
+async def debug_waypoints(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db)
+):
+    """Debug endpoint to check waypoint status"""
+    owner_id = str(user.id)
+    
+    # Get all memories
+    memories_result = await session.execute(
+        select(Memory)
+        .where(Memory.owner_id == owner_id, Memory.is_active == True)
+        .order_by(Memory.created_at.desc())
+        .limit(100)
+    )
+    memories = memories_result.scalars().all()
+    memory_ids = [str(m.id) for m in memories]
+    
+    # Get all waypoints
+    from sqlalchemy import or_
+    waypoints_result = await session.execute(
+        select(Waypoint)
+        .where(
+            or_(
+                Waypoint.src_id.in_(memory_ids),
+                Waypoint.dst_id.in_(memory_ids)
+            )
+        )
+    )
+    waypoints = waypoints_result.scalars().all()
+    
+    # Group by memory to see connections
+    memory_waypoint_count = {}
+    for m in memories:
+        mid = str(m.id)
+        count = sum(1 for w in waypoints if str(w.src_id) == mid or str(w.dst_id) == mid)
+        memory_waypoint_count[mid] = {
+            "content": m.content[:50] + "...",
+            "created_at": m.created_at.isoformat() if m.created_at else None,
+            "waypoint_count": count
+        }
+    
+    return {
+        "total_memories": len(memories),
+        "total_waypoints": len(waypoints),
+        "waypoints_sample": [
+            {
+                "id": str(w.id),
+                "src_id": str(w.src_id),
+                "dst_id": str(w.dst_id),
+                "weight": w.weight
+            }
+            for w in waypoints[:20]
+        ],
+        "memories_without_waypoints": [
+            mid for mid, data in memory_waypoint_count.items() if data["waypoint_count"] == 0
+        ][:20],
+        "memory_waypoint_counts": dict(list(memory_waypoint_count.items())[:20])
     }
 
 
