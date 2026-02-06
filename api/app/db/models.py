@@ -169,10 +169,10 @@ class Waypoint(Base):
     dst_id = Column(UUID(as_uuid=False), ForeignKey("memories.id", ondelete="CASCADE"), nullable=False)
     weight = Column(Float, default=0.5, nullable=False)  # Similarity weight (0.0 - 1.0)
     
-    # NOTE: Coactivation fields commented out until migration is run on production DB
-    # coactivation_count = Column(Integer, default=0)  # Times co-recalled
-    # last_coactivated_at = Column(DateTime(timezone=True))  # Last co-recall time
-    # relationship_type = Column(String(50), default='similar')  # similar, sequential, causal, hierarchical
+    # Coactivation fields
+    coactivation_count = Column(Integer, default=0)  # Times co-recalled
+    last_coactivated_at = Column(DateTime(timezone=True))  # Last co-recall time
+    relationship_type = Column(String(50), default='similar')  # similar, sequential, causal, hierarchical
     
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
