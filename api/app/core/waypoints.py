@@ -3,7 +3,7 @@ Waypoint creation and management
 """
 from typing import List, Tuple, Optional, Dict
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_
+from sqlalchemy import select, and_, or_, text
 import numpy as np
 import uuid
 from datetime import datetime
@@ -120,19 +120,19 @@ async def create_waypoint_for_memory(
                     existing_waypoint.updated_at = datetime.utcnow()
                 created_waypoints.append(existing_waypoint)
             else:
-                # Create new waypoint - use string UUIDs consistently
-                waypoint = Waypoint(
-                    id=str(uuid.uuid4()),
-                    src_id=src_id_str,
-                    dst_id=dst_id_str,
-                    weight=float(similarity)
+                # Create new waypoint using raw SQL to avoid SQLAlchemy 2.0 UUID mismatch issue
+                waypoint_id = str(uuid.uuid4())
+                await session.execute(
+                    text("""
+                        INSERT INTO waypoints (id, src_id, dst_id, weight, created_at, updated_at)
+                        VALUES (:id, :src_id, :dst_id, :weight, NOW(), NOW())
+                        ON CONFLICT (src_id, dst_id) DO UPDATE SET weight = GREATEST(waypoints.weight, :weight)
+                    """),
+                    {"id": waypoint_id, "src_id": src_id_str, "dst_id": dst_id_str, "weight": float(similarity)}
                 )
-                session.add(waypoint)
-                created_waypoints.append(waypoint)
                 waypoints_created += 1
                 logger.info(f"[Waypoint] {src_id_str[:8]}... ↔ {dst_id_str[:8]}... (sim: {similarity:.2f})")
         
-        await session.flush()
         logger.info(f"Created {waypoints_created} waypoints for memory {new_memory_id[:8]}...")
         return created_waypoints
             
