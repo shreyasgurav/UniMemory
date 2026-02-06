@@ -99,14 +99,15 @@ async def create_waypoint_for_memory(
                 continue
             
             # Consistent ordering (smaller ID first) for bidirectional lookup
-            src_id = min(new_memory_id, target_id)
-            dst_id = max(new_memory_id, target_id)
+            # Ensure IDs are strings for comparison and storage
+            src_id_str = str(min(new_memory_id, target_id))
+            dst_id_str = str(max(new_memory_id, target_id))
             
             # Check if waypoint already exists (in either direction)
             existing_stmt = select(Waypoint).where(
                 or_(
-                    and_(Waypoint.src_id == src_id, Waypoint.dst_id == dst_id),
-                    and_(Waypoint.src_id == dst_id, Waypoint.dst_id == src_id)
+                    and_(Waypoint.src_id == src_id_str, Waypoint.dst_id == dst_id_str),
+                    and_(Waypoint.src_id == dst_id_str, Waypoint.dst_id == src_id_str)
                 )
             )
             existing_result = await session.execute(existing_stmt)
@@ -119,17 +120,17 @@ async def create_waypoint_for_memory(
                     existing_waypoint.updated_at = datetime.utcnow()
                 created_waypoints.append(existing_waypoint)
             else:
-                # Create new waypoint
+                # Create new waypoint - use string UUIDs consistently
                 waypoint = Waypoint(
                     id=str(uuid.uuid4()),
-                    src_id=src_id,
-                    dst_id=dst_id,
+                    src_id=src_id_str,
+                    dst_id=dst_id_str,
                     weight=float(similarity)
                 )
                 session.add(waypoint)
                 created_waypoints.append(waypoint)
                 waypoints_created += 1
-                logger.info(f"[Waypoint] {src_id[:8]}... ↔ {dst_id[:8]}... (sim: {similarity:.2f})")
+                logger.info(f"[Waypoint] {src_id_str[:8]}... ↔ {dst_id_str[:8]}... (sim: {similarity:.2f})")
         
         await session.flush()
         logger.info(f"Created {waypoints_created} waypoints for memory {new_memory_id[:8]}...")
