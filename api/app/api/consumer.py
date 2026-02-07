@@ -1647,6 +1647,7 @@ async def get_memory_graph(
         sid = str(source.id)
         source_mems = source_memories_map.get(sid, [])
         total_memories += len(source_mems)
+        logger.info(f"[Graph] Source '{source.title}' (id={sid[:8]}...) has {len(source_mems)} memories")
         
         graph_sources.append(GraphSource(
             id=sid,
