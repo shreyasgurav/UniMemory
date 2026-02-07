@@ -971,11 +971,16 @@
     
     function renderProjectGrid() {
       const grid = extensionPopup.querySelector('#ext-project-grid');
-      if (!grid) return;
+      if (!grid) {
+        console.error('[UniMemory] Project grid element not found');
+        return;
+      }
       
+      console.log('[UniMemory] Rendering project grid with', extProjects.length, 'projects');
       grid.innerHTML = '';
       
       if (extProjects.length === 0) {
+        console.warn('[UniMemory] No projects to display');
         grid.innerHTML = `
           <div class="unimemory-extension-popup-no-projects">
             <p>No projects found.</p>
@@ -986,6 +991,7 @@
       }
       
       extProjects.forEach(project => {
+        console.log('[UniMemory] Rendering project card:', project.name);
         const card = document.createElement('button');
         card.className = 'unimemory-extension-popup-project-card' + (extSelectedProject?.id === project.id ? ' selected' : '');
         card.innerHTML = `
@@ -1003,6 +1009,7 @@
         });
         grid.appendChild(card);
       });
+      console.log('[UniMemory] Project grid rendered successfully');
     }
     
     // Load projects on popup open
