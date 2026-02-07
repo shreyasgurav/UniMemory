@@ -51,6 +51,7 @@ class IngestTextRequest(BaseModel):
     user_id: Optional[str] = Field("anonymous", max_length=100)
     app_id: Optional[str] = Field(None, max_length=100)
     source_id: Optional[str] = Field(None, max_length=255)
+    project_id: Optional[str] = Field(None, max_length=255)  # Project to save to
     # When False, skip creating a Source row and only store extracted memories
     create_source: bool = Field(True)
 
@@ -61,6 +62,7 @@ class IngestChatRequest(BaseModel):
     user_id: Optional[str] = Field("anonymous", max_length=100)
     app_id: Optional[str] = Field(None, max_length=100)
     source_id: Optional[str] = Field(None, max_length=255)
+    project_id: Optional[str] = Field(None, max_length=255)  # Project to save to
     source_metadata: Optional[Dict[str, Any]] = Field(None)
 
 
@@ -71,6 +73,7 @@ class IngestDocumentRequest(BaseModel):
     user_id: Optional[str] = Field("anonymous", max_length=100)
     app_id: Optional[str] = Field(None, max_length=100)
     source_id: Optional[str] = Field(None, max_length=255)
+    project_id: Optional[str] = Field(None, max_length=255)  # Project to save to
 
 
 class IngestResponse(BaseModel):
@@ -380,6 +383,7 @@ async def ingest_text(
             id=source_uuid,
             owner_id=owner_id,
             end_user_id=str(end_user.id),
+            project_id=request.project_id,  # Project to save to
             type="text",
             source_app=request.app_id or source_app,
             title=None,
@@ -549,6 +553,7 @@ async def ingest_chat(
         id=source_uuid,
         owner_id=owner_id,
         end_user_id=str(end_user.id),
+        project_id=request.project_id,  # Project to save to
         type="chat",
         source_app=request.app_id or source_app,
         title=generated_title,  # Use generated title instead of tab title
@@ -661,6 +666,7 @@ async def ingest_document(
         id=source_uuid,
         owner_id=owner_id,
         end_user_id=str(end_user.id),
+        project_id=request.project_id,  # Project to save to
         type="document",
         source_app=request.app_id or source_app,
         title=request.title,

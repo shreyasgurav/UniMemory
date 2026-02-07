@@ -40,6 +40,7 @@ class Source(Base):
     id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
     owner_id = Column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     end_user_id = Column(UUID(as_uuid=False), ForeignKey("end_users.id", ondelete="SET NULL"), nullable=True, index=True)
+    project_id = Column(UUID(as_uuid=False), ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True)  # Project this source belongs to
     
     # Source classification
     type = Column(String(50), nullable=False, index=True)  # chat, document, web, code, file
@@ -68,11 +69,13 @@ class Source(Base):
     # Relationships
     owner = relationship("User")
     end_user = relationship("EndUser")
+    project = relationship("Project", back_populates="sources")
     
     __table_args__ = (
         Index("idx_sources_owner_type", "owner_id", "type"),
         Index("idx_sources_owner_app", "owner_id", "source_app"),
         Index("idx_sources_owner_created", "owner_id", "created_at"),
+        Index("idx_sources_owner_project", "owner_id", "project_id"),
         Index("idx_sources_summary_embedding", "summary_embedding", postgresql_using="ivfflat", postgresql_with={"lists": 100}),
     )
     
@@ -120,6 +123,7 @@ class Memory(Base):
     end_user_id = Column(UUID(as_uuid=False), ForeignKey("end_users.id", ondelete="SET NULL"), nullable=True, index=True)  # NEW: FK to end_users table
     owner_id = Column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)  # UniMemory user who owns this memory
     api_key_id = Column(UUID(as_uuid=False), ForeignKey("api_keys.id", ondelete="SET NULL"), nullable=True, index=True)  # API Key used to create this memory
+    project_id = Column(UUID(as_uuid=False), ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True)  # Project this memory belongs to
     
     # Embeddings (pgvector)
     embedding = Column(Vector(1536))  # text-embedding-3-small = 1536 dims
@@ -134,6 +138,7 @@ class Memory(Base):
     waypoints_to = relationship("Waypoint", foreign_keys="Waypoint.dst_id", back_populates="target")
     api_key = relationship("APIKey")
     end_user = relationship("EndUser")
+    project = relationship("Project", back_populates="memories")
     
     # Indexes - optimized for production queries
     __table_args__ = (
@@ -218,6 +223,7 @@ class User(Base):
     
     # Relationships
     api_keys = relationship("APIKey", back_populates="user", cascade="all, delete-orphan")
+    projects = relationship("Project", back_populates="owner", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<User(id={self.id}, email={self.email})>"
@@ -251,6 +257,48 @@ class APIKey(Base):
     
     def __repr__(self):
         return f"<APIKey(id={self.id}, name={self.name})>"
+
+
+class Project(Base):
+    """Projects for organizing memories and sources"""
+    __tablename__ = "projects"
+    
+    id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    owner_id = Column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    # Project identity
+    name = Column(String(255), nullable=False)
+    slug = Column(String(255), nullable=False)
+    description = Column(Text)
+    icon = Column(String(50), default='📁')
+    color = Column(String(20), default='#6366f1')
+    
+    # Status tracking
+    status = Column(String(50), default='active')  # active, paused, completed, archived
+    status_note = Column(Text)  # "Working on auth flow", etc.
+    
+    # Settings
+    is_default = Column(Boolean, default=False)
+    is_pinned = Column(Boolean, default=False)
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # Relationships
+    owner = relationship("User", back_populates="projects")
+    memories = relationship("Memory", back_populates="project")
+    sources = relationship("Source", back_populates="project")
+    
+    __table_args__ = (
+        Index("idx_projects_owner", "owner_id"),
+        Index("idx_projects_owner_default", "owner_id", "is_default"),
+        Index("idx_projects_status", "status"),
+        Index("idx_projects_owner_slug", "owner_id", "slug", unique=True),
+    )
+    
+    def __repr__(self):
+        return f"<Project(id={self.id}, name={self.name}, status={self.status})>"
 
 
 class ProcessingLog(Base):

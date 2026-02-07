@@ -289,7 +289,7 @@ async function ingestChat(chatData) {
     throw new Error('Not authenticated');
   }
   
-  console.log('[UniMemory] Ingesting chat with', chatData.messages.length, 'messages');
+  console.log('[UniMemory] Ingesting chat with', chatData.messages.length, 'messages', 'to project:', chatData.projectId || 'default');
   
   const response = await fetch(`${API_BASE_URL}/ingest/chat`, {
     method: 'POST',
@@ -299,6 +299,7 @@ async function ingestChat(chatData) {
     },
     body: JSON.stringify({
       messages: chatData.messages,
+      project_id: chatData.projectId || null,  // Project to save to
       source_metadata: {
         platform: chatData.platform,
         conversation_id: chatData.conversationId,
@@ -422,6 +423,67 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             unimemory_settings: message.settings
           });
           sendResponse({ success: true });
+          break;
+        }
+        
+        case 'GET_PROJECTS': {
+          const session = await getSession();
+          if (!session) {
+            sendResponse({ success: false, error: 'Not authenticated', projects: [] });
+            break;
+          }
+          
+          try {
+            // First ensure default project exists
+            await fetch(`${API_BASE_URL}/consumer/projects/default/ensure`, {
+              headers: { 'Authorization': `Bearer ${session.token}` }
+            });
+            
+            // Then get all projects
+            const response = await fetch(`${API_BASE_URL}/consumer/projects`, {
+              headers: { 'Authorization': `Bearer ${session.token}` }
+            });
+            
+            if (!response.ok) {
+              throw new Error('Failed to fetch projects');
+            }
+            
+            const projects = await response.json();
+            sendResponse({ success: true, projects });
+          } catch (error) {
+            console.error('[UniMemory] Failed to fetch projects:', error);
+            sendResponse({ success: false, error: error.message, projects: [] });
+          }
+          break;
+        }
+        
+        case 'CREATE_PROJECT': {
+          const session = await getSession();
+          if (!session) {
+            sendResponse({ success: false, error: 'Not authenticated' });
+            break;
+          }
+          
+          try {
+            const response = await fetch(`${API_BASE_URL}/consumer/projects`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${session.token}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ name: message.name })
+            });
+            
+            if (!response.ok) {
+              throw new Error('Failed to create project');
+            }
+            
+            const project = await response.json();
+            sendResponse({ success: true, project });
+          } catch (error) {
+            console.error('[UniMemory] Failed to create project:', error);
+            sendResponse({ success: false, error: error.message });
+          }
           break;
         }
         

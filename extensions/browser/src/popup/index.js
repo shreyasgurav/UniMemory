@@ -20,6 +20,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   const userNameSettings = document.getElementById('user-name-settings');
   const userEmailSettings = document.getElementById('user-email-settings');
   
+  // Project selector elements
+  const projectDropdownBtn = document.getElementById('project-dropdown-btn');
+  const projectDropdownMenu = document.getElementById('project-dropdown-menu');
+  const projectList = document.getElementById('project-list');
+  const newProjectBtn = document.getElementById('new-project-btn');
+  const selectedProjectIcon = document.getElementById('selected-project-icon');
+  const selectedProjectName = document.getElementById('selected-project-name');
+  
+  // Project state
+  let projects = [];
+  let selectedProject = null;
+  
   // AI chat platforms to detect
   const AI_CHAT_DOMAINS = [
     'chat.openai.com',
@@ -81,8 +93,161 @@ document.addEventListener('DOMContentLoaded', async () => {
       userAvatarSettings.textContent = (user.display_name || user.email || 'U').charAt(0).toUpperCase();
     }
     
-    // Load settings
+    // Load settings and projects
     loadSettings();
+    loadProjects();
+  }
+  
+  // ============ Project Functions ============
+  
+  async function loadProjects() {
+    try {
+      const response = await chrome.runtime.sendMessage({ type: 'GET_PROJECTS' });
+      
+      if (response.error) {
+        console.error('Failed to load projects:', response.error);
+        return;
+      }
+      
+      projects = response.projects || [];
+      
+      // Find default project or use first one
+      const defaultProject = projects.find(p => p.is_default) || projects[0];
+      
+      // Check if we have a saved project selection
+      const stored = await chrome.storage.local.get('selectedProjectId');
+      const storedProjectId = stored.selectedProjectId;
+      
+      if (storedProjectId) {
+        const storedProject = projects.find(p => p.id === storedProjectId);
+        if (storedProject) {
+          selectProject(storedProject);
+        } else if (defaultProject) {
+          selectProject(defaultProject);
+        }
+      } else if (defaultProject) {
+        selectProject(defaultProject);
+      }
+      
+      renderProjectList();
+    } catch (error) {
+      console.error('Failed to load projects:', error);
+    }
+  }
+  
+  function selectProject(project) {
+    selectedProject = project;
+    selectedProjectIcon.textContent = project.icon || '📁';
+    selectedProjectName.textContent = project.name;
+    
+    // Save selection
+    chrome.storage.local.set({ selectedProjectId: project.id });
+    
+    // Update UI
+    renderProjectList();
+  }
+  
+  function renderProjectList() {
+    projectList.innerHTML = '';
+    
+    projects.forEach(project => {
+      const item = document.createElement('button');
+      item.className = `project-dropdown-item${selectedProject?.id === project.id ? ' selected' : ''}`;
+      item.innerHTML = `
+        <span class="project-icon">${project.icon || '📁'}</span>
+        <span class="project-name">${project.name}</span>
+        <span class="project-count">${project.memory_count || 0}</span>
+      `;
+      item.addEventListener('click', () => {
+        selectProject(project);
+        closeProjectDropdown();
+      });
+      projectList.appendChild(item);
+    });
+  }
+  
+  function toggleProjectDropdown() {
+    const isOpen = !projectDropdownMenu.classList.contains('hidden');
+    if (isOpen) {
+      closeProjectDropdown();
+    } else {
+      openProjectDropdown();
+    }
+  }
+  
+  function openProjectDropdown() {
+    projectDropdownMenu.classList.remove('hidden');
+    projectDropdownBtn.classList.add('open');
+  }
+  
+  function closeProjectDropdown() {
+    projectDropdownMenu.classList.add('hidden');
+    projectDropdownBtn.classList.remove('open');
+  }
+  
+  async function createProject(name) {
+    try {
+      const response = await chrome.runtime.sendMessage({ 
+        type: 'CREATE_PROJECT',
+        name: name
+      });
+      
+      if (response.error) {
+        showStatus('Failed to create project', 'error');
+        return;
+      }
+      
+      // Add to list and select
+      projects.push(response.project);
+      selectProject(response.project);
+      renderProjectList();
+      showStatus('Project created', 'success');
+    } catch (error) {
+      console.error('Failed to create project:', error);
+      showStatus('Failed to create project', 'error');
+    }
+  }
+  
+  function showNewProjectModal() {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+      <div class="modal-content">
+        <h3 class="modal-title">New Project</h3>
+        <input type="text" class="modal-input" placeholder="Project name" id="new-project-input" autofocus>
+        <div class="modal-actions">
+          <button class="modal-btn modal-btn-cancel" id="modal-cancel">Cancel</button>
+          <button class="modal-btn modal-btn-create" id="modal-create">Create</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    
+    const input = modal.querySelector('#new-project-input');
+    const cancelBtn = modal.querySelector('#modal-cancel');
+    const createBtn = modal.querySelector('#modal-create');
+    
+    input.focus();
+    
+    const close = () => modal.remove();
+    
+    const create = async () => {
+      const name = input.value.trim();
+      if (name) {
+        close();
+        await createProject(name);
+      }
+    };
+    
+    cancelBtn.addEventListener('click', close);
+    createBtn.addEventListener('click', create);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') create();
+      if (e.key === 'Escape') close();
+    });
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) close();
+    });
   }
   
   function showNotAuthenticatedState() {
@@ -193,12 +358,28 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Close popup immediately
       window.close();
       
-      // Send message to content script to save the page
-      // The content script will show toast notifications
-      await chrome.tabs.sendMessage(tab.id, { type: 'SAVE_CURRENT_PAGE' });
+      // Send message to content script to save the page with project_id
+      await chrome.tabs.sendMessage(tab.id, { 
+        type: 'SAVE_CURRENT_PAGE',
+        projectId: selectedProject?.id || null
+      });
     } catch (error) {
       console.error('Failed to save page:', error);
       showStatus('Failed to save page', 'error');
+    }
+  });
+  
+  // Project dropdown events
+  projectDropdownBtn.addEventListener('click', toggleProjectDropdown);
+  newProjectBtn.addEventListener('click', () => {
+    closeProjectDropdown();
+    showNewProjectModal();
+  });
+  
+  // Close dropdown when clicking outside
+  document.addEventListener('click', (e) => {
+    if (!projectDropdownBtn.contains(e.target) && !projectDropdownMenu.contains(e.target)) {
+      closeProjectDropdown();
     }
   });
   

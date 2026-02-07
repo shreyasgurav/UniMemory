@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 import logging
 
 from app.db.database import get_db
-from app.db.models import Source, Memory, MemorySource, User, ProcessingLog, MCPActivity, Waypoint, ActivityLog
+from app.db.models import Source, Memory, MemorySource, User, ProcessingLog, MCPActivity, Waypoint, ActivityLog, Project
 from app.api.auth import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -252,6 +252,393 @@ class UserSettingsResponse(BaseModel):
 
 class TagsUpdateRequest(BaseModel):
     tags: List[str]
+
+
+# ============ Projects Models ============
+
+class ProjectCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    description: Optional[str] = None
+    icon: str = "📁"
+    color: str = "#6366f1"
+
+class ProjectUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    description: Optional[str] = None
+    icon: Optional[str] = None
+    color: Optional[str] = None
+    status: Optional[str] = None  # active, paused, completed, archived
+    status_note: Optional[str] = None
+    is_pinned: Optional[bool] = None
+
+class ProjectResponse(BaseModel):
+    id: str
+    name: str
+    slug: str
+    description: Optional[str]
+    icon: str
+    color: str
+    status: str
+    status_note: Optional[str]
+    is_default: bool
+    is_pinned: bool
+    memory_count: int = 0
+    source_count: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ============ Projects Endpoints ============
+
+def _slugify(name: str) -> str:
+    """Convert name to URL-friendly slug"""
+    import re
+    slug = name.lower().strip()
+    slug = re.sub(r'[^\w\s-]', '', slug)
+    slug = re.sub(r'[-\s]+', '-', slug)
+    return slug[:50]
+
+
+@router.get("/consumer/projects", response_model=List[ProjectResponse])
+async def get_projects(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db)
+):
+    """Get all projects for the current user"""
+    # Subquery to count memories per project
+    memory_count_subq = (
+        select(
+            Memory.project_id,
+            func.count(Memory.id).label('memory_count')
+        )
+        .where(Memory.is_active == True)
+        .group_by(Memory.project_id)
+        .subquery()
+    )
+    
+    # Subquery to count sources per project
+    source_count_subq = (
+        select(
+            Source.project_id,
+            func.count(Source.id).label('source_count')
+        )
+        .group_by(Source.project_id)
+        .subquery()
+    )
+    
+    result = await session.execute(
+        select(Project, memory_count_subq.c.memory_count, source_count_subq.c.source_count)
+        .outerjoin(memory_count_subq, Project.id == memory_count_subq.c.project_id)
+        .outerjoin(source_count_subq, Project.id == source_count_subq.c.project_id)
+        .where(Project.owner_id == str(user.id))
+        .order_by(Project.is_default.desc(), Project.is_pinned.desc(), Project.updated_at.desc())
+    )
+    projects_with_counts = result.all()
+    
+    return [
+        ProjectResponse(
+            id=str(p.id),
+            name=p.name,
+            slug=p.slug,
+            description=p.description,
+            icon=p.icon or "📁",
+            color=p.color or "#6366f1",
+            status=p.status or "active",
+            status_note=p.status_note,
+            is_default=p.is_default or False,
+            is_pinned=p.is_pinned or False,
+            memory_count=memory_count or 0,
+            source_count=source_count or 0,
+            created_at=p.created_at,
+            updated_at=p.updated_at
+        )
+        for p, memory_count, source_count in projects_with_counts
+    ]
+
+
+@router.post("/consumer/projects", response_model=ProjectResponse)
+async def create_project(
+    project: ProjectCreate,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db)
+):
+    """Create a new project"""
+    slug = _slugify(project.name)
+    
+    # Check for slug collision and append number if needed
+    base_slug = slug
+    counter = 1
+    while True:
+        existing = await session.execute(
+            select(Project).where(
+                Project.owner_id == str(user.id),
+                Project.slug == slug
+            )
+        )
+        if not existing.scalar_one_or_none():
+            break
+        slug = f"{base_slug}-{counter}"
+        counter += 1
+    
+    new_project = Project(
+        owner_id=str(user.id),
+        name=project.name,
+        slug=slug,
+        description=project.description,
+        icon=project.icon,
+        color=project.color,
+        status="active",
+        is_default=False,
+        is_pinned=False
+    )
+    
+    session.add(new_project)
+    await session.commit()
+    await session.refresh(new_project)
+    
+    return ProjectResponse(
+        id=str(new_project.id),
+        name=new_project.name,
+        slug=new_project.slug,
+        description=new_project.description,
+        icon=new_project.icon or "📁",
+        color=new_project.color or "#6366f1",
+        status=new_project.status or "active",
+        status_note=new_project.status_note,
+        is_default=new_project.is_default or False,
+        is_pinned=new_project.is_pinned or False,
+        memory_count=0,
+        source_count=0,
+        created_at=new_project.created_at,
+        updated_at=new_project.updated_at
+    )
+
+
+@router.get("/consumer/projects/{project_id}", response_model=ProjectResponse)
+async def get_project(
+    project_id: str,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db)
+):
+    """Get a specific project"""
+    # Get counts
+    memory_count_result = await session.execute(
+        select(func.count(Memory.id))
+        .where(Memory.project_id == project_id, Memory.is_active == True)
+    )
+    memory_count = memory_count_result.scalar() or 0
+    
+    source_count_result = await session.execute(
+        select(func.count(Source.id))
+        .where(Source.project_id == project_id)
+    )
+    source_count = source_count_result.scalar() or 0
+    
+    result = await session.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.owner_id == str(user.id)
+        )
+    )
+    project = result.scalar_one_or_none()
+    
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    return ProjectResponse(
+        id=str(project.id),
+        name=project.name,
+        slug=project.slug,
+        description=project.description,
+        icon=project.icon or "📁",
+        color=project.color or "#6366f1",
+        status=project.status or "active",
+        status_note=project.status_note,
+        is_default=project.is_default or False,
+        is_pinned=project.is_pinned or False,
+        memory_count=memory_count,
+        source_count=source_count,
+        created_at=project.created_at,
+        updated_at=project.updated_at
+    )
+
+
+@router.patch("/consumer/projects/{project_id}", response_model=ProjectResponse)
+async def update_project(
+    project_id: str,
+    updates: ProjectUpdate,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db)
+):
+    """Update a project"""
+    result = await session.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.owner_id == str(user.id)
+        )
+    )
+    project = result.scalar_one_or_none()
+    
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Update fields
+    update_data = updates.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(project, field, value)
+    
+    # Update slug if name changed
+    if updates.name:
+        project.slug = _slugify(updates.name)
+    
+    await session.commit()
+    await session.refresh(project)
+    
+    # Get counts
+    memory_count_result = await session.execute(
+        select(func.count(Memory.id))
+        .where(Memory.project_id == project_id, Memory.is_active == True)
+    )
+    memory_count = memory_count_result.scalar() or 0
+    
+    source_count_result = await session.execute(
+        select(func.count(Source.id))
+        .where(Source.project_id == project_id)
+    )
+    source_count = source_count_result.scalar() or 0
+    
+    return ProjectResponse(
+        id=str(project.id),
+        name=project.name,
+        slug=project.slug,
+        description=project.description,
+        icon=project.icon or "📁",
+        color=project.color or "#6366f1",
+        status=project.status or "active",
+        status_note=project.status_note,
+        is_default=project.is_default or False,
+        is_pinned=project.is_pinned or False,
+        memory_count=memory_count,
+        source_count=source_count,
+        created_at=project.created_at,
+        updated_at=project.updated_at
+    )
+
+
+@router.delete("/consumer/projects/{project_id}")
+async def delete_project(
+    project_id: str,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db)
+):
+    """Delete a project (moves memories/sources to Default)"""
+    result = await session.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.owner_id == str(user.id)
+        )
+    )
+    project = result.scalar_one_or_none()
+    
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    if project.is_default:
+        raise HTTPException(status_code=400, detail="Cannot delete default project")
+    
+    # Get default project
+    default_result = await session.execute(
+        select(Project).where(
+            Project.owner_id == str(user.id),
+            Project.is_default == True
+        )
+    )
+    default_project = default_result.scalar_one_or_none()
+    
+    if default_project:
+        # Move memories to default project
+        await session.execute(
+            update(Memory)
+            .where(Memory.project_id == project_id)
+            .values(project_id=str(default_project.id))
+        )
+        
+        # Move sources to default project
+        await session.execute(
+            update(Source)
+            .where(Source.project_id == project_id)
+            .values(project_id=str(default_project.id))
+        )
+    
+    await session.delete(project)
+    await session.commit()
+    
+    return {"message": "Project deleted", "memories_moved_to": "default"}
+
+
+@router.get("/consumer/projects/default/ensure", response_model=ProjectResponse)
+async def ensure_default_project(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db)
+):
+    """Ensure a default project exists for the user, create if not"""
+    result = await session.execute(
+        select(Project).where(
+            Project.owner_id == str(user.id),
+            Project.is_default == True
+        )
+    )
+    project = result.scalar_one_or_none()
+    
+    if not project:
+        # Create default project
+        project = Project(
+            owner_id=str(user.id),
+            name="Default",
+            slug="default",
+            description="Default project for all memories",
+            icon="⭐",
+            color="#6366f1",
+            status="active",
+            is_default=True,
+            is_pinned=False
+        )
+        session.add(project)
+        await session.commit()
+        await session.refresh(project)
+    
+    # Get counts
+    memory_count_result = await session.execute(
+        select(func.count(Memory.id))
+        .where(Memory.project_id == str(project.id), Memory.is_active == True)
+    )
+    memory_count = memory_count_result.scalar() or 0
+    
+    source_count_result = await session.execute(
+        select(func.count(Source.id))
+        .where(Source.project_id == str(project.id))
+    )
+    source_count = source_count_result.scalar() or 0
+    
+    return ProjectResponse(
+        id=str(project.id),
+        name=project.name,
+        slug=project.slug,
+        description=project.description,
+        icon=project.icon or "⭐",
+        color=project.color or "#6366f1",
+        status=project.status or "active",
+        status_note=project.status_note,
+        is_default=project.is_default or False,
+        is_pinned=project.is_pinned or False,
+        memory_count=memory_count,
+        source_count=source_count,
+        created_at=project.created_at,
+        updated_at=project.updated_at
+    )
 
 
 # ============ Sources Endpoints ============

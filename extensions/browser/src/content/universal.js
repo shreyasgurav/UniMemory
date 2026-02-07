@@ -889,7 +889,8 @@
   
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'SAVE_CURRENT_PAGE') {
-      saveCurrentPage();
+      // Pass projectId from popup to save function
+      saveCurrentPageWithProject(message.projectId);
       sendResponse({ success: true });
     } else if (message.type === 'SHOW_EXTENSION_POPUP') {
       showExtensionPopup();
@@ -897,6 +898,51 @@
     }
     return true;
   });
+  
+  // Save with project support
+  async function saveCurrentPageWithProject(projectId) {
+    try {
+      showToast('Saving...', 'info');
+      
+      const messages = extractMessages();
+      
+      if (messages.length === 0) {
+        showToast('No chat messages found on this page', 'error');
+        return;
+      }
+      
+      const metadata = getPageMetadata();
+      
+      const response = await chrome.runtime.sendMessage({
+        type: 'SAVE_CHAT',
+        data: {
+          platform: metadata.platform,
+          conversationId: null,
+          url: metadata.url,
+          title: metadata.title,
+          messages: messages,
+          metadata: metadata,
+          projectId: projectId || null  // Pass project ID
+        }
+      });
+      
+      if (response.success) {
+        const memoryCount = response.data?.stored || 0;
+        const title = response.data?.source_title || metadata.title || 'Chat';
+        showToast(`Saved "${title}" - ${memoryCount} ${memoryCount === 1 ? 'memory' : 'memories'} extracted`, 'success');
+      } else {
+        if (response.error === 'Not authenticated' || response.error?.includes('Session expired')) {
+          showToast('Session expired. Please log in again.', 'error');
+          chrome.runtime.sendMessage({ type: 'LOGIN' });
+        } else {
+          showToast(response.error || 'Failed to save memory', 'error');
+        }
+      }
+    } catch (error) {
+      console.error('Failed to save page:', error);
+      showToast(error.message || 'Failed to save memory', 'error');
+    }
+  }
 
   // Listen for auth messages from UniMemory web app to authenticate the extension
   window.addEventListener('message', async (event) => {

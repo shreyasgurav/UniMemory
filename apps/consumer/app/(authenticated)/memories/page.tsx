@@ -1,9 +1,26 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Trash2, X, Loader2, Workflow } from "lucide-react";
+import { Trash2, X, Loader2, Workflow, ChevronDown, Plus, FolderOpen } from "lucide-react";
 import { auth } from "@/lib/firebase";
 import MemoryGraph from "@/components/MemoryGraph";
+
+interface Project {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string;
+  icon: string;
+  color: string;
+  status: string;
+  status_note?: string;
+  is_default: boolean;
+  is_pinned: boolean;
+  memory_count: number;
+  source_count: number;
+  created_at: string;
+  updated_at: string;
+}
 
 interface Source {
   id: string;
@@ -42,6 +59,41 @@ export default function MemoriesPage() {
   const [deleting, setDeleting] = useState(false);
   const [showGraph, setShowGraph] = useState(false);
   const [graphPrefetched, setGraphPrefetched] = useState(false);
+  
+  // Project state
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [showProjectDropdown, setShowProjectDropdown] = useState(false);
+  const [showNewProjectModal, setShowNewProjectModal] = useState(false);
+  const [newProjectName, setNewProjectName] = useState("");
+  const [creatingProject, setCreatingProject] = useState(false);
+
+  // Load projects
+  const loadProjects = useCallback(async () => {
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) return;
+
+      // Ensure default project exists
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/consumer/projects/default/ensure`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/consumer/projects`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      setProjects(data);
+      
+      // Select first project (default) if none selected
+      if (!selectedProject && data.length > 0) {
+        const defaultProject = data.find((p: Project) => p.is_default) || data[0];
+        setSelectedProject(defaultProject);
+      }
+    } catch (error) {
+      console.error("Failed to load projects:", error);
+    }
+  }, [selectedProject]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -75,9 +127,38 @@ export default function MemoriesPage() {
     }
   }, []);
 
+  // Create new project
+  const createProject = async () => {
+    if (!newProjectName.trim()) return;
+    setCreatingProject(true);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) return;
+
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/consumer/projects`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name: newProjectName.trim() }),
+      });
+      const project = await res.json();
+      setProjects(prev => [...prev, project]);
+      setSelectedProject(project);
+      setShowNewProjectModal(false);
+      setNewProjectName("");
+    } catch (error) {
+      console.error("Failed to create project:", error);
+    } finally {
+      setCreatingProject(false);
+    }
+  };
+
   useEffect(() => {
+    loadProjects();
     loadData();
-  }, [loadData]);
+  }, [loadProjects, loadData]);
 
   // Prefetch graph data in background after page loads
   useEffect(() => {
@@ -236,7 +317,60 @@ export default function MemoriesPage() {
     <div className="h-screen flex flex-col bg-neutral-50">
       {/* Header */}
       <div className="px-8 py-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-neutral-900">Memories</h1>
+        <div className="flex items-center gap-4">
+          <h1 className="text-2xl font-semibold text-neutral-900">Memories</h1>
+          
+          {/* Project Selector */}
+          <div className="relative">
+            <button
+              onClick={() => setShowProjectDropdown(!showProjectDropdown)}
+              className="flex items-center gap-2 px-3 py-2 bg-white border border-neutral-200 rounded-lg hover:bg-neutral-50 transition-colors"
+            >
+              <span className="text-base">{selectedProject?.icon || '📁'}</span>
+              <span className="text-sm font-medium text-neutral-700 max-w-[150px] truncate">
+                {selectedProject?.name || 'Select Project'}
+              </span>
+              <ChevronDown className={`w-4 h-4 text-neutral-400 transition-transform ${showProjectDropdown ? 'rotate-180' : ''}`} />
+            </button>
+            
+            {/* Dropdown Menu */}
+            {showProjectDropdown && (
+              <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-neutral-200 rounded-xl shadow-lg z-50 py-1 max-h-80 overflow-y-auto">
+                {projects.map((project) => (
+                  <button
+                    key={project.id}
+                    onClick={() => {
+                      setSelectedProject(project);
+                      setShowProjectDropdown(false);
+                    }}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 hover:bg-neutral-50 transition-colors ${
+                      selectedProject?.id === project.id ? 'bg-indigo-50' : ''
+                    }`}
+                  >
+                    <span className="text-base">{project.icon}</span>
+                    <span className="flex-1 text-left text-sm font-medium text-neutral-700 truncate">{project.name}</span>
+                    <span className="text-xs text-neutral-400 bg-neutral-100 px-2 py-0.5 rounded">
+                      {project.memory_count}
+                    </span>
+                  </button>
+                ))}
+                <div className="border-t border-neutral-100 mt-1 pt-1">
+                  <button
+                    onClick={() => {
+                      setShowProjectDropdown(false);
+                      setShowNewProjectModal(true);
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-indigo-50 text-indigo-600 transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span className="text-sm font-medium">New Project</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+        
         <button
           onClick={() => setShowGraph(true)}
           className="group flex items-center gap-2 pl-2 pr-4 py-2 rounded-xl bg-neutral-900 text-white text-sm font-medium shadow-sm hover:bg-neutral-800 active:scale-[0.98] transition-all duration-150"
@@ -547,6 +681,51 @@ export default function MemoriesPage() {
 
       {/* Memory Graph Modal */}
       <MemoryGraph isOpen={showGraph} onClose={() => setShowGraph(false)} />
+
+      {/* New Project Modal */}
+      {showNewProjectModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl">
+            <h3 className="text-lg font-semibold text-neutral-900 mb-4">New Project</h3>
+            <input
+              type="text"
+              placeholder="Project name"
+              value={newProjectName}
+              onChange={(e) => setNewProjectName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && createProject()}
+              className="w-full px-4 py-3 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              autoFocus
+            />
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => {
+                  setShowNewProjectModal(false);
+                  setNewProjectName("");
+                }}
+                className="px-4 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-100 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={createProject}
+                disabled={!newProjectName.trim() || creatingProject}
+                className="px-4 py-2 text-sm font-medium text-white bg-neutral-900 hover:bg-neutral-800 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {creatingProject && <Loader2 className="w-4 h-4 animate-spin" />}
+                Create Project
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Click outside to close project dropdown */}
+      {showProjectDropdown && (
+        <div 
+          className="fixed inset-0 z-40" 
+          onClick={() => setShowProjectDropdown(false)}
+        />
+      )}
     </div>
   );
 }

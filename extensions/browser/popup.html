@@ -49,6 +49,28 @@
           <p id="page-url">https://...</p>
         </div>
         
+        <!-- Project Selector -->
+        <div class="project-selector">
+          <label class="project-label">Save to project:</label>
+          <div class="project-dropdown-container">
+            <button id="project-dropdown-btn" class="project-dropdown-btn">
+              <span id="selected-project-icon">⭐</span>
+              <span id="selected-project-name">Default</span>
+              <svg class="dropdown-arrow" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m6 9 6 6 6-6"/>
+              </svg>
+            </button>
+            <div id="project-dropdown-menu" class="project-dropdown-menu hidden">
+              <div id="project-list"></div>
+              <div class="project-dropdown-divider"></div>
+              <button id="new-project-btn" class="project-dropdown-item new-project">
+                <span class="project-icon">+</span>
+                <span>New Project...</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        
         <div class="status-message hidden" id="status-message"></div>
         
         <div class="save-button-container">
