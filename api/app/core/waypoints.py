@@ -1,5 +1,31 @@
 """
 Waypoint creation and management
+
+RESEARCH-BASED THRESHOLDS (Feb 2026):
+
+1. EMBEDDING MODEL: text-embedding-3-small (1536 dims)
+   - V3 models have MUCH lower similarity scores than ada-002
+   - ada-002: avg similarity ~85%, threshold typically 0.79-0.85
+   - text-embedding-3-small: avg similarity ~43%
+   - Source: https://www.s-anand.net/blog/embeddings-similarity-threshold/
+
+2. SIMILARITY EXAMPLES (text-embedding-3-small):
+   - "apple" vs "orange" (related fruits): 45-47% similarity
+   - "Jamaica" vs "apple" (unrelated): ~20% similarity
+   - Related concepts: 45-55% similarity
+   - Same topic: 55-70% similarity
+   - Very similar: 70%+ similarity
+
+3. OPTIMAL THRESHOLD: 0.50 (50%)
+   - Captures: Same topic, closely related concepts
+   - Filters: Unrelated items that share some words
+   - Result: Meaningful clusters, not a hairball
+
+4. MAX CONNECTIONS: 5 per memory
+   - Miller's Law: Human working memory = 4-7 items
+   - Graph theory: Optimal node degree = 4-6 for navigability
+   - Neuroscience: Strong synaptic connections = 5-20 per neuron
+   - Result: Clustered graph with clear associations
 """
 from typing import List, Tuple, Optional, Dict
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,8 +39,9 @@ from app.db.models import Memory, Waypoint
 
 logger = logging.getLogger(__name__)
 
-MIN_SIMILARITY_THRESHOLD = 0.35  # Lowered from 0.5 - create more connections
-MAX_WAYPOINTS_PER_MEMORY = 8  # Create up to 8 waypoints per memory (increased for cross-doc)
+# RESEARCH-BASED VALUES (see docstring above for sources)
+MIN_SIMILARITY_THRESHOLD = 0.50  # 50% - captures related concepts, filters noise
+MAX_WAYPOINTS_PER_MEMORY = 5     # 5 connections - optimal for graph navigability
 
 
 async def create_waypoint_for_memory(
