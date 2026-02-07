@@ -167,7 +167,15 @@ export default function MemoryGraph({ isOpen, onClose, projectId }: MemoryGraphP
   useEffect(() => {
     if (!isOpen) return;
 
+    // Capture projectId at the time of opening to prevent double-fetch
+    const projectIdAtOpen = projectId;
+
+    console.log('[MemoryGraph] useEffect triggered - isOpen:', isOpen, 'projectId:', projectIdAtOpen);
+
     const fetchGraph = async () => {
+      const fetchStartTime = new Date().toISOString();
+      console.log('[MemoryGraph] Starting fetch at', fetchStartTime, 'with projectId:', projectIdAtOpen);
+
       setLoading(true);
       setError(null);
 
@@ -178,9 +186,12 @@ export default function MemoryGraph({ isOpen, onClose, projectId }: MemoryGraphP
           return;
         }
 
+        const url = `${process.env.NEXT_PUBLIC_API_URL}/consumer/graph?limit=50${projectIdAtOpen ? `&project_id=${projectIdAtOpen}` : ''}`;
+        console.log('[MemoryGraph] Fetching from URL:', url);
+
         const response = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/consumer/graph?limit=50${projectId ? `&project_id=${projectId}` : ''}`,
-          { 
+          url,
+          {
             headers: { Authorization: `Bearer ${token}` },
             cache: 'no-store' // Always fetch fresh data
           }
@@ -189,12 +200,23 @@ export default function MemoryGraph({ isOpen, onClose, projectId }: MemoryGraphP
         if (!response.ok) throw new Error("Failed to fetch graph data");
 
         const data = await response.json();
+        console.log('[MemoryGraph] Received data:', {
+          sources: data.sources?.length || 0,
+          atomic_memories: data.atomic_memories?.length || 0,
+          entities: data.entities?.length || 0,
+          edges: data.edges?.length || 0,
+          firstSource: data.sources?.[0]?.title,
+          projectId: projectIdAtOpen,
+          timestamp: new Date().toISOString()
+        });
+
         setSources(data.sources || []);
         setAtomicMemories(data.atomic_memories || []);
         setEntities(data.entities || []);
         setEdges(data.edges || []);
         setStats(data.stats || { sources: 0, memories: 0, atomic: 0, entities: 0, connections: 0 });
       } catch (err) {
+        console.error('[MemoryGraph] Fetch error:', err);
         setError(err instanceof Error ? err.message : "Failed to load graph");
       } finally {
         setLoading(false);
@@ -202,11 +224,19 @@ export default function MemoryGraph({ isOpen, onClose, projectId }: MemoryGraphP
     };
 
     fetchGraph();
-  }, [isOpen, projectId]);
+  }, [isOpen]); // Only depend on isOpen, not projectId - prevents double-fetch when projectId loads
 
   // ============ Build Graph Nodes (Static Layout - No Animation) ============
   useEffect(() => {
+    console.log('[MemoryGraph] Building nodes...', {
+      sources: sources.length,
+      atomicMemories: atomicMemories.length,
+      entities: entities.length,
+      timestamp: new Date().toISOString()
+    });
+
     if (sources.length === 0 && atomicMemories.length === 0 && entities.length === 0) {
+      console.log('[MemoryGraph] No data to build nodes');
       nodesRef.current = [];
       setNodes([]);
       return;
@@ -300,17 +330,17 @@ export default function MemoryGraph({ isOpen, onClose, projectId }: MemoryGraphP
       const entityStartY = centerY - 350;
       const entitySpacing = 80;
       const entityRowSize = Math.min(entities.length, 8);
-      
+
       entities.forEach((entity, i) => {
         const row = Math.floor(i / entityRowSize);
         const col = i % entityRowSize;
         const x = centerX + (col - entityRowSize / 2 + 0.5) * entitySpacing;
         const y = entityStartY + row * entitySpacing;
-        
+
         // Size based on mention count (more mentions = larger)
         const baseSize = 22;
         const mentionBoost = Math.min((entity.mention_count || 0) * 2, 15);
-        
+
         allNodes.push({
           id: entity.id,
           type: "entity",
@@ -324,7 +354,7 @@ export default function MemoryGraph({ isOpen, onClose, projectId }: MemoryGraphP
 
     nodesRef.current = allNodes;
     setNodes([...allNodes]);
-  }, [sources, atomicMemories, entities, edges]);
+  }, [sources, atomicMemories, entities]); // Removed edges - they don't affect node creation
 
   // ============ Canvas Rendering ============
   useEffect(() => {
@@ -458,7 +488,7 @@ export default function MemoryGraph({ isOpen, onClose, projectId }: MemoryGraphP
       } else {
         // Memory: Hexagon
         const mem = node.data as GraphMemory;
-        const color = mem.priority === "core" 
+        const color = mem.priority === "core"
           ? "#F59E0B"  // Amber for core memories
           : COLORS.sectors[mem.sector || "default"] || COLORS.sectors.default;
         const size = node.size;
@@ -571,29 +601,29 @@ export default function MemoryGraph({ isOpen, onClose, projectId }: MemoryGraphP
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
-    
+
     if (!canvasRef.current) return;
-    
+
     // Smooth zoom factor (reduced from 0.9/1.1 to 0.95/1.05 for smoother zooming)
     const zoomIntensity = 0.05; // 5% per scroll tick (was 10%)
     const delta = e.deltaY > 0 ? (1 - zoomIntensity) : (1 + zoomIntensity);
-    
+
     // Get mouse position relative to canvas
     const rect = canvasRef.current.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
-    
+
     // Calculate world position before zoom
     const worldX = (mouseX - pan.x - rect.width / 2) / zoom + centerX;
     const worldY = (mouseY - pan.y - rect.height / 2) / zoom + centerY;
-    
+
     // Apply zoom
     const newZoom = Math.min(3, Math.max(0.2, zoom * delta));
-    
+
     // Calculate new pan to keep mouse position fixed
     const newPanX = mouseX - (worldX - centerX) * newZoom - rect.width / 2;
     const newPanY = mouseY - (worldY - centerY) * newZoom - rect.height / 2;
-    
+
     setZoom(newZoom);
     setPan({ x: newPanX, y: newPanY });
   }, [zoom, pan]);
@@ -663,55 +693,55 @@ export default function MemoryGraph({ isOpen, onClose, projectId }: MemoryGraphP
           {/* Legend - Always visible */}
           {!loading && !error && (
             <div className="absolute bottom-4 right-4 bg-neutral-900/95 rounded-xl p-4 backdrop-blur-sm border border-neutral-800 z-10">
-            <div className="text-xs font-medium text-neutral-400 mb-3">Guide</div>
-            <div className="space-y-3">
-              <div>
-                <div className="text-[10px] text-neutral-500 mb-1.5">NODES</div>
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-2">
-                    <div className="w-5 h-3 rounded bg-white/15 border border-white/60" />
-                    <span className="text-xs text-neutral-300">Document</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 bg-blue-400/30 border border-blue-400" style={{ clipPath: "polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)" }} />
-                    <span className="text-xs text-neutral-300">Memory</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 bg-amber-500/30 border border-amber-500" style={{ clipPath: "polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)" }} />
-                    <span className="text-xs text-neutral-300">Core Memory</span>
-                  </div>
-                </div>
-              </div>
-              <div>
-                <div className="text-[10px] text-neutral-500 mb-1.5">CONNECTIONS</div>
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-px bg-slate-500/35" />
-                    <span className="text-xs text-neutral-400">Doc-Memory</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <svg width="16" height="8" className="flex-shrink-0">
-                      <path d="M 0 4 Q 8 0, 16 4" stroke="rgba(35, 189, 255, 0.5)" strokeWidth="1.5" fill="none" />
-                    </svg>
-                    <span className="text-xs text-neutral-400">Waypoint</span>
+              <div className="text-xs font-medium text-neutral-400 mb-3">Guide</div>
+              <div className="space-y-3">
+                <div>
+                  <div className="text-[10px] text-neutral-500 mb-1.5">NODES</div>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <div className="w-5 h-3 rounded bg-white/15 border border-white/60" />
+                      <span className="text-xs text-neutral-300">Document</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 bg-blue-400/30 border border-blue-400" style={{ clipPath: "polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)" }} />
+                      <span className="text-xs text-neutral-300">Memory</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 bg-amber-500/30 border border-amber-500" style={{ clipPath: "polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)" }} />
+                      <span className="text-xs text-neutral-300">Core Memory</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div>
-                <div className="text-[10px] text-neutral-500 mb-1.5">MEMORY SECTORS</div>
-                <div className="space-y-1">
-                  {Object.entries(COLORS.sectors)
-                    .filter(([k]) => k !== "default")
-                    .map(([sector, color]) => (
-                      <div key={sector} className="flex items-center gap-2">
-                        <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
-                        <span className="text-[11px] text-neutral-400 capitalize">{sector}</span>
-                      </div>
-                    ))}
+                <div>
+                  <div className="text-[10px] text-neutral-500 mb-1.5">CONNECTIONS</div>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-px bg-slate-500/35" />
+                      <span className="text-xs text-neutral-400">Doc-Memory</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <svg width="16" height="8" className="flex-shrink-0">
+                        <path d="M 0 4 Q 8 0, 16 4" stroke="rgba(35, 189, 255, 0.5)" strokeWidth="1.5" fill="none" />
+                      </svg>
+                      <span className="text-xs text-neutral-400">Waypoint</span>
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-neutral-500 mb-1.5">MEMORY SECTORS</div>
+                  <div className="space-y-1">
+                    {Object.entries(COLORS.sectors)
+                      .filter(([k]) => k !== "default")
+                      .map(([sector, color]) => (
+                        <div key={sector} className="flex items-center gap-2">
+                          <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
+                          <span className="text-[11px] text-neutral-400 capitalize">{sector}</span>
+                        </div>
+                      ))}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
           )}
 
           {/* Selected Node Detail */}

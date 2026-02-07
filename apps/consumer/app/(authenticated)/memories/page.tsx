@@ -58,8 +58,8 @@ export default function MemoriesPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'source' | 'memory', id: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [showGraph, setShowGraph] = useState(false);
-  const [graphPrefetched, setGraphPrefetched] = useState(false);
-  
+  // Removed graphPrefetched state - no longer needed after removing prefetch
+
   // Project state
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -80,20 +80,22 @@ export default function MemoriesPage() {
       const [sourcesRes, memoriesRes] = await Promise.all([
         fetch(`${process.env.NEXT_PUBLIC_API_URL}/consumer/sources?limit=50${projectParam}`, {
           headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store', // Prevent caching
         }),
         fetch(`${process.env.NEXT_PUBLIC_API_URL}/consumer/memories?limit=50${projectParam}`, {
           headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store', // Prevent caching
         })
       ]);
-      
+
       const [sourcesData, memoriesData] = await Promise.all([
         sourcesRes.json(),
         memoriesRes.json()
       ]);
-      
+
       console.log('Sources data from API:', sourcesData);
       console.log('First source title:', sourcesData[0]?.title);
-      
+
       setSources(sourcesData);
       setMemories(memoriesData);
     } catch (error) {
@@ -101,7 +103,7 @@ export default function MemoriesPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, []); // Empty deps - function is stable
 
   // Load projects (separate from loadData to avoid dependency issues)
   const loadProjects = async () => {
@@ -119,7 +121,7 @@ export default function MemoriesPage() {
       });
       const data = await res.json();
       setProjects(data);
-      
+
       // Select default project
       if (data.length > 0) {
         const defaultProject = data.find((p: Project) => p.is_default) || data[0];
@@ -162,47 +164,15 @@ export default function MemoriesPage() {
     loadData();
     loadProjects();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadData]);
+  }, []);
 
-  // Auto-reload data when tab becomes visible (e.g., after saving from extension)
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        console.log('Tab became visible, reloading data...');
-        loadData(selectedProject?.id);
-        loadProjects();
-      }
-    };
+  // Removed auto-reload on visibility change - it was causing graph to re-fetch and change data
+  // If needed, user can manually refresh by switching projects or clicking a refresh button
 
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [selectedProject, loadData]);
-
-  // Prefetch graph data in background after page loads
-  useEffect(() => {
-    if (loading || graphPrefetched) return;
-
-    const prefetchGraph = async () => {
-      try {
-        const token = await auth.currentUser?.getIdToken();
-        if (!token) return;
-
-        // Prefetch graph data silently in background
-        await fetch(`${process.env.NEXT_PUBLIC_API_URL}/consumer/graph?limit=50`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        
-        setGraphPrefetched(true);
-        console.log('Graph data prefetched for instant opening');
-      } catch (error) {
-        console.error("Failed to prefetch graph:", error);
-      }
-    };
-
-    // Prefetch after a short delay to not block initial page load
-    const timer = setTimeout(prefetchGraph, 500);
-    return () => clearTimeout(timer);
-  }, [loading, graphPrefetched]);
+  // Removed graph prefetch - it was causing double-fetch with different project filters:
+  // 1st fetch (prefetch): no project_id filter → shows all 8 docs
+  // 2nd fetch (graph open): with project_id filter → shows only 6 docs from that project
+  // This caused the visual bug where graph changed after a few seconds
 
   const loadSourceDetail = async (sourceId: string) => {
     // Set loading state immediately to show popup with skeleton
@@ -214,7 +184,7 @@ export default function MemoriesPage() {
       } as SourceDetail);
       setLoadingSourceDetail(true);
     }
-    
+
     try {
       const token = await auth.currentUser?.getIdToken();
       if (!token) return;
@@ -237,7 +207,7 @@ export default function MemoriesPage() {
   const getSourceTitle = (source: Source) => {
     // Use generated title only, no fallback to tab name
     if (source.title) return source.title;
-    
+
     // Fallback to generic label (not tab name from metadata)
     if (source.type === "chat") return "Untitled Chat";
     return "Untitled " + source.type.charAt(0).toUpperCase() + source.type.slice(1);
@@ -245,7 +215,7 @@ export default function MemoriesPage() {
 
   const getPlatformName = (source: Source) => {
     const metadata = (source as any).source_metadata || {};
-    
+
     // For MCP sources, show the client type nicely formatted
     if (source.source_app === "mcp") {
       const clientType = metadata.client_type || metadata.mcp_client || "";
@@ -260,13 +230,13 @@ export default function MemoriesPage() {
       };
       return mcpClientNames[clientType.toLowerCase()] || "MCP";
     }
-    
+
     // Use platform from metadata if available
     if (metadata.platform) return metadata.platform;
-    
+
     // Use domain from metadata if available
     if (metadata.domain) return metadata.domain;
-    
+
     // Extract from URL if available
     if (metadata.url) {
       try {
@@ -274,15 +244,15 @@ export default function MemoriesPage() {
         const parts = hostname.split('.');
         const domain = parts.length > 1 ? parts[parts.length - 2] : parts[0];
         return domain.charAt(0).toUpperCase() + domain.slice(1);
-      } catch {}
+      } catch { }
     }
-    
+
     return source.source_app || "Unknown";
   };
 
   const getPlatformFavicon = (source: Source) => {
     const metadata = (source as any).source_metadata || {};
-    
+
     // Use Google Favicon API with the source URL for reliable favicon fetching
     if (metadata.url) {
       try {
@@ -293,20 +263,20 @@ export default function MemoriesPage() {
         console.error('Invalid URL for favicon:', metadata.url);
       }
     }
-    
+
     // Fallback: if no URL in metadata, return null
     return null;
   };
 
   const handleDelete = async () => {
     if (!deleteConfirm) return;
-    
+
     try {
       setDeleting(true);
       const token = await auth.currentUser?.getIdToken();
       if (!token) return;
 
-      const endpoint = deleteConfirm.type === 'source' 
+      const endpoint = deleteConfirm.type === 'source'
         ? `${process.env.NEXT_PUBLIC_API_URL}/consumer/sources/${deleteConfirm.id}`
         : `${process.env.NEXT_PUBLIC_API_URL}/consumer/memories/${deleteConfirm.id}`;
 
@@ -337,7 +307,7 @@ export default function MemoriesPage() {
       <div className="px-8 py-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <h1 className="text-2xl font-semibold text-neutral-900">Memories</h1>
-          
+
           {/* Project Selector */}
           <div className="relative">
             <button
@@ -352,7 +322,7 @@ export default function MemoriesPage() {
               </span>
               <ChevronDown className={`w-4 h-4 text-neutral-400 transition-transform ${showProjectDropdown ? 'rotate-180' : ''}`} />
             </button>
-            
+
             {/* Dropdown Menu */}
             {showProjectDropdown && (
               <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-neutral-200 rounded-xl shadow-lg z-50 py-1 max-h-80 overflow-y-auto">
@@ -364,9 +334,8 @@ export default function MemoriesPage() {
                       setShowProjectDropdown(false);
                       loadData(project.id);
                     }}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 hover:bg-neutral-50 transition-colors ${
-                      selectedProject?.id === project.id ? 'bg-indigo-50' : ''
-                    }`}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 hover:bg-neutral-50 transition-colors ${selectedProject?.id === project.id ? 'bg-indigo-50' : ''
+                      }`}
                   >
                     <span className="text-base">{project.icon}</span>
                     <span className="flex-1 text-left text-sm font-medium text-neutral-700 truncate">{project.name}</span>
@@ -391,7 +360,7 @@ export default function MemoriesPage() {
             )}
           </div>
         </div>
-        
+
         <button
           onClick={() => setShowGraph(true)}
           className="group flex items-center gap-2 pl-2 pr-4 py-2 rounded-[14px] bg-neutral-900 text-white text-sm font-medium shadow-sm hover:bg-neutral-800 active:scale-[0.98] transition-all duration-150"
@@ -426,7 +395,7 @@ export default function MemoriesPage() {
                     const title = getSourceTitle(source);
                     const metadata = (source as any).source_metadata || {};
                     const sourceUrl = metadata.url;
-                    
+
                     return (
                       <div key={source.id} className="break-inside-avoid mb-4">
                         <div className="bg-white rounded-xl p-5 hover:shadow-lg transition-all relative group border border-neutral-100">
@@ -742,8 +711,8 @@ export default function MemoriesPage() {
 
       {/* Click outside to close project dropdown */}
       {showProjectDropdown && (
-        <div 
-          className="fixed inset-0 z-40" 
+        <div
+          className="fixed inset-0 z-40"
           onClick={() => setShowProjectDropdown(false)}
         />
       )}
