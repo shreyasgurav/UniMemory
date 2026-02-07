@@ -687,7 +687,7 @@ export default function MemoriesPage() {
       )}
 
       {/* Memory Graph Modal */}
-      <MemoryGraph isOpen={showGraph} onClose={() => setShowGraph(false)} />
+      <MemoryGraph isOpen={showGraph} onClose={() => setShowGraph(false)} projectId={selectedProject?.id} />
 
       {/* New Project Modal */}
       {showNewProjectModal && (

@@ -1561,6 +1561,7 @@ class MemoryGraphResponse(BaseModel):
 @router.get("/consumer/graph", response_model=MemoryGraphResponse)
 async def get_memory_graph(
     limit: int = 50,
+    project_id: Optional[str] = None,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db)
 ):
@@ -1568,16 +1569,18 @@ async def get_memory_graph(
     Get memory graph data for visualization.
     Returns sources (documents) with their memories, plus waypoint edges.
     Structure mirrors supermemory's DocumentWithMemories approach.
+    
+    Optional project_id filter to show only memories/sources for a specific project.
     """
     owner_id = str(user.id)
     
-    # Fetch ALL active memories for the user (including atomic memories without sources)
-    all_memories_result = await session.execute(
-        select(Memory)
-        .where(Memory.owner_id == owner_id, Memory.is_active == True)
-        .order_by(Memory.created_at.desc())
-        .limit(limit * 5)  # Get more memories since we'll cluster them
-    )
+    # Build memory query with optional project filter
+    memory_query = select(Memory).where(Memory.owner_id == owner_id, Memory.is_active == True)
+    if project_id:
+        memory_query = memory_query.where(Memory.project_id == project_id)
+    memory_query = memory_query.order_by(Memory.created_at.desc()).limit(limit * 5)
+    
+    all_memories_result = await session.execute(memory_query)
     all_memories = all_memories_result.scalars().all()
     
     if not all_memories:
@@ -1586,13 +1589,13 @@ async def get_memory_graph(
     all_memory_ids = [str(m.id) for m in all_memories]
     memories = {str(m.id): m for m in all_memories}
     
-    # Fetch sources
-    sources_result = await session.execute(
-        select(Source)
-        .where(Source.owner_id == owner_id)
-        .order_by(Source.created_at.desc())
-        .limit(limit)
-    )
+    # Build sources query with optional project filter
+    source_query = select(Source).where(Source.owner_id == owner_id)
+    if project_id:
+        source_query = source_query.where(Source.project_id == project_id)
+    source_query = source_query.order_by(Source.created_at.desc()).limit(limit)
+    
+    sources_result = await session.execute(source_query)
     sources = sources_result.scalars().all()
     source_ids = [str(s.id) for s in sources]
     

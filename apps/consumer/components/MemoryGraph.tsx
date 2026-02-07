@@ -55,6 +55,7 @@ interface GraphNode {
 interface MemoryGraphProps {
   isOpen: boolean;
   onClose: () => void;
+  projectId?: string;
 }
 
 // ============ Constants ============
@@ -106,7 +107,7 @@ const COLORS = {
 };
 
 // ============ Component ============
-export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
+export default function MemoryGraph({ isOpen, onClose, projectId }: MemoryGraphProps) {
   const [sources, setSources] = useState<GraphSource[]>([]);
   const [atomicMemories, setAtomicMemories] = useState<GraphMemory[]>([]);
   const [entities, setEntities] = useState<GraphEntity[]>([]);
@@ -178,7 +179,7 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
         }
 
         const response = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/consumer/graph?limit=50`,
+          `${process.env.NEXT_PUBLIC_API_URL}/consumer/graph?limit=50${projectId ? `&project_id=${projectId}` : ''}`,
           { 
             headers: { Authorization: `Bearer ${token}` },
             // Use cache if available (from prefetch)
@@ -203,7 +204,7 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
     };
 
     fetchGraph();
-  }, [isOpen]);
+  }, [isOpen, projectId]);
 
   // ============ Build Graph Nodes (Static Layout - No Animation) ============
   useEffect(() => {
