@@ -1,34 +1,21 @@
 -- Projects Feature Migration
 -- Adds projects table and project_id to memories/sources
 
--- ============================================================================
 -- 1. CREATE projects table
--- ============================================================================
-
 CREATE TABLE IF NOT EXISTS projects (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    
-    -- Project identity
     name VARCHAR(255) NOT NULL,
     slug VARCHAR(255) NOT NULL,
     description TEXT,
     icon VARCHAR(50) DEFAULT '📁',
     color VARCHAR(20) DEFAULT '#6366f1',
-    
-    -- Status tracking
     status VARCHAR(50) DEFAULT 'active',
     status_note TEXT,
-    
-    -- Settings
     is_default BOOLEAN DEFAULT FALSE,
     is_pinned BOOLEAN DEFAULT FALSE,
-    
-    -- Timestamps
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
-    
-    -- Constraints
     UNIQUE(owner_id, slug)
 );
 

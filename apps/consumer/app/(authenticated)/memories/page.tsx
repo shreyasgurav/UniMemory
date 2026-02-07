@@ -68,33 +68,6 @@ export default function MemoriesPage() {
   const [newProjectName, setNewProjectName] = useState("");
   const [creatingProject, setCreatingProject] = useState(false);
 
-  // Load projects
-  const loadProjects = useCallback(async () => {
-    try {
-      const token = await auth.currentUser?.getIdToken();
-      if (!token) return;
-
-      // Ensure default project exists
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/consumer/projects/default/ensure`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/consumer/projects`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      setProjects(data);
-      
-      // Select first project (default) if none selected
-      if (!selectedProject && data.length > 0) {
-        const defaultProject = data.find((p: Project) => p.is_default) || data[0];
-        setSelectedProject(defaultProject);
-      }
-    } catch (error) {
-      console.error("Failed to load projects:", error);
-    }
-  }, [selectedProject]);
-
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
@@ -127,6 +100,33 @@ export default function MemoriesPage() {
     }
   }, []);
 
+  // Load projects (separate from loadData to avoid dependency issues)
+  const loadProjects = async () => {
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) return;
+
+      // Ensure default project exists
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/consumer/projects/default/ensure`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/consumer/projects`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      setProjects(data);
+      
+      // Select default project
+      if (data.length > 0) {
+        const defaultProject = data.find((p: Project) => p.is_default) || data[0];
+        setSelectedProject(defaultProject);
+      }
+    } catch (error) {
+      console.error("Failed to load projects:", error);
+    }
+  };
+
   // Create new project
   const createProject = async () => {
     if (!newProjectName.trim()) return;
@@ -156,9 +156,10 @@ export default function MemoriesPage() {
   };
 
   useEffect(() => {
-    loadProjects();
     loadData();
-  }, [loadProjects, loadData]);
+    loadProjects();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadData]);
 
   // Prefetch graph data in background after page loads
   useEffect(() => {
