@@ -747,16 +747,12 @@
           <!-- Project Selector -->
           <div class="unimemory-extension-popup-project-selector">
             <label class="unimemory-extension-popup-project-label">Save to project:</label>
-            <button id="ext-project-dropdown-btn" class="unimemory-extension-popup-project-btn">
-              <span id="ext-selected-project-icon">📁</span>
+            <button id="ext-project-select-btn" class="unimemory-extension-popup-project-btn">
               <span id="ext-selected-project-name">Default Project</span>
-              <svg class="unimemory-extension-popup-dropdown-arrow" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="m6 9 6 6 6-6"/>
+              <svg class="unimemory-extension-popup-arrow-right" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m9 18 6-6-6-6"/>
               </svg>
             </button>
-            <div id="ext-project-dropdown-menu" class="unimemory-extension-popup-project-menu unimemory-extension-popup-hidden">
-              <div id="ext-project-list"></div>
-            </div>
           </div>
           
           <button class="unimemory-extension-popup-btn unimemory-extension-popup-btn-primary" id="ext-save-btn">
@@ -875,8 +871,9 @@
     // Project selector state
     let extSelectedProject = null;
     let extProjects = [];
+    let showingProjectSelection = false;
     
-    // Load projects
+    // Load projects and restore selection
     async function loadExtProjects() {
       try {
         console.log('[UniMemory] Loading projects for extension popup...');
@@ -888,9 +885,19 @@
           console.log('[UniMemory] Loaded projects:', extProjects);
           
           if (extProjects.length > 0) {
-            const defaultProject = extProjects.find(p => p.is_default) || extProjects[0];
-            selectExtProject(defaultProject);
-            renderExtProjectList();
+            // Try to restore previously selected project
+            const stored = await chrome.storage.local.get('ext_selected_project_id');
+            const storedId = stored.ext_selected_project_id;
+            
+            let projectToSelect;
+            if (storedId) {
+              projectToSelect = extProjects.find(p => p.id === storedId);
+            }
+            if (!projectToSelect) {
+              projectToSelect = extProjects.find(p => p.is_default) || extProjects[0];
+            }
+            
+            selectExtProject(projectToSelect);
           } else {
             console.warn('[UniMemory] No projects found');
           }
@@ -904,84 +911,125 @@
     
     function selectExtProject(project) {
       extSelectedProject = project;
-      const iconEl = extensionPopup.querySelector('#ext-selected-project-icon');
       const nameEl = extensionPopup.querySelector('#ext-selected-project-name');
-      if (iconEl) iconEl.textContent = project.is_default ? '📁' : (project.icon || '📁');
       if (nameEl) nameEl.textContent = project.name;
+      
+      // Persist selection
+      chrome.storage.local.set({ ext_selected_project_id: project.id });
     }
     
-    function renderExtProjectList() {
-      const listEl = extensionPopup.querySelector('#ext-project-list');
-      if (!listEl) return;
-      listEl.innerHTML = '';
-      extProjects.forEach(project => {
-        const item = document.createElement('button');
-        item.className = 'unimemory-extension-popup-project-item' + (extSelectedProject?.id === project.id ? ' selected' : '');
-        item.innerHTML = `
-          <span class="unimemory-extension-popup-project-item-icon">${project.is_default ? '📁' : (project.icon || '📁')}</span>
-          <span class="unimemory-extension-popup-project-item-name">${project.name}</span>
-          <span class="unimemory-extension-popup-project-item-count">${project.memory_count || 0}</span>
-        `;
-        item.addEventListener('click', () => {
-          selectExtProject(project);
-          renderExtProjectList();
-          closeExtProjectDropdown();
-        });
-        listEl.appendChild(item);
-      });
-    }
-    
-    function closeExtProjectDropdown() {
-      const menu = extensionPopup.querySelector('#ext-project-dropdown-menu');
-      if (menu) menu.classList.add('unimemory-extension-popup-hidden');
-    }
-    
-    // Project dropdown toggle
-    const projectDropdownBtn = extensionPopup.querySelector('#ext-project-dropdown-btn');
-    const projectDropdownMenu = extensionPopup.querySelector('#ext-project-dropdown-menu');
-    if (projectDropdownBtn && projectDropdownMenu) {
-      projectDropdownBtn.addEventListener('click', (e) => {
+    function showProjectSelectionPage() {
+      showingProjectSelection = true;
+      const saveTab = extensionPopup.querySelector('#ext-tab-save');
+      
+      saveTab.innerHTML = `
+        <div class="unimemory-extension-popup-project-selection">
+          <div class="unimemory-extension-popup-project-selection-header">
+            <button id="ext-back-btn" class="unimemory-extension-popup-back-btn">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m15 18-6-6 6-6"/>
+              </svg>
+              Back
+            </button>
+            <h3 class="unimemory-extension-popup-project-selection-title">Select Project</h3>
+          </div>
+          <div class="unimemory-extension-popup-project-grid" id="ext-project-grid"></div>
+        </div>
+      `;
+      
+      renderProjectGrid();
+      
+      // Back button
+      const backBtn = saveTab.querySelector('#ext-back-btn');
+      backBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        projectDropdownMenu.classList.toggle('unimemory-extension-popup-hidden');
+        e.preventDefault();
+        showingProjectSelection = false;
+        showAuthenticatedPopup();
       });
     }
     
-    // Close dropdown on outside click
-    extensionPopup.addEventListener('click', (e) => {
-      if (!e.target.closest('#ext-project-dropdown-btn') && !e.target.closest('#ext-project-dropdown-menu')) {
-        closeExtProjectDropdown();
+    function renderProjectGrid() {
+      const grid = extensionPopup.querySelector('#ext-project-grid');
+      if (!grid) return;
+      
+      grid.innerHTML = '';
+      
+      if (extProjects.length === 0) {
+        grid.innerHTML = `
+          <div class="unimemory-extension-popup-no-projects">
+            <p>No projects found.</p>
+            <p>Create a project in the dashboard first.</p>
+          </div>
+        `;
+        return;
       }
-    });
+      
+      extProjects.forEach(project => {
+        const card = document.createElement('button');
+        card.className = 'unimemory-extension-popup-project-card' + (extSelectedProject?.id === project.id ? ' selected' : '');
+        card.innerHTML = `
+          <div class="unimemory-extension-popup-project-card-icon">${project.is_default ? '📁' : (project.icon || '📁')}</div>
+          <div class="unimemory-extension-popup-project-card-name">${project.name}</div>
+          <div class="unimemory-extension-popup-project-card-count">${project.memory_count || 0} memories</div>
+          ${extSelectedProject?.id === project.id ? '<div class="unimemory-extension-popup-project-card-check">✓</div>' : ''}
+        `;
+        card.addEventListener('click', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          selectExtProject(project);
+          showingProjectSelection = false;
+          showAuthenticatedPopup();
+        });
+        grid.appendChild(card);
+      });
+    }
     
     // Load projects on popup open
     loadExtProjects();
     
+    // Project select button
+    const projectSelectBtn = extensionPopup.querySelector('#ext-project-select-btn');
+    if (projectSelectBtn) {
+      projectSelectBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        showProjectSelectionPage();
+      });
+    }
+    
     // Save button
     const saveBtn = extensionPopup.querySelector('#ext-save-btn');
-    saveBtn.addEventListener('click', () => {
-      closeExtensionPopup();
-      saveCurrentPageWithProject(extSelectedProject?.id);
-    });
+    if (saveBtn) {
+      saveBtn.addEventListener('click', () => {
+        closeExtensionPopup();
+        saveCurrentPageWithProject(extSelectedProject?.id);
+      });
+    }
     
     // Auto-save toggle
     const autoSaveToggle = extensionPopup.querySelector('#ext-auto-save-toggle');
-    autoSaveToggle.addEventListener('change', async () => {
-      try {
-        await chrome.runtime.sendMessage({
-          type: 'UPDATE_SETTINGS',
-          settings: { autoSave: autoSaveToggle.checked }
-        });
-      } catch (error) {
-        console.error('Failed to save settings:', error);
-      }
-    });
+    if (autoSaveToggle) {
+      autoSaveToggle.addEventListener('change', async () => {
+        try {
+          await chrome.runtime.sendMessage({
+            type: 'UPDATE_SETTINGS',
+            settings: { autoSave: autoSaveToggle.checked }
+          });
+        } catch (error) {
+          console.error('Failed to save settings:', error);
+        }
+      });
+    }
     
     // Logout button
     const logoutBtn = extensionPopup.querySelector('#ext-logout-btn');
-    logoutBtn.addEventListener('click', async () => {
-      await chrome.runtime.sendMessage({ type: 'LOGOUT' });
-      showNotAuthenticatedPopup();
-    });
+    if (logoutBtn) {
+      logoutBtn.addEventListener('click', async () => {
+        await chrome.runtime.sendMessage({ type: 'LOGOUT' });
+        showNotAuthenticatedPopup();
+      });
+    }
   }
   
   // ============ Message Listener ============

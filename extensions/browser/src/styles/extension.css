@@ -759,7 +759,6 @@
   padding: 14px;
   background: #fafafa;
   border-radius: 10px;
-  position: relative;
 }
 
 .unimemory-extension-popup-project-label {
@@ -774,7 +773,7 @@
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: space-between;
   padding: 10px 14px;
   background: white;
   border: none;
@@ -792,15 +791,9 @@
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-.unimemory-extension-popup-dropdown-arrow {
-  margin-left: auto;
+.unimemory-extension-popup-arrow-right {
   color: #9ca3af;
-  transition: transform 0.15s;
   flex-shrink: 0;
-}
-
-#ext-selected-project-icon {
-  display: none;
 }
 
 #ext-selected-project-name {
@@ -812,66 +805,125 @@
   font-weight: 500;
 }
 
-.unimemory-extension-popup-project-menu {
-  position: absolute;
-  left: 14px;
-  right: 14px;
-  top: calc(100% - 10px);
-  background: white;
-  border: none;
-  border-radius: 10px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  z-index: 1000;
-  max-height: 200px;
-  overflow-y: auto;
+/* Project Selection Page */
+.unimemory-extension-popup-project-selection {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
 
-.unimemory-extension-popup-project-item {
-  width: 100%;
+.unimemory-extension-popup-project-selection-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
+  gap: 12px;
+  padding: 16px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.unimemory-extension-popup-back-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
   background: transparent;
   border: none;
-  font-size: 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
   color: #171717;
   cursor: pointer;
-  transition: background 0.1s;
-  text-align: left;
+  transition: background 0.15s;
   font-family: inherit;
 }
 
-.unimemory-extension-popup-project-item:hover {
-  background: #f9fafb;
+.unimemory-extension-popup-back-btn:hover {
+  background: #f3f4f6;
 }
 
-.unimemory-extension-popup-project-item.selected {
+.unimemory-extension-popup-project-selection-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #171717;
+  margin: 0;
+}
+
+.unimemory-extension-popup-project-grid {
+  flex: 1;
+  padding: 16px;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  align-content: start;
+}
+
+.unimemory-extension-popup-project-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 16px;
+  background: white;
+  border: 2px solid #e5e5e5;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: center;
+  font-family: inherit;
+}
+
+.unimemory-extension-popup-project-card:hover {
+  border-color: #d1d5db;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.unimemory-extension-popup-project-card.selected {
+  border-color: #6366f1;
   background: #f0f9ff;
 }
 
-.unimemory-extension-popup-project-item-icon {
-  font-size: 16px;
-  width: 20px;
-  text-align: center;
-  flex-shrink: 0;
+.unimemory-extension-popup-project-card-icon {
+  font-size: 32px;
+  margin-bottom: 8px;
 }
 
-.unimemory-extension-popup-project-item-name {
-  flex: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-weight: 500;
+.unimemory-extension-popup-project-card-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #171717;
+  margin-bottom: 4px;
 }
 
-.unimemory-extension-popup-project-item-count {
+.unimemory-extension-popup-project-card-count {
   font-size: 12px;
   color: #737373;
-  background: #f3f4f6;
-  padding: 2px 8px;
-  border-radius: 6px;
-  flex-shrink: 0;
+}
+
+.unimemory-extension-popup-project-card-check {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 20px;
+  height: 20px;
+  background: #6366f1;
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.unimemory-extension-popup-no-projects {
+  text-align: center;
+  padding: 40px 20px;
+  color: #737373;
+}
+
+.unimemory-extension-popup-no-projects p {
+  margin: 0 0 8px 0;
+  font-size: 14px;
 }
 
 /* Mobile Responsiveness */
