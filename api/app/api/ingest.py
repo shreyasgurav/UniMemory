@@ -283,7 +283,7 @@ async def store_extracted_memories(
     # Commit memories first
     await session.commit()
     
-    # Create source links individually to avoid UUID batch insert issues
+    # Create source links in batch for better performance
     if source_uuid and memory_ids:
         for mem_id in memory_ids:
             source_link = MemorySource(
@@ -292,7 +292,8 @@ async def store_extracted_memories(
                 source_id=source_uuid
             )
             session.add(source_link)
-            await session.commit()  # Commit each link individually
+        # Single commit for all links - much faster than individual commits
+        await session.commit()
     
     # Schedule waypoint creation in background (capped)
     if new_memories_for_waypoints:
@@ -402,36 +403,41 @@ async def ingest_text(
         session.add(source)
         await session.flush()
     
-    # Step 3: Extract entities and facts  
-    entity_extractor = EntityExtractor()
-    event_time = datetime.utcnow()  # Can be extracted from metadata if available
-    
-    # Extract entities
-    extracted_entities = await entity_extractor.extract_entities(content, request.source_metadata)
-    
-    # Resolve entities and store
-    entity_map = await entity_extractor.resolve_entities(
-        session, extracted_entities, owner_id, str(end_user.id)
-    )
-    
-    # Link entities to source
-    if source_uuid and entity_map:
-        for entity in entity_map.values():
-            entity_source = EntitySource(
-                id=str(uuid.uuid4()),
-                entity_id=entity.id,
-                source_id=source_uuid,
-                created_at=datetime.utcnow()
-            )
-            session.add(entity_source)
-    
-    # Extract facts
-    extracted_facts = await entity_extractor.extract_facts(content, list(entity_map.values()), event_time)
-    
-    # Store facts with conflict resolution
-    created_facts = await entity_extractor.resolve_and_store_facts(
-        session, extracted_facts, entity_map, owner_id, str(end_user.id), source_uuid
-    )
+    # Step 3: Extract entities and facts (with error handling to prevent crashes)
+    try:
+        entity_extractor = EntityExtractor()
+        event_time = datetime.utcnow()  # Can be extracted from metadata if available
+        
+        # Extract entities
+        extracted_entities = await entity_extractor.extract_entities(content, request.source_metadata)
+        
+        # Resolve entities and store
+        entity_map = await entity_extractor.resolve_entities(
+            session, extracted_entities, owner_id, str(end_user.id)
+        )
+        
+        # Link entities to source
+        if source_uuid and entity_map:
+            for entity in entity_map.values():
+                entity_source = EntitySource(
+                    id=str(uuid.uuid4()),
+                    entity_id=entity.id,
+                    source_id=source_uuid,
+                    created_at=datetime.utcnow()
+                )
+                session.add(entity_source)
+        
+        # Extract facts
+        extracted_facts = await entity_extractor.extract_facts(content, list(entity_map.values()), event_time)
+        
+        # Store facts with conflict resolution
+        created_facts = await entity_extractor.resolve_and_store_facts(
+            session, extracted_facts, entity_map, owner_id, str(end_user.id), source_uuid
+        )
+        logger.info(f"[Ingest] Extracted {len(entity_map)} entities and {len(created_facts)} facts")
+    except Exception as e:
+        # Log error but don't fail the entire ingest - memories are more important
+        logger.error(f"[Ingest] Entity/fact extraction failed (non-fatal): {e}", exc_info=True)
     
     # Step 4: Extract memories
     extraction = await extractor.extract_memories(content)

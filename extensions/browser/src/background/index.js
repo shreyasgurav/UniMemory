@@ -24,7 +24,7 @@ function createContextMenu() {
     // Detect OS for keyboard shortcut display
     const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
     const shortcutKey = isMac ? '⌘' : 'Ctrl';
-    
+
     // Create context menu item for editable fields
     chrome.contextMenus.create({
       id: 'unimemory-add-memories',
@@ -38,7 +38,7 @@ function createContextMenu() {
         'https://bard.google.com/*'
       ]
     });
-    
+
     console.log('[UniMemory] Context menu created');
   });
 }
@@ -60,15 +60,15 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 async function getSession() {
   const result = await chrome.storage.local.get('unimemory_session');
   const session = result.unimemory_session;
-  
+
   if (!session) return null;
-  
+
   // Check if expired
   if (session.expiresAt && Date.now() > session.expiresAt) {
     await chrome.storage.local.remove('unimemory_session');
     return null;
   }
-  
+
   return session;
 }
 
@@ -88,6 +88,33 @@ async function clearSession() {
 
 // ============ API Calls ============
 
+/**
+ * Fetch with timeout to prevent indefinite waiting
+ * @param {string} url - URL to fetch
+ * @param {object} options - Fetch options
+ * @param {number} timeout - Timeout in milliseconds (default 30s)
+ * @returns {Promise<Response>}
+ */
+async function fetchWithTimeout(url, options = {}, timeout = 30000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error('Request timeout - server is taking too long to respond. Try saving a smaller chat or try again later.');
+    }
+    throw error;
+  }
+}
+
 async function refreshSession(firebaseToken) {
   try {
     const response = await fetch(`${API_BASE_URL}/consumer/auth/session`, {
@@ -97,11 +124,11 @@ async function refreshSession(firebaseToken) {
         'Content-Type': 'application/json'
       }
     });
-    
+
     if (!response.ok) {
       throw new Error('Failed to get session');
     }
-    
+
     const data = await response.json();
     await setSession(data);
     return data;
@@ -284,14 +311,14 @@ async function ingestPrompt(prompt, platform) {
 
 async function ingestChat(chatData) {
   let session = await getSession();
-  
+
   if (!session) {
     throw new Error('Not authenticated');
   }
-  
+
   console.log('[UniMemory] Ingesting chat with', chatData.messages.length, 'messages', 'to project:', chatData.projectId || 'default');
-  
-  const response = await fetch(`${API_BASE_URL}/ingest/chat`, {
+
+  const response = await fetchWithTimeout(`${API_BASE_URL}/ingest/chat`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${session.token}`,
@@ -308,25 +335,36 @@ async function ingestChat(chatData) {
         captured_at: new Date().toISOString()
       }
     })
-  });
-  
+  }, 30000);  // 30 second timeout
+
   // If 401 Unauthorized, session might be expired - prompt re-login
   if (response.status === 401) {
     await clearSession();
     console.error('[UniMemory] Session expired, please log in again');
     throw new Error('Session expired. Please log in again.');
   }
-  
+
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    console.error('[UniMemory] Ingest failed:', error);
-    throw new Error(error.detail || 'Failed to save chat');
+    console.error('[UniMemory] Ingest failed:', response.status, error);
+
+    // Provide better error messages for common failures
+    let errorMessage = 'Failed to save chat';
+    if (response.status === 502 || response.status === 504) {
+      errorMessage = 'Server is overloaded or timed out. Try saving a smaller chat or wait a moment and try again.';
+    } else if (response.status === 503) {
+      errorMessage = 'Service temporarily unavailable. Please try again in a moment.';
+    } else if (error.detail) {
+      errorMessage = error.detail;
+    }
+
+    throw new Error(errorMessage);
   }
-  
+
   const result = await response.json();
   console.log('[UniMemory] Ingest response:', result);
   console.log('[UniMemory] Stored:', result.stored, 'memories, Skipped:', result.skipped, 'Source ID:', result.source_id);
-  
+
   return result;
 }
 
@@ -346,40 +384,40 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           });
           break;
         }
-        
+
         case 'LOGIN': {
           // Open UniMemory extension welcome page (handles login + auth handshake)
           chrome.tabs.create({ url: `${APP_URL}/extension/welcome` });
           sendResponse({ success: true });
           break;
         }
-        
+
         case 'LOGOUT': {
           await clearSession();
           sendResponse({ success: true });
           break;
         }
-        
+
         case 'SET_SESSION': {
           // Called from app.unimemory.app after login
           await setSession(message.data);
           sendResponse({ success: true });
           break;
         }
-        
+
         case 'REFRESH_SESSION': {
           // Refresh with Firebase token
           const result = await refreshSession(message.firebaseToken);
           sendResponse({ success: true, data: result });
           break;
         }
-        
+
         case 'SAVE_CHAT': {
           const result = await ingestChat(message.data);
           sendResponse({ success: true, data: result });
           break;
         }
-        
+
         case 'SEARCH_NUCLEAR_MEMORIES': {
           const result = await searchNuclearMemories(message.query, message.limit || 5);
           sendResponse({ success: true, memories: result });
@@ -395,13 +433,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ success: true, source: result });
           break;
         }
-        
+
         case 'INGEST_PROMPT': {
           const result = await ingestPrompt(message.data.prompt, message.data.platform);
           sendResponse({ success: true, data: result });
           break;
         }
-        
+
         case 'GET_SETTINGS': {
           const settings = await chrome.storage.local.get('unimemory_settings');
           sendResponse({
@@ -417,7 +455,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           });
           break;
         }
-        
+
         case 'UPDATE_SETTINGS': {
           await chrome.storage.local.set({
             unimemory_settings: message.settings
@@ -425,7 +463,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ success: true });
           break;
         }
-        
+
         case 'GET_PROJECTS': {
           const session = await getSession();
           if (!session) {
@@ -433,7 +471,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             sendResponse({ success: false, error: 'Not authenticated', projects: [], needsLogin: true });
             break;
           }
-          
+
           try {
             console.log('[UniMemory] Ensuring default project...');
             // First ensure default project exists (use session endpoint)
@@ -441,7 +479,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
               headers: { 'Authorization': `Bearer ${session.token}` }
             });
             console.log('[UniMemory] Ensure default response:', ensureResponse.status);
-            
+
             // If 401, session expired - clear and prompt re-login
             if (ensureResponse.status === 401) {
               console.log('[UniMemory] Session expired, clearing session');
@@ -449,15 +487,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
               sendResponse({ success: false, error: 'Session expired', projects: [], needsLogin: true });
               break;
             }
-            
+
             // Then get all projects (use session endpoint)
             console.log('[UniMemory] Fetching projects from:', `${API_BASE_URL}/consumer/session/projects`);
             const response = await fetch(`${API_BASE_URL}/consumer/session/projects`, {
               headers: { 'Authorization': `Bearer ${session.token}` }
             });
-            
+
             console.log('[UniMemory] Projects response status:', response.status);
-            
+
             // If 401, session expired - clear and prompt re-login
             if (response.status === 401) {
               console.log('[UniMemory] Session expired, clearing session');
@@ -465,13 +503,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
               sendResponse({ success: false, error: 'Session expired', projects: [], needsLogin: true });
               break;
             }
-            
+
             if (!response.ok) {
               const errorText = await response.text();
               console.error('[UniMemory] Projects API error:', errorText);
               throw new Error(`Failed to fetch projects: ${response.status} ${errorText}`);
             }
-            
+
             const projects = await response.json();
             console.log('[UniMemory] Fetched projects:', projects);
             sendResponse({ success: true, projects });
@@ -481,14 +519,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
           break;
         }
-        
+
         case 'CREATE_PROJECT': {
           const session = await getSession();
           if (!session) {
             sendResponse({ success: false, error: 'Not authenticated' });
             break;
           }
-          
+
           try {
             const response = await fetch(`${API_BASE_URL}/consumer/projects`, {
               method: 'POST',
@@ -498,11 +536,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
               },
               body: JSON.stringify({ name: message.name })
             });
-            
+
             if (!response.ok) {
               throw new Error('Failed to create project');
             }
-            
+
             const project = await response.json();
             sendResponse({ success: true, project });
           } catch (error) {
@@ -511,7 +549,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
           break;
         }
-        
+
         default:
           sendResponse({ success: false, error: 'Unknown message type' });
       }
@@ -520,7 +558,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ success: false, error: error.message });
     }
   })();
-  
+
   // Return true to indicate async response
   return true;
 });
@@ -564,7 +602,7 @@ chrome.runtime.onInstalled.addListener((details) => {
         }
       }
     });
-    
+
     // Open welcome page
     chrome.tabs.create({ url: `${APP_URL}/extension/welcome` });
   }
