@@ -1080,9 +1080,11 @@
   // Save with project support
   async function saveCurrentPageWithProject(projectId) {
     try {
-      showToast('Saving...', 'info');
+      console.log('[UniMemory] Saving page with project:', projectId);
+      showToast('Saving...', 'loading');
       
       const messages = extractMessages();
+      console.log('[UniMemory] Extracted messages:', messages.length);
       
       if (messages.length === 0) {
         showToast('No chat messages found on this page', 'error');
@@ -1090,6 +1092,7 @@
       }
       
       const metadata = getPageMetadata();
+      console.log('[UniMemory] Sending SAVE_CHAT message...');
       
       const response = await chrome.runtime.sendMessage({
         type: 'SAVE_CHAT',
@@ -1104,20 +1107,24 @@
         }
       });
       
-      if (response.success) {
+      console.log('[UniMemory] SAVE_CHAT response:', response);
+      
+      if (response && response.success) {
         const memoryCount = response.data?.stored || 0;
         const title = response.data?.source_title || metadata.title || 'Chat';
         showToast(`Saved "${title}" - ${memoryCount} ${memoryCount === 1 ? 'memory' : 'memories'} extracted`, 'success');
       } else {
-        if (response.error === 'Not authenticated' || response.error?.includes('Session expired')) {
+        const errorMsg = response?.error || 'Failed to save memory';
+        console.error('[UniMemory] Save failed:', errorMsg);
+        if (errorMsg === 'Not authenticated' || errorMsg.includes?.('Session expired')) {
           showToast('Session expired. Please log in again.', 'error');
           chrome.runtime.sendMessage({ type: 'LOGIN' });
         } else {
-          showToast(response.error || 'Failed to save memory', 'error');
+          showToast(errorMsg, 'error');
         }
       }
     } catch (error) {
-      console.error('Failed to save page:', error);
+      console.error('[UniMemory] Save page error:', error);
       showToast(error.message || 'Failed to save memory', 'error');
     }
   }
