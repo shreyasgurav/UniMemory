@@ -748,7 +748,7 @@
           <div class="unimemory-extension-popup-project-selector">
             <label class="unimemory-extension-popup-project-label">Save to project:</label>
             <button id="ext-project-select-btn" class="unimemory-extension-popup-project-btn">
-              <span id="ext-selected-project-name">Default Project</span>
+              <span id="ext-selected-project-name">Loading projects...</span>
               <svg class="unimemory-extension-popup-arrow-right" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="m9 18 6-6-6-6"/>
               </svg>
@@ -899,27 +899,40 @@
             let projectToSelect;
             if (storedId) {
               projectToSelect = extProjects.find(p => p.id === storedId);
+              console.log('[UniMemory] Found stored project:', projectToSelect);
             }
             if (!projectToSelect) {
               projectToSelect = extProjects.find(p => p.is_default) || extProjects[0];
+              console.log('[UniMemory] Using default/first project:', projectToSelect);
             }
             
             selectExtProject(projectToSelect);
           } else {
             console.warn('[UniMemory] No projects found');
+            const nameEl = extensionPopup?.querySelector('#ext-selected-project-name');
+            if (nameEl) nameEl.textContent = 'No projects';
           }
         } else {
           console.error('[UniMemory] Failed to load projects:', response?.error);
+          const nameEl = extensionPopup?.querySelector('#ext-selected-project-name');
+          if (nameEl) nameEl.textContent = 'Failed to load';
         }
       } catch (error) {
         console.error('[UniMemory] Error loading projects:', error);
+        const nameEl = extensionPopup?.querySelector('#ext-selected-project-name');
+        if (nameEl) nameEl.textContent = 'Error loading projects';
       }
     }
     
     function selectExtProject(project) {
       extSelectedProject = project;
-      const nameEl = extensionPopup.querySelector('#ext-selected-project-name');
-      if (nameEl) nameEl.textContent = project.name;
+      const nameEl = extensionPopup?.querySelector('#ext-selected-project-name');
+      if (nameEl) {
+        nameEl.textContent = project.name;
+        console.log('[UniMemory] Updated project name in UI:', project.name);
+      } else {
+        console.warn('[UniMemory] Could not find project name element to update');
+      }
       
       // Persist selection
       chrome.storage.local.set({ ext_selected_project_id: project.id });
