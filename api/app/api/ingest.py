@@ -173,7 +173,8 @@ async def store_extracted_memories(
     app_id: Optional[str],
     api_key_id: Optional[str],
     source_uuid: Optional[str],
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    project_id: Optional[str] = None
 ) -> tuple[int, int, List[str]]:
     """
     Store extracted memories with deduplication.
@@ -255,6 +256,7 @@ async def store_extracted_memories(
             end_user_id=end_user_id,
             owner_id=owner_id,
             api_key_id=api_key_id,
+            project_id=project_id,
             embedding=embedding,
             embedding_model=settings.EMBEDDING_MODEL,
             # New fields
@@ -455,7 +457,8 @@ async def ingest_text(
         app_id=request.app_id or source_app,
         api_key_id=str(api_key.id) if api_key else None,
         source_uuid=source_uuid,
-        background_tasks=background_tasks
+        background_tasks=background_tasks,
+        project_id=request.project_id
     )
     
     # Log processing
@@ -595,7 +598,8 @@ async def ingest_chat(
         app_id=request.app_id or source_app,
         api_key_id=str(api_key.id) if api_key else None,
         source_uuid=source_uuid,
-        background_tasks=background_tasks
+        background_tasks=background_tasks,
+        project_id=request.project_id
     )
     
     return IngestResponse(
@@ -709,7 +713,8 @@ async def ingest_document(
             app_id=request.app_id or source_app,
             api_key_id=str(api_key.id) if api_key else None,
             source_uuid=source_uuid,
-            background_tasks=background_tasks
+            background_tasks=background_tasks,
+            project_id=request.project_id
         )
         
         total_stored += stored
