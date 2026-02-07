@@ -182,9 +182,7 @@ export default function MemoryGraph({ isOpen, onClose, projectId }: MemoryGraphP
           `${process.env.NEXT_PUBLIC_API_URL}/consumer/graph?limit=50${projectId ? `&project_id=${projectId}` : ''}`,
           { 
             headers: { Authorization: `Bearer ${token}` },
-            // Use cache if available (from prefetch)
-            cache: 'force-cache',
-            next: { revalidate: 30 } // Cache for 30 seconds
+            cache: 'no-store' // Always fetch fresh data
           }
         );
 
