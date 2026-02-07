@@ -1365,6 +1365,120 @@ async def debug_waypoints(
     }
 
 
+# ============ Memory Decay Job Endpoint ============
+
+@router.post("/consumer/maintenance/decay-memories")
+async def decay_memories_job(
+    threshold: float = 0.1,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Run memory decay job - applies time-based decay to memories.
+    Memories below threshold salience are deactivated.
+    This simulates forgetting (brain-like memory lifecycle).
+    
+    Should be called periodically (e.g., daily via cron).
+    """
+    from app.core.reinforcement import decay_old_memories
+    
+    owner_id = str(user.id)
+    
+    try:
+        deactivated_count = await decay_old_memories(
+            session=session,
+            owner_id=owner_id,
+            threshold_salience=threshold
+        )
+        
+        return {
+            "message": f"Decay job completed",
+            "deactivated_count": deactivated_count,
+            "threshold": threshold
+        }
+    except Exception as e:
+        logger.error(f"Decay job failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Decay job failed: {str(e)}")
+
+
+@router.get("/consumer/stats/brain-metrics")
+async def get_brain_metrics(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Get brain-like memory metrics for the user.
+    Shows coactivation stats, core memories, decay status, etc.
+    """
+    from sqlalchemy import func as sql_func
+    
+    owner_id = str(user.id)
+    
+    # Total memories
+    total_result = await session.execute(
+        select(sql_func.count(Memory.id))
+        .where(Memory.owner_id == owner_id, Memory.is_active == True)
+    )
+    total_memories = total_result.scalar() or 0
+    
+    # Core memories
+    core_result = await session.execute(
+        select(sql_func.count(Memory.id))
+        .where(Memory.owner_id == owner_id, Memory.priority == 'core', Memory.is_active == True)
+    )
+    core_memories = core_result.scalar() or 0
+    
+    # Average recall count
+    recall_result = await session.execute(
+        select(sql_func.avg(Memory.recall_count))
+        .where(Memory.owner_id == owner_id, Memory.is_active == True)
+    )
+    avg_recall = recall_result.scalar() or 0.0
+    
+    # Most recalled memories
+    most_recalled_result = await session.execute(
+        select(Memory)
+        .where(Memory.owner_id == owner_id, Memory.is_active == True)
+        .order_by(Memory.recall_count.desc())
+        .limit(5)
+    )
+    most_recalled = [
+        {"id": str(m.id), "content": m.content[:100], "recall_count": m.recall_count or 0}
+        for m in most_recalled_result.scalars().all()
+    ]
+    
+    # Sector distribution
+    sector_result = await session.execute(
+        select(Memory.sector, sql_func.count(Memory.id))
+        .where(Memory.owner_id == owner_id, Memory.is_active == True)
+        .group_by(Memory.sector)
+    )
+    sectors = {row[0] or 'unknown': row[1] for row in sector_result.all()}
+    
+    # Waypoint count
+    memory_ids_result = await session.execute(
+        select(Memory.id).where(Memory.owner_id == owner_id, Memory.is_active == True)
+    )
+    memory_ids = [str(m) for m in memory_ids_result.scalars().all()]
+    
+    from sqlalchemy import or_
+    waypoint_result = await session.execute(
+        select(sql_func.count(Waypoint.id))
+        .where(or_(Waypoint.src_id.in_(memory_ids), Waypoint.dst_id.in_(memory_ids)))
+    )
+    total_waypoints = waypoint_result.scalar() or 0
+    
+    return {
+        "total_memories": total_memories,
+        "core_memories": core_memories,
+        "total_waypoints": total_waypoints,
+        "average_recall_count": round(avg_recall, 2),
+        "most_recalled": most_recalled,
+        "sector_distribution": sectors,
+        "brain_score": min(100, int((core_memories * 2 + total_waypoints * 0.5 + avg_recall * 5)))
+    }
+
+
 # ============ Chat Context Endpoints ============
 
 class ChatContextRequest(BaseModel):

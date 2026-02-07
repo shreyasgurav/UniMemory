@@ -757,24 +757,25 @@ async def execute_tool(
     """Execute an MCP tool and return result"""
     
     if tool_name == "search_memory":
-        from app.core.embeddings import get_embedding_service
+        from app.core.search import hybrid_search
+        from app.core.reinforcement import reinforce_memories
         
         query = args.get("query", "")
         limit = args.get("limit", 10)
         
-        embedding_service = get_embedding_service()
-        query_embedding, _ = await embedding_service.embed(query)
-        
-        result = await session.execute(
-            select(Memory)
-            .where(Memory.owner_id == user.id)
-            .order_by(Memory.embedding.cosine_distance(query_embedding))
-            .limit(limit)
+        # Use hybrid_search with brain-like scoring (includes coactivation boost)
+        search_results = await hybrid_search(
+            session=session,
+            query=query,
+            limit=limit,
+            filters={"owner_id": str(user.id)}
         )
-        memories = result.scalars().all()
         
         results = []
-        for m in memories:
+        memory_ids = []
+        for r in search_results:
+            m = r["memory"]
+            memory_ids.append(str(m.id))
             source_result = await session.execute(
                 select(MemorySource.source_id).where(MemorySource.memory_id == m.id).limit(1)
             )
@@ -784,7 +785,15 @@ async def execute_tool(
                 "content": m.content,
                 "salience": m.salience or 0.5,
                 "source_id": str(source_id) if source_id else None,
+                "score": r.get("score", 0.0),
             })
+        
+        # Reinforce recalled memories (Hebbian learning)
+        if memory_ids:
+            try:
+                await reinforce_memories(session, memory_ids, query)
+            except Exception as e:
+                logger.warning(f"Failed to reinforce memories: {e}")
         
         # Log activity
         await log_mcp_activity(
@@ -800,6 +809,8 @@ async def execute_tool(
         return {"results": results, "count": len(results)}
     
     elif tool_name == "get_memory_context":
+        from app.core.reinforcement import reinforce_memories
+        
         memory_id = args.get("memory_id", "")
         
         result = await session.execute(
@@ -818,6 +829,12 @@ async def execute_tool(
                 session=session
             )
             return {"memory_id": memory_id, "content": "", "found": False}
+        
+        # Reinforce this memory (Hebbian learning - viewing = recall)
+        try:
+            await reinforce_memories(session, [str(memory_id)])
+        except Exception as e:
+            logger.warning(f"Failed to reinforce memory: {e}")
         
         source_result = await session.execute(
             select(Source)
