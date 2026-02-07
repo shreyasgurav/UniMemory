@@ -739,20 +739,24 @@
       <div class="unimemory-extension-popup-content">
         <!-- Save Tab -->
         <div id="ext-tab-save" class="ext-tab-content">
-          <div class="unimemory-extension-popup-setting">
-            <div class="unimemory-extension-popup-setting-info">
-              <span class="unimemory-extension-popup-setting-label">Save long-term memories</span>
-              <span class="unimemory-extension-popup-setting-desc">Auto-save memories from your AI conversations</span>
-            </div>
-            <label class="unimemory-extension-popup-toggle">
-              <input type="checkbox" id="ext-auto-save-toggle" ${currentSettings.autoSave ? 'checked' : ''}>
-              <span class="unimemory-extension-popup-toggle-slider"></span>
-            </label>
-          </div>
-          
           <div class="unimemory-extension-popup-page-info">
             <div class="unimemory-extension-popup-page-title">${escapeHtml(pageInfo.title)}</div>
             <div class="unimemory-extension-popup-page-url">${escapeHtml(pageInfo.url)}</div>
+          </div>
+          
+          <!-- Project Selector -->
+          <div class="unimemory-extension-popup-project-selector">
+            <label class="unimemory-extension-popup-project-label">Save to project:</label>
+            <button id="ext-project-dropdown-btn" class="unimemory-extension-popup-project-btn">
+              <span id="ext-selected-project-icon">📁</span>
+              <span id="ext-selected-project-name">Default Project</span>
+              <svg class="unimemory-extension-popup-dropdown-arrow" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m6 9 6 6 6-6"/>
+              </svg>
+            </button>
+            <div id="ext-project-dropdown-menu" class="unimemory-extension-popup-project-menu unimemory-extension-popup-hidden">
+              <div id="ext-project-list"></div>
+            </div>
           </div>
           
           <button class="unimemory-extension-popup-btn unimemory-extension-popup-btn-primary" id="ext-save-btn">
@@ -772,6 +776,17 @@
               <span class="unimemory-extension-popup-user-name">${escapeHtml(userName)}</span>
               <span class="unimemory-extension-popup-user-email">${escapeHtml(userEmail)}</span>
             </div>
+          </div>
+          
+          <div class="unimemory-extension-popup-setting">
+            <div class="unimemory-extension-popup-setting-info">
+              <span class="unimemory-extension-popup-setting-label">Save long-term memories</span>
+              <span class="unimemory-extension-popup-setting-desc">Auto-save memories from your AI conversations</span>
+            </div>
+            <label class="unimemory-extension-popup-toggle">
+              <input type="checkbox" id="ext-auto-save-toggle" ${currentSettings.autoSave ? 'checked' : ''}>
+              <span class="unimemory-extension-popup-toggle-slider"></span>
+            </label>
           </div>
           
           <div class="unimemory-extension-popup-buttons">
@@ -857,11 +872,95 @@
       });
     });
     
+    // Project selector state
+    let extSelectedProject = null;
+    let extProjects = [];
+    
+    // Load projects
+    async function loadExtProjects() {
+      try {
+        console.log('[UniMemory] Loading projects for extension popup...');
+        const response = await chrome.runtime.sendMessage({ type: 'GET_PROJECTS' });
+        console.log('[UniMemory] Projects response:', response);
+        
+        if (response && response.success !== false) {
+          extProjects = response.projects || [];
+          console.log('[UniMemory] Loaded projects:', extProjects);
+          
+          if (extProjects.length > 0) {
+            const defaultProject = extProjects.find(p => p.is_default) || extProjects[0];
+            selectExtProject(defaultProject);
+            renderExtProjectList();
+          } else {
+            console.warn('[UniMemory] No projects found');
+          }
+        } else {
+          console.error('[UniMemory] Failed to load projects:', response?.error);
+        }
+      } catch (error) {
+        console.error('[UniMemory] Error loading projects:', error);
+      }
+    }
+    
+    function selectExtProject(project) {
+      extSelectedProject = project;
+      const iconEl = extensionPopup.querySelector('#ext-selected-project-icon');
+      const nameEl = extensionPopup.querySelector('#ext-selected-project-name');
+      if (iconEl) iconEl.textContent = project.is_default ? '📁' : (project.icon || '📁');
+      if (nameEl) nameEl.textContent = project.name;
+    }
+    
+    function renderExtProjectList() {
+      const listEl = extensionPopup.querySelector('#ext-project-list');
+      if (!listEl) return;
+      listEl.innerHTML = '';
+      extProjects.forEach(project => {
+        const item = document.createElement('button');
+        item.className = 'unimemory-extension-popup-project-item' + (extSelectedProject?.id === project.id ? ' selected' : '');
+        item.innerHTML = `
+          <span class="unimemory-extension-popup-project-item-icon">${project.is_default ? '📁' : (project.icon || '📁')}</span>
+          <span class="unimemory-extension-popup-project-item-name">${project.name}</span>
+          <span class="unimemory-extension-popup-project-item-count">${project.memory_count || 0}</span>
+        `;
+        item.addEventListener('click', () => {
+          selectExtProject(project);
+          renderExtProjectList();
+          closeExtProjectDropdown();
+        });
+        listEl.appendChild(item);
+      });
+    }
+    
+    function closeExtProjectDropdown() {
+      const menu = extensionPopup.querySelector('#ext-project-dropdown-menu');
+      if (menu) menu.classList.add('unimemory-extension-popup-hidden');
+    }
+    
+    // Project dropdown toggle
+    const projectDropdownBtn = extensionPopup.querySelector('#ext-project-dropdown-btn');
+    const projectDropdownMenu = extensionPopup.querySelector('#ext-project-dropdown-menu');
+    if (projectDropdownBtn && projectDropdownMenu) {
+      projectDropdownBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        projectDropdownMenu.classList.toggle('unimemory-extension-popup-hidden');
+      });
+    }
+    
+    // Close dropdown on outside click
+    extensionPopup.addEventListener('click', (e) => {
+      if (!e.target.closest('#ext-project-dropdown-btn') && !e.target.closest('#ext-project-dropdown-menu')) {
+        closeExtProjectDropdown();
+      }
+    });
+    
+    // Load projects on popup open
+    loadExtProjects();
+    
     // Save button
     const saveBtn = extensionPopup.querySelector('#ext-save-btn');
     saveBtn.addEventListener('click', () => {
       closeExtensionPopup();
-      saveCurrentPage();
+      saveCurrentPageWithProject(extSelectedProject?.id);
     });
     
     // Auto-save toggle

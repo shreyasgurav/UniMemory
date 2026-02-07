@@ -753,6 +753,127 @@
   line-height: 1.4;
 }
 
+/* Project Selector for In-Page Popup */
+.unimemory-extension-popup-project-selector {
+  margin-bottom: 16px;
+  padding: 14px;
+  background: #fafafa;
+  border-radius: 10px;
+  position: relative;
+}
+
+.unimemory-extension-popup-project-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: #171717;
+  margin-bottom: 8px;
+}
+
+.unimemory-extension-popup-project-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #171717;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.unimemory-extension-popup-project-btn:hover {
+  background: #f9fafb;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.unimemory-extension-popup-dropdown-arrow {
+  margin-left: auto;
+  color: #9ca3af;
+  transition: transform 0.15s;
+  flex-shrink: 0;
+}
+
+#ext-selected-project-icon {
+  display: none;
+}
+
+#ext-selected-project-name {
+  flex: 1;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+}
+
+.unimemory-extension-popup-project-menu {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  top: calc(100% - 10px);
+  background: white;
+  border: none;
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.unimemory-extension-popup-project-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: transparent;
+  border: none;
+  font-size: 14px;
+  color: #171717;
+  cursor: pointer;
+  transition: background 0.1s;
+  text-align: left;
+  font-family: inherit;
+}
+
+.unimemory-extension-popup-project-item:hover {
+  background: #f9fafb;
+}
+
+.unimemory-extension-popup-project-item.selected {
+  background: #f0f9ff;
+}
+
+.unimemory-extension-popup-project-item-icon {
+  font-size: 16px;
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.unimemory-extension-popup-project-item-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+}
+
+.unimemory-extension-popup-project-item-count {
+  font-size: 12px;
+  color: #737373;
+  background: #f3f4f6;
+  padding: 2px 8px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
 /* Mobile Responsiveness */
 @media (max-width: 768px) {
   .unimemory-toast {
