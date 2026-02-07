@@ -82,7 +82,7 @@ const COLORS = {
   sectors: {
     episodic: "#3B82F6",
     semantic: "#10B981",
-    procedural: "#F59E0B",
+    procedural: "#06B6D4",
     emotional: "#EC4899",
     reflective: "#8B5CF6",
     default: "#94A3B8",
