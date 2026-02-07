@@ -940,9 +940,14 @@
     
     function showProjectSelectionPage() {
       showingProjectSelection = true;
-      const saveTab = extensionPopup.querySelector('#ext-tab-save');
       
-      saveTab.innerHTML = `
+      const logoUrl = chrome.runtime.getURL('Unimemory-Name-Logo-NoBG.png');
+      
+      // Replace entire popup content with project selection
+      extensionPopup.innerHTML = `
+        <div class="unimemory-extension-popup-header">
+          <img src="${logoUrl}" alt="UniMemory" class="unimemory-extension-popup-logo" />
+        </div>
         <div class="unimemory-extension-popup-project-selection">
           <div class="unimemory-extension-popup-project-selection-header">
             <button id="ext-back-btn" class="unimemory-extension-popup-back-btn">
@@ -960,7 +965,7 @@
       renderProjectGrid();
       
       // Back button
-      const backBtn = saveTab.querySelector('#ext-back-btn');
+      const backBtn = extensionPopup.querySelector('#ext-back-btn');
       backBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         e.preventDefault();
@@ -994,12 +999,7 @@
         console.log('[UniMemory] Rendering project card:', project.name);
         const card = document.createElement('button');
         card.className = 'unimemory-extension-popup-project-card' + (extSelectedProject?.id === project.id ? ' selected' : '');
-        card.innerHTML = `
-          <div class="unimemory-extension-popup-project-card-icon">${project.is_default ? '📁' : (project.icon || '📁')}</div>
-          <div class="unimemory-extension-popup-project-card-name">${project.name}</div>
-          <div class="unimemory-extension-popup-project-card-count">${project.memory_count || 0} memories</div>
-          ${extSelectedProject?.id === project.id ? '<div class="unimemory-extension-popup-project-card-check">✓</div>' : ''}
-        `;
+        card.textContent = project.name;
         card.addEventListener('click', (e) => {
           e.stopPropagation();
           e.preventDefault();

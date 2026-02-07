@@ -851,68 +851,33 @@
   flex: 1;
   padding: 16px;
   overflow-y: auto;
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   align-content: start;
 }
 
 .unimemory-extension-popup-project-card {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 20px 16px;
+  width: 100%;
+  padding: 14px 16px;
   background: white;
-  border: 2px solid #e5e5e5;
-  border-radius: 12px;
+  border: none;
+  border-radius: 10px;
   cursor: pointer;
   transition: all 0.15s;
-  text-align: center;
+  text-align: left;
   font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  color: #171717;
 }
 
 .unimemory-extension-popup-project-card:hover {
-  border-color: #d1d5db;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  background: #f5f5f5;
 }
 
 .unimemory-extension-popup-project-card.selected {
-  border-color: #6366f1;
-  background: #f0f9ff;
-}
-
-.unimemory-extension-popup-project-card-icon {
-  font-size: 32px;
-  margin-bottom: 8px;
-}
-
-.unimemory-extension-popup-project-card-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: #171717;
-  margin-bottom: 4px;
-}
-
-.unimemory-extension-popup-project-card-count {
-  font-size: 12px;
-  color: #737373;
-}
-
-.unimemory-extension-popup-project-card-check {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 20px;
-  height: 20px;
-  background: #6366f1;
-  color: white;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: bold;
+  background: #e5e5e5;
 }
 
 .unimemory-extension-popup-no-projects {
