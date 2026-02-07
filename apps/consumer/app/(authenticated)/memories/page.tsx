@@ -164,6 +164,20 @@ export default function MemoriesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadData]);
 
+  // Auto-reload data when tab becomes visible (e.g., after saving from extension)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        console.log('Tab became visible, reloading data...');
+        loadData(selectedProject?.id);
+        loadProjects();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [selectedProject, loadData]);
+
   // Prefetch graph data in background after page loads
   useEffect(() => {
     if (loading || graphPrefetched) return;
