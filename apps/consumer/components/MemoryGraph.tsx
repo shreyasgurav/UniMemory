@@ -567,9 +567,32 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
-    const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    setZoom((z) => Math.min(3, Math.max(0.2, z * delta)));
-  }, []);
+    
+    if (!canvasRef.current) return;
+    
+    // Smooth zoom factor (reduced from 0.9/1.1 to 0.95/1.05 for smoother zooming)
+    const zoomIntensity = 0.05; // 5% per scroll tick (was 10%)
+    const delta = e.deltaY > 0 ? (1 - zoomIntensity) : (1 + zoomIntensity);
+    
+    // Get mouse position relative to canvas
+    const rect = canvasRef.current.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    
+    // Calculate world position before zoom
+    const worldX = (mouseX - pan.x - rect.width / 2) / zoom + centerX;
+    const worldY = (mouseY - pan.y - rect.height / 2) / zoom + centerY;
+    
+    // Apply zoom
+    const newZoom = Math.min(3, Math.max(0.2, zoom * delta));
+    
+    // Calculate new pan to keep mouse position fixed
+    const newPanX = mouseX - (worldX - centerX) * newZoom - rect.width / 2;
+    const newPanY = mouseY - (worldY - centerY) * newZoom - rect.height / 2;
+    
+    setZoom(newZoom);
+    setPan({ x: newPanX, y: newPanY });
+  }, [zoom, pan]);
 
   const resetView = useCallback(() => {
     setZoom(0.6);
@@ -595,10 +618,10 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={() => setZoom((z) => Math.min(3, z * 1.2))} className="p-2 rounded-lg bg-neutral-800/50 hover:bg-neutral-700/50 text-neutral-300">
+            <button onClick={() => setZoom((z) => Math.min(3, z * 1.15))} className="p-2 rounded-lg bg-neutral-800/50 hover:bg-neutral-700/50 text-neutral-300 transition-colors">
               <ZoomIn className="w-4 h-4" />
             </button>
-            <button onClick={() => setZoom((z) => Math.max(0.2, z * 0.8))} className="p-2 rounded-lg bg-neutral-800/50 hover:bg-neutral-700/50 text-neutral-300">
+            <button onClick={() => setZoom((z) => Math.max(0.2, z * 0.85))} className="p-2 rounded-lg bg-neutral-800/50 hover:bg-neutral-700/50 text-neutral-300 transition-colors">
               <ZoomOut className="w-4 h-4" />
             </button>
             <button onClick={resetView} className="p-2 rounded-lg bg-neutral-800/50 hover:bg-neutral-700/50 text-neutral-300">
