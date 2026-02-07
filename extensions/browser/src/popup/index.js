@@ -137,7 +137,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   
   function selectProject(project) {
     selectedProject = project;
-    selectedProjectIcon.textContent = project.icon || '📁';
+    // Use folder icon for default project, otherwise use project's icon
+    selectedProjectIcon.textContent = project.is_default ? '📁' : (project.icon || '📁');
     selectedProjectName.textContent = project.name;
     
     // Save selection

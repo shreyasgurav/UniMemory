@@ -68,17 +68,20 @@ export default function MemoriesPage() {
   const [newProjectName, setNewProjectName] = useState("");
   const [creatingProject, setCreatingProject] = useState(false);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (projectId?: string) => {
     setLoading(true);
     try {
       const token = await auth.currentUser?.getIdToken();
       if (!token) return;
 
+      // Build query params with optional project filter
+      const projectParam = projectId ? `&project_id=${projectId}` : '';
+
       const [sourcesRes, memoriesRes] = await Promise.all([
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/consumer/sources?limit=50`, {
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/consumer/sources?limit=50${projectParam}`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/consumer/memories?limit=50`, {
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/consumer/memories?limit=50${projectParam}`, {
           headers: { Authorization: `Bearer ${token}` },
         })
       ]);
@@ -325,10 +328,12 @@ export default function MemoriesPage() {
           <div className="relative">
             <button
               onClick={() => setShowProjectDropdown(!showProjectDropdown)}
-              className="flex items-center gap-2 px-3 py-2 bg-white border border-neutral-200 rounded-lg hover:bg-neutral-50 transition-colors"
+              className="group flex items-center gap-2 pl-2 pr-4 py-2 rounded-[14px] bg-white border border-neutral-200 text-sm font-medium shadow-sm hover:bg-neutral-50 active:scale-[0.98] transition-all duration-150"
             >
-              <span className="text-base">{selectedProject?.icon || '📁'}</span>
-              <span className="text-sm font-medium text-neutral-700 max-w-[150px] truncate">
+              <span className="flex items-center justify-center w-7 h-7 rounded-lg transition-colors">
+                <span className="text-base">{selectedProject?.is_default ? '📁' : selectedProject?.icon || '📁'}</span>
+              </span>
+              <span className="text-neutral-700 max-w-[120px] truncate">
                 {selectedProject?.name || 'Select Project'}
               </span>
               <ChevronDown className={`w-4 h-4 text-neutral-400 transition-transform ${showProjectDropdown ? 'rotate-180' : ''}`} />
@@ -343,6 +348,7 @@ export default function MemoriesPage() {
                     onClick={() => {
                       setSelectedProject(project);
                       setShowProjectDropdown(false);
+                      loadData(project.id);
                     }}
                     className={`w-full flex items-center gap-3 px-3 py-2.5 hover:bg-neutral-50 transition-colors ${
                       selectedProject?.id === project.id ? 'bg-indigo-50' : ''
@@ -374,7 +380,7 @@ export default function MemoriesPage() {
         
         <button
           onClick={() => setShowGraph(true)}
-          className="group flex items-center gap-2 pl-2 pr-4 py-2 rounded-xl bg-neutral-900 text-white text-sm font-medium shadow-sm hover:bg-neutral-800 active:scale-[0.98] transition-all duration-150"
+          className="group flex items-center gap-2 pl-2 pr-4 py-2 rounded-[14px] bg-neutral-900 text-white text-sm font-medium shadow-sm hover:bg-neutral-800 active:scale-[0.98] transition-all duration-150"
         >
           <span className="flex items-center justify-center w-7 h-7 rounded-lg transition-colors">
             <Workflow className="w-4 h-4 text-white/90" />

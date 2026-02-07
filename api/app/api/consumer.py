@@ -648,6 +648,7 @@ async def ensure_default_project(
 async def get_sources(
     limit: int = 50,
     offset: int = 0,
+    project_id: Optional[str] = None,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db)
 ):
@@ -670,6 +671,11 @@ async def get_sources(
         .subquery()
     )
     
+    # Build where clause with optional project filter
+    where_clauses = [Source.owner_id == str(user.id)]
+    if project_id:
+        where_clauses.append(Source.project_id == project_id)
+    
     # Main query with left join to get memory counts (exclude raw_content for speed)
     result = await session.execute(
         select(Source, memory_count_subq.c.memory_count)
@@ -679,7 +685,7 @@ async def get_sources(
             Source.created_at, Source.updated_at
         ))
         .outerjoin(memory_count_subq, Source.id == memory_count_subq.c.source_id)
-        .where(Source.owner_id == str(user.id))
+        .where(and_(*where_clauses))
         .order_by(Source.created_at.desc())
         .limit(limit)
         .offset(offset)
@@ -961,6 +967,7 @@ async def get_session_source(
 async def get_memories(
     limit: int = 50,
     offset: int = 0,
+    project_id: Optional[str] = None,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db)
 ):
@@ -970,6 +977,14 @@ async def get_memories(
     """
     from sqlalchemy.orm import load_only
     
+    # Build where clauses with optional project filter
+    where_clauses = [
+        Memory.owner_id == str(user.id),
+        Memory.is_active == True
+    ]
+    if project_id:
+        where_clauses.append(Memory.project_id == project_id)
+    
     result = await session.execute(
         select(Memory)
         .options(load_only(
@@ -977,8 +992,7 @@ async def get_memories(
             Memory.tags, Memory.user_id, Memory.is_active,
             Memory.created_at, Memory.updated_at
         ))
-        .where(Memory.owner_id == str(user.id))
-        .where(Memory.is_active == True)
+        .where(and_(*where_clauses))
         .order_by(Memory.created_at.desc())
         .limit(limit)
         .offset(offset)
