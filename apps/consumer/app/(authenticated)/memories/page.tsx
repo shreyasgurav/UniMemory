@@ -122,11 +122,8 @@ export default function MemoriesPage() {
       const data = await res.json();
       setProjects(data);
 
-      // Select default project
-      if (data.length > 0) {
-        const defaultProject = data.find((p: Project) => p.is_default) || data[0];
-        setSelectedProject(defaultProject);
-      }
+      // Don't auto-select any project - let user choose
+      // They can select "All Projects" or a specific project
     } catch (error) {
       console.error("Failed to load projects:", error);
     }
@@ -310,22 +307,26 @@ export default function MemoriesPage() {
 
           {/* Project Selector */}
           <div className="relative">
-            <button
-              onClick={() => setShowProjectDropdown(!showProjectDropdown)}
-              className="group flex items-center gap-2 pl-2 pr-4 py-2 rounded-[14px] bg-white border border-neutral-200 text-sm font-medium shadow-sm hover:bg-neutral-50 active:scale-[0.98] transition-all duration-150"
-            >
-              <span className="flex items-center justify-center w-7 h-7 rounded-lg transition-colors">
-                <span className="text-base">{selectedProject?.is_default ? '📁' : selectedProject?.icon || '📁'}</span>
-              </span>
-              <span className="text-neutral-700 max-w-[120px] truncate">
-                {selectedProject?.name || 'Select Project'}
-              </span>
-              <ChevronDown className={`w-4 h-4 text-neutral-400 transition-transform ${showProjectDropdown ? 'rotate-180' : ''}`} />
-            </button>
+            {projects.length === 0 ? (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-neutral-200">
+                <div className="h-4 w-24 bg-neutral-200 rounded animate-pulse"></div>
+                <div className="w-4 h-4 bg-neutral-200 rounded animate-pulse"></div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowProjectDropdown(!showProjectDropdown)}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-neutral-200 text-sm font-medium hover:border-neutral-300 hover:bg-neutral-50 transition-all"
+              >
+                <span className="text-neutral-900 truncate">
+                  {selectedProject?.name || 'All Projects'}
+                </span>
+                <ChevronDown className={`w-4 h-4 text-neutral-400 transition-transform ${showProjectDropdown ? 'rotate-180' : ''}`} />
+              </button>
+            )}
 
             {/* Dropdown Menu */}
             {showProjectDropdown && (
-              <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-neutral-200 rounded-xl shadow-lg z-50 py-1 max-h-80 overflow-y-auto">
+              <div className="absolute top-full left-0 mt-2 w-64 bg-white border border-neutral-200 rounded-lg shadow-lg z-50 py-1 max-h-80 overflow-y-auto">
                 {projects.map((project) => (
                   <button
                     key={project.id}
@@ -334,12 +335,11 @@ export default function MemoriesPage() {
                       setShowProjectDropdown(false);
                       loadData(project.id);
                     }}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 hover:bg-neutral-50 transition-colors ${selectedProject?.id === project.id ? 'bg-indigo-50' : ''
+                    className={`w-full flex items-center justify-between gap-3 px-3 py-2 hover:bg-neutral-50 transition-colors ${selectedProject?.id === project.id ? 'bg-blue-50 text-blue-700' : 'text-neutral-700'
                       }`}
                   >
-                    <span className="text-base">{project.icon}</span>
-                    <span className="flex-1 text-left text-sm font-medium text-neutral-700 truncate">{project.name}</span>
-                    <span className="text-xs text-neutral-400 bg-neutral-100 px-2 py-0.5 rounded">
+                    <span className="flex-1 text-left text-sm font-medium truncate">{project.name}</span>
+                    <span className="text-xs text-neutral-500 bg-neutral-100 px-2 py-0.5 rounded-full">
                       {project.memory_count}
                     </span>
                   </button>
@@ -350,7 +350,7 @@ export default function MemoriesPage() {
                       setShowProjectDropdown(false);
                       setShowNewProjectModal(true);
                     }}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-indigo-50 text-indigo-600 transition-colors"
+                    className="w-full flex items-center gap-2 px-3 py-2 hover:bg-blue-50 text-blue-600 transition-colors"
                   >
                     <Plus className="w-4 h-4" />
                     <span className="text-sm font-medium">New Project</span>

@@ -289,7 +289,8 @@ async def store_extracted_memories(
             source_link = MemorySource(
                 id=str(uuid.uuid4()),
                 memory_id=mem_id,
-                source_id=source_uuid
+                source_id=source_uuid,
+                created_at=datetime.utcnow()  # Explicitly set to avoid NULL constraint violation
             )
             session.add(source_link)
         # Single commit for all links - much faster than individual commits
