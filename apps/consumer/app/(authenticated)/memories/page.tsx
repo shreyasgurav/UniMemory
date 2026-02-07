@@ -41,6 +41,7 @@ export default function MemoriesPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'source' | 'memory', id: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [showGraph, setShowGraph] = useState(false);
+  const [graphPrefetched, setGraphPrefetched] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -77,6 +78,32 @@ export default function MemoriesPage() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Prefetch graph data in background after page loads
+  useEffect(() => {
+    if (loading || graphPrefetched) return;
+
+    const prefetchGraph = async () => {
+      try {
+        const token = await auth.currentUser?.getIdToken();
+        if (!token) return;
+
+        // Prefetch graph data silently in background
+        await fetch(`${process.env.NEXT_PUBLIC_API_URL}/consumer/graph?limit=50`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        
+        setGraphPrefetched(true);
+        console.log('Graph data prefetched for instant opening');
+      } catch (error) {
+        console.error("Failed to prefetch graph:", error);
+      }
+    };
+
+    // Prefetch after a short delay to not block initial page load
+    const timer = setTimeout(prefetchGraph, 500);
+    return () => clearTimeout(timer);
+  }, [loading, graphPrefetched]);
 
   const loadSourceDetail = async (sourceId: string) => {
     // Set loading state immediately to show popup with skeleton

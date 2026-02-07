@@ -179,7 +179,12 @@ export default function MemoryGraph({ isOpen, onClose }: MemoryGraphProps) {
 
         const response = await fetch(
           `${process.env.NEXT_PUBLIC_API_URL}/consumer/graph?limit=50`,
-          { headers: { Authorization: `Bearer ${token}` } }
+          { 
+            headers: { Authorization: `Bearer ${token}` },
+            // Use cache if available (from prefetch)
+            cache: 'force-cache',
+            next: { revalidate: 30 } // Cache for 30 seconds
+          }
         );
 
         if (!response.ok) throw new Error("Failed to fetch graph data");
