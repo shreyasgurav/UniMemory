@@ -442,6 +442,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             });
             console.log('[UniMemory] Ensure default response:', ensureResponse.status);
             
+            // If 401, session expired - clear and prompt re-login
+            if (ensureResponse.status === 401) {
+              console.log('[UniMemory] Session expired, clearing session');
+              await clearSession();
+              sendResponse({ success: false, error: 'Session expired', projects: [], needsLogin: true });
+              break;
+            }
+            
             // Then get all projects
             console.log('[UniMemory] Fetching projects from:', `${API_BASE_URL}/consumer/projects`);
             const response = await fetch(`${API_BASE_URL}/consumer/projects`, {
@@ -449,6 +457,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             });
             
             console.log('[UniMemory] Projects response status:', response.status);
+            
+            // If 401, session expired - clear and prompt re-login
+            if (response.status === 401) {
+              console.log('[UniMemory] Session expired, clearing session');
+              await clearSession();
+              sendResponse({ success: false, error: 'Session expired', projects: [], needsLogin: true });
+              break;
+            }
             
             if (!response.ok) {
               const errorText = await response.text();

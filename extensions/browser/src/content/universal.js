@@ -880,6 +880,13 @@
         const response = await chrome.runtime.sendMessage({ type: 'GET_PROJECTS' });
         console.log('[UniMemory] Projects response:', response);
         
+        // If session expired, show login screen
+        if (response && response.needsLogin) {
+          console.log('[UniMemory] Session expired, showing login screen');
+          showNotAuthenticatedPopup();
+          return;
+        }
+        
         if (response && response.success !== false) {
           extProjects = response.projects || [];
           console.log('[UniMemory] Loaded projects:', extProjects);
