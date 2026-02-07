@@ -641,6 +641,127 @@ async def ensure_default_project(
     )
 
 
+# ============ Session-Authenticated Project Endpoints (for Extension) ============
+
+@router.get("/consumer/session/projects", response_model=List[ProjectResponse])
+async def get_session_projects(
+    user: User = Depends(verify_consumer_session_token),
+    session: AsyncSession = Depends(get_db)
+):
+    """Get all projects for the current user (session token auth for extension)"""
+    # Subquery to count memories per project
+    memory_count_subq = (
+        select(
+            Memory.project_id,
+            func.count(Memory.id).label('memory_count')
+        )
+        .where(Memory.is_active == True)
+        .group_by(Memory.project_id)
+        .subquery()
+    )
+    
+    # Subquery to count sources per project
+    source_count_subq = (
+        select(
+            Source.project_id,
+            func.count(Source.id).label('source_count')
+        )
+        .group_by(Source.project_id)
+        .subquery()
+    )
+    
+    result = await session.execute(
+        select(Project, memory_count_subq.c.memory_count, source_count_subq.c.source_count)
+        .outerjoin(memory_count_subq, Project.id == memory_count_subq.c.project_id)
+        .outerjoin(source_count_subq, Project.id == source_count_subq.c.project_id)
+        .where(Project.owner_id == str(user.id))
+        .order_by(Project.is_default.desc(), Project.is_pinned.desc(), Project.updated_at.desc())
+    )
+    projects_with_counts = result.all()
+    
+    return [
+        ProjectResponse(
+            id=str(p.id),
+            name=p.name,
+            slug=p.slug,
+            description=p.description,
+            icon=p.icon or "📁",
+            color=p.color or "#6366f1",
+            status=p.status or "active",
+            status_note=p.status_note,
+            is_default=p.is_default or False,
+            is_pinned=p.is_pinned or False,
+            memory_count=memory_count or 0,
+            source_count=source_count or 0,
+            created_at=p.created_at,
+            updated_at=p.updated_at
+        )
+        for p, memory_count, source_count in projects_with_counts
+    ]
+
+
+@router.get("/consumer/session/projects/default/ensure", response_model=ProjectResponse)
+async def ensure_session_default_project(
+    user: User = Depends(verify_consumer_session_token),
+    session: AsyncSession = Depends(get_db)
+):
+    """Ensure a default project exists for the user (session token auth for extension)"""
+    result = await session.execute(
+        select(Project).where(
+            Project.owner_id == str(user.id),
+            Project.is_default == True
+        )
+    )
+    project = result.scalar_one_or_none()
+    
+    if not project:
+        # Create default project
+        project = Project(
+            owner_id=str(user.id),
+            name="Default",
+            slug="default",
+            description="Default project for all memories",
+            icon="📁",
+            color="#6366f1",
+            status="active",
+            is_default=True,
+            is_pinned=False
+        )
+        session.add(project)
+        await session.commit()
+        await session.refresh(project)
+    
+    # Get counts
+    memory_count_result = await session.execute(
+        select(func.count(Memory.id))
+        .where(Memory.project_id == str(project.id), Memory.is_active == True)
+    )
+    memory_count = memory_count_result.scalar() or 0
+    
+    source_count_result = await session.execute(
+        select(func.count(Source.id))
+        .where(Source.project_id == str(project.id))
+    )
+    source_count = source_count_result.scalar() or 0
+    
+    return ProjectResponse(
+        id=str(project.id),
+        name=project.name,
+        slug=project.slug,
+        description=project.description,
+        icon=project.icon or "📁",
+        color=project.color or "#6366f1",
+        status=project.status or "active",
+        status_note=project.status_note,
+        is_default=project.is_default or False,
+        is_pinned=project.is_pinned or False,
+        memory_count=memory_count,
+        source_count=source_count,
+        created_at=project.created_at,
+        updated_at=project.updated_at
+    )
+
+
 # ============ Sources Endpoints ============
 # NOTE: Atomic memory creation is handled by POST /memories (unified auth)
 

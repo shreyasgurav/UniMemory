@@ -430,14 +430,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           const session = await getSession();
           if (!session) {
             console.log('[UniMemory] GET_PROJECTS: Not authenticated');
-            sendResponse({ success: false, error: 'Not authenticated', projects: [] });
+            sendResponse({ success: false, error: 'Not authenticated', projects: [], needsLogin: true });
             break;
           }
           
           try {
             console.log('[UniMemory] Ensuring default project...');
-            // First ensure default project exists
-            const ensureResponse = await fetch(`${API_BASE_URL}/consumer/projects/default/ensure`, {
+            // First ensure default project exists (use session endpoint)
+            const ensureResponse = await fetch(`${API_BASE_URL}/consumer/session/projects/default/ensure`, {
               headers: { 'Authorization': `Bearer ${session.token}` }
             });
             console.log('[UniMemory] Ensure default response:', ensureResponse.status);
@@ -450,9 +450,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
               break;
             }
             
-            // Then get all projects
-            console.log('[UniMemory] Fetching projects from:', `${API_BASE_URL}/consumer/projects`);
-            const response = await fetch(`${API_BASE_URL}/consumer/projects`, {
+            // Then get all projects (use session endpoint)
+            console.log('[UniMemory] Fetching projects from:', `${API_BASE_URL}/consumer/session/projects`);
+            const response = await fetch(`${API_BASE_URL}/consumer/session/projects`, {
               headers: { 'Authorization': `Bearer ${session.token}` }
             });
             
