@@ -747,7 +747,7 @@
           <!-- Project Selector -->
           <div class="unimemory-extension-popup-project-selector">
             <label class="unimemory-extension-popup-project-label">Save to project:</label>
-            <button id="ext-project-select-btn" class="unimemory-extension-popup-project-btn">
+            <button id="ext-project-select-btn" class="unimemory-extension-popup-project-btn" disabled>
               <span id="ext-selected-project-name">Loading projects...</span>
               <svg class="unimemory-extension-popup-arrow-right" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="m9 18 6-6-6-6"/>
@@ -934,6 +934,12 @@
         console.warn('[UniMemory] Could not find project name element to update');
       }
       
+      // Enable project selector button after loading
+      const selectBtn = extensionPopup?.querySelector('#ext-project-select-btn');
+      if (selectBtn) {
+        selectBtn.disabled = false;
+      }
+      
       // Persist selection
       chrome.storage.local.set({ ext_selected_project_id: project.id });
     }
@@ -941,24 +947,22 @@
     function showProjectSelectionPage() {
       showingProjectSelection = true;
       
-      const logoUrl = chrome.runtime.getURL('Unimemory-Name-Logo-NoBG.png');
-      
-      // Replace entire popup content with project selection
+      // Replace entire popup content with project selection (no logo)
       extensionPopup.innerHTML = `
-        <div class="unimemory-extension-popup-header">
-          <img src="${logoUrl}" alt="UniMemory" class="unimemory-extension-popup-logo" />
-        </div>
         <div class="unimemory-extension-popup-project-selection">
           <div class="unimemory-extension-popup-project-selection-header">
             <button id="ext-back-btn" class="unimemory-extension-popup-back-btn">
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="m15 18-6-6 6-6"/>
               </svg>
-              Back
             </button>
             <h3 class="unimemory-extension-popup-project-selection-title">Select Project</h3>
           </div>
-          <div class="unimemory-extension-popup-project-grid" id="ext-project-grid"></div>
+          <div class="unimemory-extension-popup-project-grid" id="ext-project-grid">
+            <div class="unimemory-extension-popup-loading">
+              <div class="unimemory-extension-popup-spinner"></div>
+            </div>
+          </div>
         </div>
       `;
       
