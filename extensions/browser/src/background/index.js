@@ -429,26 +429,35 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         case 'GET_PROJECTS': {
           const session = await getSession();
           if (!session) {
+            console.log('[UniMemory] GET_PROJECTS: Not authenticated');
             sendResponse({ success: false, error: 'Not authenticated', projects: [] });
             break;
           }
           
           try {
+            console.log('[UniMemory] Ensuring default project...');
             // First ensure default project exists
-            await fetch(`${API_BASE_URL}/consumer/projects/default/ensure`, {
+            const ensureResponse = await fetch(`${API_BASE_URL}/consumer/projects/default/ensure`, {
               headers: { 'Authorization': `Bearer ${session.token}` }
             });
+            console.log('[UniMemory] Ensure default response:', ensureResponse.status);
             
             // Then get all projects
+            console.log('[UniMemory] Fetching projects from:', `${API_BASE_URL}/consumer/projects`);
             const response = await fetch(`${API_BASE_URL}/consumer/projects`, {
               headers: { 'Authorization': `Bearer ${session.token}` }
             });
             
+            console.log('[UniMemory] Projects response status:', response.status);
+            
             if (!response.ok) {
-              throw new Error('Failed to fetch projects');
+              const errorText = await response.text();
+              console.error('[UniMemory] Projects API error:', errorText);
+              throw new Error(`Failed to fetch projects: ${response.status} ${errorText}`);
             }
             
             const projects = await response.json();
+            console.log('[UniMemory] Fetched projects:', projects);
             sendResponse({ success: true, projects });
           } catch (error) {
             console.error('[UniMemory] Failed to fetch projects:', error);
