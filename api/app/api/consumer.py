@@ -1548,7 +1548,7 @@ class GraphEdge(BaseModel):
     source: str
     target: str
     weight: float
-    edge_type: str  # "doc-memory", "memory-memory", "doc-doc"
+    edge_type: str  # "doc-memory", "memory-memory", "same-project", "entity-memory"
 
 class GraphProject(BaseModel):
     id: str
@@ -1633,7 +1633,7 @@ async def get_memory_graph(
     source_query = select(Source).where(Source.owner_id == owner_id)
     if project_id:
         source_query = source_query.where(Source.project_id == project_id)
-    source_query = source_query.order_by(Source.created_at.asc()).limit(limit)
+    source_query = source_query.order_by(Source.created_at.desc()).limit(limit)
     
     sources_result = await session.execute(source_query)
     sources = sources_result.scalars().all()
@@ -1680,6 +1680,7 @@ async def get_memory_graph(
     
     # Build graph sources
     graph_sources = []
+    source_project_map: Dict[str, str] = {}  # source_id -> project_id
     total_memories = 0
     
     # 1. Add sources with their memories
@@ -1688,6 +1689,10 @@ async def get_memory_graph(
         source_mems = source_memories_map.get(sid, [])
         total_memories += len(source_mems)
         logger.info(f"[Graph] Source '{source.title}' (id={sid[:8]}...) has {len(source_mems)} memories")
+        
+        # Track project membership for same-project edges
+        if source.project_id:
+            source_project_map[sid] = str(source.project_id)
         
         graph_sources.append(GraphSource(
             id=sid,
@@ -1752,25 +1757,27 @@ async def get_memory_graph(
             edge_type="memory-memory"
         ))
     
-    # 3. Project-doc edges (connect project node to all its sources)
-    if graph_project:
-        for source in graph_sources:
-            edges.append(GraphEdge(
-                source=graph_project.id,
-                target=source.id,
-                weight=1.0,
-                edge_type="project-doc"
-            ))
+    # 3. Same-project edges (connect sources that belong to the same project)
+    # Group sources by project_id, then connect all sources within each group
+    project_source_groups: Dict[str, list] = {}
+    for source in graph_sources:
+        pid = source_project_map.get(source.id)
+        if pid:
+            if pid not in project_source_groups:
+                project_source_groups[pid] = []
+            project_source_groups[pid].append(source)
     
-    # 4. Doc-doc edges (connect consecutive sources chronologically within same project)
-    if len(graph_sources) > 1 and project_id:
-        for i in range(len(graph_sources) - 1):
-            edges.append(GraphEdge(
-                source=graph_sources[i].id,
-                target=graph_sources[i + 1].id,
-                weight=0.3,
-                edge_type="doc-doc"
-            ))
+    for pid, proj_sources in project_source_groups.items():
+        if len(proj_sources) > 1:
+            # Connect each pair of sources in the same project
+            for i in range(len(proj_sources)):
+                for j in range(i + 1, len(proj_sources)):
+                    edges.append(GraphEdge(
+                        source=proj_sources[i].id,
+                        target=proj_sources[j].id,
+                        weight=0.6,
+                        edge_type="same-project"
+                    ))
     
     # 5. Entity-memory edges (if entities exist)
     try:
