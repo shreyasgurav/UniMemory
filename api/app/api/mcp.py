@@ -1034,6 +1034,7 @@ async def execute_tool(
                 simhash_to_memory = {em.simhash: em for em in existing_memories if em.simhash}
                 
                 stored_count = 0
+                new_memories_for_waypoints = []  # Collect (memory_id, embedding) for waypoint creation
                 for mem_item in extraction.memories:
                     mem_content = mem_item.content.strip()
                     if not mem_content:
@@ -1086,6 +1087,7 @@ async def execute_tool(
                     )
                     session.add(memory)
                     simhash_to_memory[simhash] = memory
+                    new_memories_for_waypoints.append((memory_id, embedding))
                     
                     # Link to source (same pattern as ingest.py)
                     if source_uuid:
@@ -1102,6 +1104,19 @@ async def execute_tool(
                 memories_count = stored_count
             
             await session.commit()
+            
+            # Create waypoints in background (MCP has no BackgroundTasks, use asyncio)
+            if new_memories_for_waypoints:
+                from app.api.ingest import create_waypoints_background
+                from app.db.database import AsyncSessionLocal
+                asyncio.create_task(
+                    create_waypoints_background(
+                        AsyncSessionLocal,
+                        [m[0] for m in new_memories_for_waypoints],
+                        [m[1] for m in new_memories_for_waypoints],
+                        "mcp_user"
+                    )
+                )
             
             await log_mcp_activity(
                 user_id=str(user.id),
