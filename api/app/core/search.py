@@ -289,6 +289,11 @@ async def hybrid_search(
     if owner_id:
         stmt = stmt.where(Memory.owner_id == owner_id)
     
+    # Filter by project_id (optional - scopes search to a single project)
+    project_id = filters.get("project_id") if filters else None
+    if project_id:
+        stmt = stmt.where(Memory.project_id == project_id)
+    
     if user_id:
         stmt = stmt.where(Memory.user_id == user_id)
     

@@ -12,7 +12,7 @@ import uuid
 import logging
 
 from app.db.database import get_db
-from app.db.models import Memory, Waypoint, ProcessingLog, User, ActivityLog
+from app.db.models import Memory, Waypoint, ProcessingLog, User, ActivityLog, Project, Source
 from app.core.extractor import get_extractor
 from app.core.embeddings import get_embedding_service
 from app.core.simhash import compute_simhash, hamming_distance
@@ -152,6 +152,7 @@ class CreateMemoryRequest(BaseModel):
     app_id: Optional[str] = Field(None, max_length=100)  # Application identifier
     tags: Optional[List[str]] = Field(default_factory=list)
     metadata: Optional[Dict[str, Any]] = None
+    project_id: Optional[str] = Field(None, description="Project ID to save this memory to")
     
     @validator('content')
     def validate_content(cls, v):
@@ -259,6 +260,7 @@ async def create_memory(
         source_app=request.app_id,
         user_id=request.user_id,
         owner_id=owner_id,
+        project_id=request.project_id,  # Project to save memory to
         api_key_id=str(api_key.id) if api_key else None,
         embedding=embedding,
         embedding_model=settings.EMBEDDING_MODEL,
@@ -699,3 +701,218 @@ async def delete_my_memory(
     await session.commit()
     
     return {"success": True, "id": memory_id}
+
+
+# =============================================================================
+# PROJECT ENDPOINTS (accessible via API key + Bearer token for MCP)
+# =============================================================================
+
+@router.get("/projects")
+async def list_projects(
+    user_info: tuple = Depends(get_user_unified),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    List all projects for the authenticated user.
+    
+    Works with both X-API-Key and Bearer token authentication.
+    Used by MCP tools (get_projects) and standalone MCP clients.
+    """
+    user, api_key = user_info
+    owner_id = str(user.id)
+    
+    # Get projects with memory and source counts
+    memory_count_subq = (
+        select(
+            Memory.project_id,
+            func.count(Memory.id).label('memory_count')
+        )
+        .where(Memory.is_active == True, Memory.owner_id == owner_id)
+        .group_by(Memory.project_id)
+        .subquery()
+    )
+    
+    source_count_subq = (
+        select(
+            Source.project_id,
+            func.count(Source.id).label('source_count')
+        )
+        .where(Source.owner_id == owner_id)
+        .group_by(Source.project_id)
+        .subquery()
+    )
+    
+    result = await session.execute(
+        select(Project, memory_count_subq.c.memory_count, source_count_subq.c.source_count)
+        .outerjoin(memory_count_subq, Project.id == memory_count_subq.c.project_id)
+        .outerjoin(source_count_subq, Project.id == source_count_subq.c.project_id)
+        .where(Project.owner_id == owner_id)
+        .order_by(Project.is_default.desc(), Project.is_pinned.desc(), Project.updated_at.desc())
+    )
+    projects = result.all()
+    
+    return {
+        "projects": [
+            {
+                "id": str(p.id),
+                "name": p.name,
+                "slug": p.slug,
+                "description": p.description,
+                "icon": p.icon or "📁",
+                "status": p.status or "active",
+                "status_note": p.status_note,
+                "is_default": p.is_default or False,
+                "is_pinned": p.is_pinned or False,
+                "memory_count": mc or 0,
+                "source_count": sc or 0,
+                "created_at": p.created_at.isoformat() if p.created_at else None,
+                "updated_at": p.updated_at.isoformat() if p.updated_at else None,
+            }
+            for p, mc, sc in projects
+        ],
+        "count": len(projects)
+    }
+
+
+@router.get("/projects/{project_id}/status")
+async def get_project_status(
+    project_id: str,
+    user_info: tuple = Depends(get_user_unified),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Get detailed project status including recent memories and sources.
+    
+    Works with both X-API-Key and Bearer token authentication.
+    Used by MCP tools (get_project_status) and standalone MCP clients.
+    """
+    user, api_key = user_info
+    owner_id = str(user.id)
+    
+    # Get project
+    result = await session.execute(
+        select(Project).where(Project.id == project_id, Project.owner_id == owner_id)
+    )
+    project = result.scalar_one_or_none()
+    
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Get counts
+    mem_count = (await session.execute(
+        select(func.count(Memory.id))
+        .where(Memory.project_id == project_id, Memory.is_active == True)
+    )).scalar() or 0
+    
+    src_count = (await session.execute(
+        select(func.count(Source.id))
+        .where(Source.project_id == project_id)
+    )).scalar() or 0
+    
+    # Get recent memories
+    recent_mems = await session.execute(
+        select(Memory)
+        .where(Memory.project_id == project_id, Memory.is_active == True, Memory.owner_id == owner_id)
+        .order_by(Memory.created_at.desc())
+        .limit(10)
+    )
+    recent_memories = recent_mems.scalars().all()
+    
+    # Get recent sources
+    recent_srcs = await session.execute(
+        select(Source)
+        .where(Source.project_id == project_id, Source.owner_id == owner_id)
+        .order_by(Source.created_at.desc())
+        .limit(5)
+    )
+    recent_sources = recent_srcs.scalars().all()
+    
+    return {
+        "found": True,
+        "project": {
+            "id": str(project.id),
+            "name": project.name,
+            "slug": project.slug,
+            "description": project.description,
+            "icon": project.icon or "📁",
+            "status": project.status or "active",
+            "status_note": project.status_note,
+            "is_default": project.is_default or False,
+            "memory_count": mem_count,
+            "source_count": src_count,
+            "created_at": project.created_at.isoformat() if project.created_at else None,
+            "updated_at": project.updated_at.isoformat() if project.updated_at else None,
+        },
+        "recent_memories": [
+            {
+                "id": str(m.id),
+                "content": m.content[:200],
+                "sector": m.sector,
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+            }
+            for m in recent_memories
+        ],
+        "recent_sources": [
+            {
+                "id": str(s.id),
+                "type": s.type,
+                "title": s.title,
+                "summary": s.summary[:200] if s.summary else None,
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+            }
+            for s in recent_sources
+        ],
+    }
+
+
+class UpdateProjectStatusRequest(BaseModel):
+    status: Optional[str] = None
+    status_note: Optional[str] = None
+
+
+@router.patch("/projects/{project_id}/status")
+async def update_project_status_endpoint(
+    project_id: str,
+    request: UpdateProjectStatusRequest,
+    user_info: tuple = Depends(get_user_unified),
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Update project status and status note.
+    
+    Works with both X-API-Key and Bearer token authentication.
+    Used by MCP tools (update_project_status) and standalone MCP clients.
+    """
+    user, api_key = user_info
+    owner_id = str(user.id)
+    
+    # Get project
+    result = await session.execute(
+        select(Project).where(Project.id == project_id, Project.owner_id == owner_id)
+    )
+    project = result.scalar_one_or_none()
+    
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Update fields
+    if request.status:
+        project.status = request.status
+    if request.status_note is not None:
+        project.status_note = request.status_note
+    project.updated_at = datetime.utcnow()
+    
+    await session.commit()
+    await session.refresh(project)
+    
+    return {
+        "success": True,
+        "project": {
+            "id": str(project.id),
+            "name": project.name,
+            "status": project.status,
+            "status_note": project.status_note,
+            "updated_at": project.updated_at.isoformat() if project.updated_at else None,
+        },
+        "message": f"Project '{project.name}' status updated to '{project.status}'.",
+    }

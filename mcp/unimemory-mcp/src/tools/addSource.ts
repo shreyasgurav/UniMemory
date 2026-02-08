@@ -9,6 +9,7 @@ export interface AddSourceInput {
   raw_content: string | Record<string, any>;
   type?: 'chat' | 'document' | 'text';
   metadata?: Record<string, any>;
+  project_id?: string;
 }
 
 export const addSourceTool = {
@@ -31,6 +32,10 @@ export const addSourceTool = {
       metadata: {
         type: 'object',
         description: 'Optional metadata like tags, context, or custom fields.',
+      },
+      project_id: {
+        type: 'string',
+        description: 'Optional project ID to save this source to. Use get_projects to find project IDs.',
       },
     },
     required: ['raw_content'],
@@ -60,6 +65,10 @@ export async function executeAddSource(
 
   if (input.metadata) {
     payload.metadata = input.metadata;
+  }
+
+  if (input.project_id) {
+    payload.project_id = input.project_id;
   }
 
   const result = await client.ingestSource(endpoint, payload);

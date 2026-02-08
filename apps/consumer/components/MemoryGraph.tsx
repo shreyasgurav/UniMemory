@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { X, ZoomIn, ZoomOut, Maximize2, Loader2, FileText, Brain } from "lucide-react";
+import { X, ZoomIn, ZoomOut, Maximize2, Loader2, FileText, Brain, FolderOpen } from "lucide-react";
 import { auth } from "@/lib/firebase";
 
 // ============ Types ============
@@ -42,12 +42,24 @@ interface GraphEdge {
   edge_type: string;
 }
 
+interface GraphProject {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string;
+  icon: string;
+  status: string;
+  status_note?: string;
+  memory_count: number;
+  source_count: number;
+}
+
 interface GraphNode {
   id: string;
-  type: "document" | "memory" | "entity";
+  type: "project" | "document" | "memory" | "entity";
   x: number;
   y: number;
-  data: GraphSource | GraphMemory | GraphEntity;
+  data: GraphProject | GraphSource | GraphMemory | GraphEntity;
   size: number;
   parentId?: string;
 }
@@ -60,6 +72,11 @@ interface MemoryGraphProps {
 
 // ============ Constants ============
 const COLORS = {
+  project: {
+    fill: "rgba(99, 102, 241, 0.2)",
+    stroke: "rgba(129, 140, 248, 0.8)",
+    glow: "rgba(129, 140, 248, 0.5)",
+  },
   document: {
     fill: "rgba(255, 255, 255, 0.15)",
     stroke: "rgba(255, 255, 255, 0.6)",
@@ -76,6 +93,8 @@ const COLORS = {
     glow: "rgba(251, 191, 36, 0.5)",
   },
   edge: {
+    projectDoc: "rgba(129, 140, 248, 0.5)",
+    docDoc: "rgba(148, 163, 184, 0.2)",
     docMemory: "rgba(148, 163, 184, 0.35)",
     memoryMemory: "rgba(35, 189, 255, 0.5)",
     entityMemory: "rgba(251, 191, 36, 0.4)",
@@ -108,6 +127,7 @@ const COLORS = {
 
 // ============ Component ============
 export default function MemoryGraph({ isOpen, onClose, projectId }: MemoryGraphProps) {
+  const [graphProject, setGraphProject] = useState<GraphProject | null>(null);
   const [sources, setSources] = useState<GraphSource[]>([]);
   const [atomicMemories, setAtomicMemories] = useState<GraphMemory[]>([]);
   const [entities, setEntities] = useState<GraphEntity[]>([]);
@@ -210,6 +230,7 @@ export default function MemoryGraph({ isOpen, onClose, projectId }: MemoryGraphP
           timestamp: new Date().toISOString()
         });
 
+        setGraphProject(data.project || null);
         setSources(data.sources || []);
         setAtomicMemories(data.atomic_memories || []);
         setEntities(data.entities || []);
@@ -226,9 +247,10 @@ export default function MemoryGraph({ isOpen, onClose, projectId }: MemoryGraphP
     fetchGraph();
   }, [isOpen]); // Only depend on isOpen, not projectId - prevents double-fetch when projectId loads
 
-  // ============ Build Graph Nodes (Static Layout - No Animation) ============
+  // ============ Build Graph Nodes (Temporal Layout - Project → Sources → Memories) ============
   useEffect(() => {
     console.log('[MemoryGraph] Building nodes...', {
+      project: graphProject?.name,
       sources: sources.length,
       atomicMemories: atomicMemories.length,
       entities: entities.length,
@@ -244,17 +266,30 @@ export default function MemoryGraph({ isOpen, onClose, projectId }: MemoryGraphP
 
     const allNodes: GraphNode[] = [];
 
-    // 1. Create document nodes in a grid on the LEFT side
-    const docGridSize = Math.ceil(Math.sqrt(sources.length)) || 1;
-    const docSpacing = 300;
-    const docStartX = 300;
-    const docStartY = centerY;
+    // When a project is selected, use temporal layout:
+    // Project node at top → Sources flow downward (oldest top, newest bottom) → Memories around each source
+    const hasProject = !!graphProject;
+    const timelineStartY = hasProject ? 150 : 100;
+    const sourceSpacingY = 280; // Vertical spacing between sources (timeline)
+    const sourceX = centerX - 100; // Sources along a vertical line, slightly left
 
+    // 0. Create project node at the top center (if project is selected)
+    if (graphProject) {
+      allNodes.push({
+        id: graphProject.id,
+        type: "project",
+        x: centerX,
+        y: 60,
+        data: graphProject,
+        size: 55,
+      });
+    }
+
+    // 1. Create document nodes vertically (timeline: oldest at top, newest at bottom)
+    // Sources come from API sorted by created_at ASC (oldest first)
     sources.forEach((source, i) => {
-      const row = Math.floor(i / docGridSize);
-      const col = i % docGridSize;
-      const x = docStartX + (col - docGridSize / 2 + 0.5) * docSpacing;
-      const y = docStartY + (row - Math.ceil(sources.length / docGridSize) / 2 + 0.5) * docSpacing;
+      const y = timelineStartY + i * sourceSpacingY;
+      const x = sourceX;
 
       // Document node
       allNodes.push({
@@ -266,15 +301,18 @@ export default function MemoryGraph({ isOpen, onClose, projectId }: MemoryGraphP
         size: 45,
       });
 
-      // Memory nodes around document in a circle
+      // Memory nodes fanning out to the RIGHT of the document
       const memCount = source.memories.length;
       source.memories.forEach((mem, memIdx) => {
-        const angle = (2 * Math.PI * memIdx) / Math.max(memCount, 1);
-        const distance = 90 + Math.min(memCount * 3, 30);
+        // Fan out to the right in a semicircle
+        const angleStart = -Math.PI / 3;
+        const angleEnd = Math.PI / 3;
+        const angle = memCount === 1 ? 0 : angleStart + (angleEnd - angleStart) * memIdx / Math.max(memCount - 1, 1);
+        const distance = 110 + Math.min(memCount * 5, 40);
         allNodes.push({
           id: mem.id,
           type: "memory",
-          x: x + Math.cos(angle) * distance,
+          x: x + Math.cos(angle) * distance + 120, // Offset right
           y: y + Math.sin(angle) * distance,
           data: mem,
           size: 18 + (mem.salience || 0.5) * 10,
@@ -283,9 +321,8 @@ export default function MemoryGraph({ isOpen, onClose, projectId }: MemoryGraphP
       });
     });
 
-    // 2. Create atomic memory nodes on the RIGHT side - clustered by sector
+    // 2. Create atomic memory nodes below sources, clustered by sector
     if (atomicMemories.length > 0) {
-      // Group by sector
       const sectorGroups: Record<string, GraphMemory[]> = {};
       atomicMemories.forEach((mem) => {
         const sector = mem.sector || "default";
@@ -294,16 +331,16 @@ export default function MemoryGraph({ isOpen, onClose, projectId }: MemoryGraphP
       });
 
       const sectors = Object.keys(sectorGroups);
-      const atomicStartX = sources.length > 0 ? centerX + 400 : centerX;
-      const sectorSpacing = 250;
+      const atomicStartY = timelineStartY + sources.length * sourceSpacingY + 100;
+      const atomicStartX = centerX;
+      const sectorSpacing = 220;
 
       sectors.forEach((sector, sectorIdx) => {
         const mems = sectorGroups[sector];
-        const sectorAngle = (2 * Math.PI * sectorIdx) / Math.max(sectors.length, 1);
+        const sectorAngle = (2 * Math.PI * sectorIdx) / Math.max(sectors.length, 1) - Math.PI / 2;
         const sectorCenterX = atomicStartX + Math.cos(sectorAngle) * sectorSpacing * 0.8;
-        const sectorCenterY = centerY + Math.sin(sectorAngle) * sectorSpacing * 0.8;
+        const sectorCenterY = atomicStartY + Math.sin(sectorAngle) * sectorSpacing * 0.5 + 100;
 
-        // Place memories in cluster around sector center
         const memGridSize = Math.ceil(Math.sqrt(mems.length));
         const memSpacing = 50;
 
@@ -325,19 +362,19 @@ export default function MemoryGraph({ isOpen, onClose, projectId }: MemoryGraphP
       });
     }
 
-    // 3. Create entity nodes at the TOP - clustered by type (Mem0 style)
+    // 3. Create entity nodes to the LEFT of the timeline
     if (entities.length > 0) {
-      const entityStartY = centerY - 350;
-      const entitySpacing = 80;
-      const entityRowSize = Math.min(entities.length, 8);
+      const entityStartX = sourceX - 250;
+      const entityStartY = timelineStartY + 50;
+      const entitySpacing = 70;
+      const entityColSize = Math.min(entities.length, 3);
 
       entities.forEach((entity, i) => {
-        const row = Math.floor(i / entityRowSize);
-        const col = i % entityRowSize;
-        const x = centerX + (col - entityRowSize / 2 + 0.5) * entitySpacing;
+        const row = Math.floor(i / entityColSize);
+        const col = i % entityColSize;
+        const x = entityStartX - col * entitySpacing;
         const y = entityStartY + row * entitySpacing;
 
-        // Size based on mention count (more mentions = larger)
         const baseSize = 22;
         const mentionBoost = Math.min((entity.mention_count || 0) * 2, 15);
 
@@ -354,7 +391,7 @@ export default function MemoryGraph({ isOpen, onClose, projectId }: MemoryGraphP
 
     nodesRef.current = allNodes;
     setNodes([...allNodes]);
-  }, [sources, atomicMemories, entities]); // Removed edges - they don't affect node creation
+  }, [graphProject, sources, atomicMemories, entities]);
 
   // ============ Canvas Rendering ============
   useEffect(() => {
@@ -408,23 +445,45 @@ export default function MemoryGraph({ isOpen, onClose, projectId }: MemoryGraphP
       ctx.beginPath();
       ctx.moveTo(source.x, source.y);
 
-      // Curved lines for memory-memory and entity-memory
-      if (edge.edge_type === "memory-memory" || edge.edge_type === "entity-memory") {
+      if (edge.edge_type === "project-doc") {
+        // Project → Document: dashed line
+        ctx.setLineDash([6, 4]);
+        ctx.lineTo(target.x, target.y);
+        ctx.strokeStyle = COLORS.edge.projectDoc;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.setLineDash([]);
+      } else if (edge.edge_type === "doc-doc") {
+        // Doc → Doc (timeline): vertical dotted line
+        ctx.setLineDash([3, 6]);
+        ctx.lineTo(target.x, target.y);
+        ctx.strokeStyle = COLORS.edge.docDoc;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.setLineDash([]);
+      } else if (edge.edge_type === "memory-memory" || edge.edge_type === "entity-memory") {
+        // Curved lines for memory-memory and entity-memory
         const midX = (source.x + target.x) / 2;
         const midY = (source.y + target.y) / 2;
         const dx = target.x - source.x;
         const dy = target.y - source.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
         const offset = Math.min(30, dist * 0.2);
-        ctx.quadraticCurveTo(midX + offset * (dy / dist), midY - offset * (dx / dist), target.x, target.y);
+        if (dist > 0) {
+          ctx.quadraticCurveTo(midX + offset * (dy / dist), midY - offset * (dx / dist), target.x, target.y);
+        } else {
+          ctx.lineTo(target.x, target.y);
+        }
         ctx.strokeStyle = edge.edge_type === "entity-memory" ? COLORS.edge.entityMemory : COLORS.edge.memoryMemory;
         ctx.lineWidth = 1 + edge.weight * 0.5;
+        ctx.stroke();
       } else {
+        // doc-memory: straight line
         ctx.lineTo(target.x, target.y);
         ctx.strokeStyle = COLORS.edge.docMemory;
         ctx.lineWidth = 1;
+        ctx.stroke();
       }
-      ctx.stroke();
     }
 
     // Draw nodes
@@ -432,7 +491,44 @@ export default function MemoryGraph({ isOpen, onClose, projectId }: MemoryGraphP
       const isHovered = hoveredNode?.id === node.id;
       const isSelected = selectedNode?.id === node.id;
 
-      if (node.type === "document") {
+      if (node.type === "project") {
+        // Project: Large rounded rectangle with icon
+        const proj = node.data as GraphProject;
+        const w = node.size * 2.2;
+        const h = node.size * 1.2;
+        const r = 14;
+
+        if (isHovered || isSelected) {
+          ctx.shadowColor = COLORS.project.glow;
+          ctx.shadowBlur = 25;
+        }
+
+        ctx.beginPath();
+        ctx.roundRect(node.x - w / 2, node.y - h / 2, w, h, r);
+        ctx.fillStyle = isHovered ? "rgba(99,102,241,0.35)" : COLORS.project.fill;
+        ctx.fill();
+        ctx.strokeStyle = isSelected ? "#fff" : COLORS.project.stroke;
+        ctx.lineWidth = isSelected ? 2.5 : 2;
+        ctx.stroke();
+
+        // Draw project name
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 14px Inter, system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        const name = proj.name.length > 20 ? proj.name.slice(0, 19) + "…" : proj.name;
+        ctx.fillText(`${proj.icon} ${name}`, node.x, node.y - 8);
+
+        // Draw status below name
+        ctx.fillStyle = "rgba(255,255,255,0.5)";
+        ctx.font = "11px Inter, system-ui, sans-serif";
+        const statusText = proj.status_note
+          ? (proj.status_note.length > 30 ? proj.status_note.slice(0, 29) + "…" : proj.status_note)
+          : proj.status;
+        ctx.fillText(statusText, node.x, node.y + 10);
+
+        ctx.shadowBlur = 0;
+      } else if (node.type === "document") {
         // Document: Rounded rectangle
         const w = node.size * 1.6;
         const h = node.size;
@@ -639,6 +735,7 @@ export default function MemoryGraph({ isOpen, onClose, projectId }: MemoryGraphP
   const totalMemories = nodes.filter((n) => n.type === "memory").length;
   const totalDocs = nodes.filter((n) => n.type === "document").length;
   const totalEntities = nodes.filter((n) => n.type === "entity").length;
+  const hasProjectNode = nodes.some((n) => n.type === "project");
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50" style={{ touchAction: 'none' }}>
@@ -648,7 +745,7 @@ export default function MemoryGraph({ isOpen, onClose, projectId }: MemoryGraphP
           <div>
             <h2 className="text-xl font-semibold text-white">Memory Graph</h2>
             <p className="text-sm text-neutral-400 mt-0.5">
-              {totalDocs} documents • {totalMemories} memories • {totalEntities > 0 ? `${totalEntities} entities • ` : ''}{edges.length} connections
+              {graphProject ? `${graphProject.icon} ${graphProject.name} • ` : ''}{totalDocs} documents • {totalMemories} memories • {totalEntities > 0 ? `${totalEntities} entities • ` : ''}{edges.length} connections
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -698,6 +795,12 @@ export default function MemoryGraph({ isOpen, onClose, projectId }: MemoryGraphP
                 <div>
                   <div className="text-[10px] text-neutral-500 mb-1.5">NODES</div>
                   <div className="space-y-1.5">
+                    {hasProjectNode && (
+                      <div className="flex items-center gap-2">
+                        <div className="w-5 h-3 rounded bg-indigo-500/20 border border-indigo-400" />
+                        <span className="text-xs text-neutral-300">Project</span>
+                      </div>
+                    )}
                     <div className="flex items-center gap-2">
                       <div className="w-5 h-3 rounded bg-white/15 border border-white/60" />
                       <span className="text-xs text-neutral-300">Document</span>
@@ -715,9 +818,23 @@ export default function MemoryGraph({ isOpen, onClose, projectId }: MemoryGraphP
                 <div>
                   <div className="text-[10px] text-neutral-500 mb-1.5">CONNECTIONS</div>
                   <div className="space-y-1.5">
+                    {hasProjectNode && (
+                      <div className="flex items-center gap-2">
+                        <svg width="16" height="2" className="flex-shrink-0">
+                          <line x1="0" y1="1" x2="16" y2="1" stroke="rgba(129, 140, 248, 0.5)" strokeWidth="1.5" strokeDasharray="4 3" />
+                        </svg>
+                        <span className="text-xs text-neutral-400">Project-Doc</span>
+                      </div>
+                    )}
                     <div className="flex items-center gap-2">
                       <div className="w-4 h-px bg-slate-500/35" />
                       <span className="text-xs text-neutral-400">Doc-Memory</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <svg width="16" height="2" className="flex-shrink-0">
+                        <line x1="0" y1="1" x2="16" y2="1" stroke="rgba(148, 163, 184, 0.2)" strokeWidth="1" strokeDasharray="2 4" />
+                      </svg>
+                      <span className="text-xs text-neutral-400">Timeline</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <svg width="16" height="8" className="flex-shrink-0">
@@ -748,7 +865,9 @@ export default function MemoryGraph({ isOpen, onClose, projectId }: MemoryGraphP
           {selectedNode && (
             <div className="absolute top-4 right-4 w-80 bg-neutral-900/95 rounded-xl p-5 backdrop-blur-sm border border-neutral-800">
               <div className="flex items-center gap-2 mb-3">
-                {selectedNode.type === "document" ? (
+                {selectedNode.type === "project" ? (
+                  <FolderOpen className="w-5 h-5 text-indigo-400" />
+                ) : selectedNode.type === "document" ? (
                   <FileText className="w-5 h-5 text-white/70" />
                 ) : selectedNode.type === "entity" ? (
                   <div className="w-5 h-5 rounded-full bg-amber-500/30 border border-amber-500" />
@@ -761,7 +880,27 @@ export default function MemoryGraph({ isOpen, onClose, projectId }: MemoryGraphP
                 </button>
               </div>
 
-              {selectedNode.type === "document" ? (
+              {selectedNode.type === "project" ? (
+                <>
+                  <div className="text-[10px] text-neutral-500 mb-1">PROJECT</div>
+                  <p className="text-sm text-white mb-3">{(selectedNode.data as GraphProject).icon} {(selectedNode.data as GraphProject).name}</p>
+                  {(selectedNode.data as GraphProject).description && (
+                    <>
+                      <div className="text-[10px] text-neutral-500 mb-1">DESCRIPTION</div>
+                      <p className="text-xs text-neutral-300 leading-relaxed mb-3">{(selectedNode.data as GraphProject).description}</p>
+                    </>
+                  )}
+                  <div className="text-[10px] text-neutral-500 mb-1">STATUS</div>
+                  <p className="text-sm text-white mb-1 capitalize">{(selectedNode.data as GraphProject).status}</p>
+                  {(selectedNode.data as GraphProject).status_note && (
+                    <p className="text-xs text-neutral-400 mb-3 italic">&ldquo;{(selectedNode.data as GraphProject).status_note}&rdquo;</p>
+                  )}
+                  <div className="flex items-center gap-4 text-xs text-neutral-400">
+                    <span>{(selectedNode.data as GraphProject).memory_count} memories</span>
+                    <span>{(selectedNode.data as GraphProject).source_count} sources</span>
+                  </div>
+                </>
+              ) : selectedNode.type === "document" ? (
                 <>
                   <div className="text-[10px] text-neutral-500 mb-1">TITLE</div>
                   <p className="text-sm text-white mb-3">{(selectedNode.data as GraphSource).title || "Untitled"}</p>

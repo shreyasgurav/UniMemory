@@ -25,6 +25,7 @@ class SearchRequest(BaseModel):
     limit: Optional[int] = 10
     user_id: Optional[str] = None
     min_salience: Optional[float] = 0.0
+    project_id: Optional[str] = None  # Filter search to a specific project
 
 
 class PublicSearchResult(BaseModel):
@@ -66,10 +67,12 @@ async def search_memories(
     if not request.query or not request.query.strip():
         raise HTTPException(status_code=400, detail="Query cannot be empty")
     
-    filters = {
+    filters: Dict[str, Any] = {
         "debug": False,  # Never expose debug info in public API
         "owner_id": owner_id
     }
+    if request.project_id:
+        filters["project_id"] = request.project_id
     
     try:
         results = await hybrid_search(

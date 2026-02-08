@@ -5,7 +5,7 @@ Handles MCP tokens and MCP-over-HTTP protocol for AI agent connections
 from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
+from sqlalchemy import select, update, func
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from pydantic import BaseModel
@@ -215,12 +215,13 @@ async def create_oauth_code(
 MCP_TOOLS = [
     {
         "name": "search_memory",
-        "description": "Search your memory for relevant information. Use this to find what you know about a topic, person, preference, or past conversation.",
+        "description": "Search your memory for relevant information. Use this to find what you know about a topic, person, preference, or past conversation. Pass project_id to search within a specific project only.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "What to search for in memory (natural language query)"},
-                "limit": {"type": "number", "description": "Maximum number of results to return (default: 10)"}
+                "limit": {"type": "number", "description": "Maximum number of results to return (default: 10)"},
+                "project_id": {"type": "string", "description": "Optional project ID to scope search to a specific project. Use get_projects to find project IDs."}
             },
             "required": ["query"]
         }
@@ -249,27 +250,62 @@ MCP_TOOLS = [
     },
     {
         "name": "add_source",
-        "description": "Save a full document, chat, or conversation as a source. The system will automatically generate a title, summary, and extract nuclear memories from the content. Use this for saving entire conversations, documents, or any substantial content.",
+        "description": "Save a full document, chat, or conversation as a source to a project. The system will automatically generate a title, summary, and extract nuclear memories from the content. Use this for saving entire conversations, documents, or any substantial content.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "raw_content": {"type": ["string", "object"], "description": "The full content to save. Can be a string (for text/documents) or an object with messages array (for chats)."},
                 "type": {"type": "string", "enum": ["chat", "document", "text"], "description": "Type of source. Defaults to 'chat' if raw_content has messages, otherwise 'text'."},
-                "metadata": {"type": "object", "description": "Optional metadata like tags, context, or custom fields."}
+                "metadata": {"type": "object", "description": "Optional metadata like tags, context, or custom fields."},
+                "project_id": {"type": "string", "description": "Optional project ID to save this source to. Use get_projects to find project IDs."}
             },
             "required": ["raw_content"]
         }
     },
     {
         "name": "add_memory",
-        "description": "Save a single atomic fact, preference, or piece of information as a memory. Use this for explicit facts like 'User prefers FastAPI', 'Birthday is Aug 12', or 'Uses dark mode'. For full conversations or documents, use add_source instead.",
+        "description": "Save a single atomic fact, preference, or piece of information as a memory to a project. Use this for explicit facts like 'User prefers FastAPI', 'Birthday is Aug 12', or 'Uses dark mode'. For full conversations or documents, use add_source instead.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "content": {"type": "string", "description": "The fact or information to remember. Should be a single, clear statement."},
-                "category": {"type": "string", "description": "Optional category like 'preference', 'fact', 'decision', or 'personal'."}
+                "category": {"type": "string", "description": "Optional category like 'preference', 'fact', 'decision', or 'personal'."},
+                "project_id": {"type": "string", "description": "Optional project ID to save this memory to. Use get_projects to find project IDs."}
             },
             "required": ["content"]
+        }
+    },
+    {
+        "name": "get_projects",
+        "description": "List all projects in UniMemory. Returns project names, IDs, status, memory/source counts. Use this to find a project_id before searching or saving memories to a specific project.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "get_project_status",
+        "description": "Get detailed status of a specific project including its current status, status note, memory count, source count, and recent memories. Use this to understand where a project currently stands.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string", "description": "The project ID to get status for. Use get_projects to find project IDs."}
+            },
+            "required": ["project_id"]
+        }
+    },
+    {
+        "name": "update_project_status",
+        "description": "Update the status and status note of a project. Use this to log progress like 'Working on auth flow', 'Deployed v2', 'Waiting for API review', etc. Status can be: active, paused, completed, archived.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string", "description": "The project ID to update. Use get_projects to find project IDs."},
+                "status": {"type": "string", "enum": ["active", "paused", "completed", "archived"], "description": "Project status (active, paused, completed, archived)"},
+                "status_note": {"type": "string", "description": "Free-text note about current project state, e.g. 'Working on auth implementation', 'Deployed to staging'"}
+            },
+            "required": ["project_id"]
         }
     }
 ]
@@ -522,6 +558,7 @@ async def validate_mcp_token(
 class SearchRequest(BaseModel):
     query: str
     limit: int = 10
+    project_id: Optional[str] = None
 
 
 class SearchResultItem(BaseModel):
@@ -548,12 +585,11 @@ async def mcp_search(
     query_embedding, _ = await embedding_service.embed(request.query)
     
     # Vector similarity search
-    result = await session.execute(
-        select(Memory)
-        .where(Memory.owner_id == user.id)
-        .order_by(Memory.embedding.cosine_distance(query_embedding))
-        .limit(request.limit)
-    )
+    stmt = select(Memory).where(Memory.owner_id == user.id)
+    if request.project_id:
+        stmt = stmt.where(Memory.project_id == request.project_id)
+    stmt = stmt.order_by(Memory.embedding.cosine_distance(query_embedding)).limit(request.limit)
+    result = await session.execute(stmt)
     memories = result.scalars().all()
     
     # Get linked sources
@@ -762,13 +798,19 @@ async def execute_tool(
         
         query = args.get("query", "")
         limit = args.get("limit", 10)
+        project_id = args.get("project_id")
+        
+        # Build filters with optional project scoping
+        search_filters: Dict[str, Any] = {"owner_id": str(user.id)}
+        if project_id:
+            search_filters["project_id"] = project_id
         
         # Use hybrid_search with brain-like scoring (includes coactivation boost)
         search_results = await hybrid_search(
             session=session,
             query=query,
             limit=limit,
-            filters={"owner_id": str(user.id)}
+            filters=search_filters
         )
         
         results = []
@@ -918,6 +960,7 @@ async def execute_tool(
         raw_content = args.get("raw_content", "")
         source_type = args.get("type")
         metadata = args.get("metadata", {})
+        project_id = args.get("project_id")
         
         # Add client_type to metadata for frontend display
         if client_type:
@@ -966,6 +1009,7 @@ async def execute_tool(
                 id=source_uuid,
                 owner_id=str(user.id),  # Convert to string (UUID(as_uuid=False))
                 end_user_id=end_user.id,  # Already a string from get_or_create_end_user
+                project_id=project_id,  # Project to save source to
                 type=source_type,
                 source_app="mcp",
                 title=generated_title,
@@ -1044,6 +1088,7 @@ async def execute_tool(
                         user_id="mcp_user",
                         end_user_id=end_user.id,  # Already a string from get_or_create_end_user
                         owner_id=str(user.id),  # Convert to string (UUID(as_uuid=False))
+                        project_id=project_id,  # Project to save memory to
                         api_key_id=None,
                         embedding=embedding,
                         embedding_model=settings.EMBEDDING_MODEL,
@@ -1102,6 +1147,7 @@ async def execute_tool(
         
         content = args.get("content", "")
         category = args.get("category")  # Used for extra_metadata
+        project_id = args.get("project_id")
         
         if not content:
             return {"success": False, "error": "Content is required"}
@@ -1134,6 +1180,7 @@ async def execute_tool(
                 user_id="mcp_user",
                 end_user_id=None,
                 owner_id=str(user.id),  # Convert to string (UUID(as_uuid=False))
+                project_id=project_id,  # Project to save memory to
                 api_key_id=None,
                 embedding=embedding,
                 embedding_model=settings.EMBEDDING_MODEL,
@@ -1166,6 +1213,220 @@ async def execute_tool(
         except Exception as e:
             logger.error(f"add_memory error: {e}")
             return {"success": False, "error": str(e)}
+    
+    elif tool_name == "get_projects":
+        from app.db.models import Project
+        
+        owner_id = str(user.id)
+        
+        # Get all projects with memory and source counts
+        memory_count_subq = (
+            select(
+                Memory.project_id,
+                func.count(Memory.id).label('memory_count')
+            )
+            .where(Memory.is_active == True, Memory.owner_id == owner_id)
+            .group_by(Memory.project_id)
+            .subquery()
+        )
+        
+        source_count_subq = (
+            select(
+                Source.project_id,
+                func.count(Source.id).label('source_count')
+            )
+            .where(Source.owner_id == owner_id)
+            .group_by(Source.project_id)
+            .subquery()
+        )
+        
+        result = await session.execute(
+            select(Project, memory_count_subq.c.memory_count, source_count_subq.c.source_count)
+            .outerjoin(memory_count_subq, Project.id == memory_count_subq.c.project_id)
+            .outerjoin(source_count_subq, Project.id == source_count_subq.c.project_id)
+            .where(Project.owner_id == owner_id)
+            .order_by(Project.is_default.desc(), Project.is_pinned.desc(), Project.updated_at.desc())
+        )
+        projects = result.all()
+        
+        await log_mcp_activity(
+            user_id=owner_id,
+            mcp_token_id=mcp_token_id,
+            tool_name=tool_name,
+            client_type=client_type,
+            tool_args={},
+            result_count=len(projects),
+            session=session
+        )
+        
+        return {
+            "projects": [
+                {
+                    "id": str(p.id),
+                    "name": p.name,
+                    "slug": p.slug,
+                    "description": p.description,
+                    "icon": p.icon or "📁",
+                    "status": p.status or "active",
+                    "status_note": p.status_note,
+                    "is_default": p.is_default or False,
+                    "is_pinned": p.is_pinned or False,
+                    "memory_count": mc or 0,
+                    "source_count": sc or 0,
+                    "created_at": p.created_at.isoformat() if p.created_at else None,
+                    "updated_at": p.updated_at.isoformat() if p.updated_at else None,
+                }
+                for p, mc, sc in projects
+            ],
+            "count": len(projects)
+        }
+    
+    elif tool_name == "get_project_status":
+        from app.db.models import Project
+        
+        project_id = args.get("project_id", "")
+        owner_id = str(user.id)
+        
+        if not project_id:
+            return {"error": "project_id is required"}
+        
+        # Get project
+        result = await session.execute(
+            select(Project).where(Project.id == project_id, Project.owner_id == owner_id)
+        )
+        project = result.scalar_one_or_none()
+        
+        if not project:
+            return {"error": "Project not found", "found": False}
+        
+        # Get counts
+        mem_count = (await session.execute(
+            select(func.count(Memory.id))
+            .where(Memory.project_id == project_id, Memory.is_active == True)
+        )).scalar() or 0
+        
+        src_count = (await session.execute(
+            select(func.count(Source.id))
+            .where(Source.project_id == project_id)
+        )).scalar() or 0
+        
+        # Get recent memories (latest 10 as a "log")
+        recent_mems = await session.execute(
+            select(Memory)
+            .where(Memory.project_id == project_id, Memory.is_active == True, Memory.owner_id == owner_id)
+            .order_by(Memory.created_at.desc())
+            .limit(10)
+        )
+        recent_memories = recent_mems.scalars().all()
+        
+        # Get recent sources (latest 5)
+        recent_srcs = await session.execute(
+            select(Source)
+            .where(Source.project_id == project_id, Source.owner_id == owner_id)
+            .order_by(Source.created_at.desc())
+            .limit(5)
+        )
+        recent_sources = recent_srcs.scalars().all()
+        
+        await log_mcp_activity(
+            user_id=owner_id,
+            mcp_token_id=mcp_token_id,
+            tool_name=tool_name,
+            client_type=client_type,
+            tool_args={"project_id": project_id},
+            result_count=1,
+            session=session
+        )
+        
+        return {
+            "found": True,
+            "project": {
+                "id": str(project.id),
+                "name": project.name,
+                "slug": project.slug,
+                "description": project.description,
+                "icon": project.icon or "📁",
+                "status": project.status or "active",
+                "status_note": project.status_note,
+                "is_default": project.is_default or False,
+                "memory_count": mem_count,
+                "source_count": src_count,
+                "created_at": project.created_at.isoformat() if project.created_at else None,
+                "updated_at": project.updated_at.isoformat() if project.updated_at else None,
+            },
+            "recent_memories": [
+                {
+                    "id": str(m.id),
+                    "content": m.content[:200],
+                    "sector": m.sector,
+                    "memory_type": m.memory_type,
+                    "created_at": m.created_at.isoformat() if m.created_at else None,
+                }
+                for m in recent_memories
+            ],
+            "recent_sources": [
+                {
+                    "id": str(s.id),
+                    "type": s.type,
+                    "title": s.title,
+                    "summary": s.summary[:200] if s.summary else None,
+                    "created_at": s.created_at.isoformat() if s.created_at else None,
+                }
+                for s in recent_sources
+            ],
+        }
+    
+    elif tool_name == "update_project_status":
+        from app.db.models import Project
+        
+        project_id = args.get("project_id", "")
+        new_status = args.get("status")
+        status_note = args.get("status_note")
+        owner_id = str(user.id)
+        
+        if not project_id:
+            return {"error": "project_id is required"}
+        
+        # Get project
+        result = await session.execute(
+            select(Project).where(Project.id == project_id, Project.owner_id == owner_id)
+        )
+        project = result.scalar_one_or_none()
+        
+        if not project:
+            return {"error": "Project not found", "success": False}
+        
+        # Update fields
+        if new_status:
+            project.status = new_status
+        if status_note is not None:  # Allow empty string to clear note
+            project.status_note = status_note
+        project.updated_at = datetime.utcnow()
+        
+        await session.commit()
+        await session.refresh(project)
+        
+        await log_mcp_activity(
+            user_id=owner_id,
+            mcp_token_id=mcp_token_id,
+            tool_name=tool_name,
+            client_type=client_type,
+            tool_args={"project_id": project_id, "status": new_status, "status_note": status_note},
+            result_count=1,
+            session=session
+        )
+        
+        return {
+            "success": True,
+            "project": {
+                "id": str(project.id),
+                "name": project.name,
+                "status": project.status,
+                "status_note": project.status_note,
+                "updated_at": project.updated_at.isoformat() if project.updated_at else None,
+            },
+            "message": f"Project '{project.name}' status updated to '{project.status}'.",
+        }
     
     else:
         return {"error": f"Unknown tool: {tool_name}"}

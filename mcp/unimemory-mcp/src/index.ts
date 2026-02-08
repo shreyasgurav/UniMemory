@@ -44,6 +44,20 @@ import {
   executeAddMemory,
   AddMemoryInput,
 } from './tools/addMemory.js';
+import {
+  getProjectsTool,
+  executeGetProjects,
+} from './tools/getProjects.js';
+import {
+  getProjectStatusTool,
+  executeGetProjectStatus,
+  GetProjectStatusInput,
+} from './tools/getProjectStatus.js';
+import {
+  updateProjectStatusTool,
+  executeUpdateProjectStatus,
+  UpdateProjectStatusInput,
+} from './tools/updateProjectStatus.js';
 
 // Configuration from environment
 const API_URL = process.env.UNIMEMORY_API_URL || 'https://unimemory.up.railway.app';
@@ -78,6 +92,9 @@ function createMCPServer(client: UniMemoryClient): Server {
         getSourceTool,
         addSourceTool,
         addMemoryTool,
+        getProjectsTool,
+        getProjectStatusTool,
+        updateProjectStatusTool,
       ],
     };
   });
@@ -143,6 +160,44 @@ function createMCPServer(client: UniMemoryClient): Server {
         case 'add_memory': {
           const input = args as unknown as AddMemoryInput;
           const result = await executeAddMemory(client, input);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(result, null, 2),
+              },
+            ],
+          };
+        }
+
+        case 'get_projects': {
+          const result = await executeGetProjects({} as Record<string, never>, client);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(result, null, 2),
+              },
+            ],
+          };
+        }
+
+        case 'get_project_status': {
+          const input = args as unknown as GetProjectStatusInput;
+          const result = await executeGetProjectStatus(input, client);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(result, null, 2),
+              },
+            ],
+          };
+        }
+
+        case 'update_project_status': {
+          const input = args as unknown as UpdateProjectStatusInput;
+          const result = await executeUpdateProjectStatus(input, client);
           return {
             content: [
               {

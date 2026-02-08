@@ -9,6 +9,7 @@ export interface SearchMemoryInput {
   query: string;
   limit?: number;
   user_id?: string;
+  project_id?: string;
 }
 
 export interface SearchMemoryOutput {
@@ -24,7 +25,7 @@ export interface SearchMemoryOutput {
 export const searchMemoryTool = {
   name: 'search_memory',
   description:
-    'Search your memory for relevant information. Use this to find what you know about a topic, person, preference, or past conversation.',
+    'Search your memory for relevant information. Use this to find what you know about a topic, person, preference, or past conversation. Pass project_id to search within a specific project only.',
   inputSchema: {
     type: 'object' as const,
     properties: {
@@ -40,6 +41,10 @@ export const searchMemoryTool = {
         type: 'string',
         description: 'Optional user ID to scope the search',
       },
+      project_id: {
+        type: 'string',
+        description: 'Optional project ID to scope search to a specific project. Use get_projects to find project IDs.',
+      },
     },
     required: ['query'],
   },
@@ -49,11 +54,12 @@ export async function executeSearchMemory(
   client: UniMemoryClient,
   input: SearchMemoryInput
 ): Promise<SearchMemoryOutput> {
-  const { query, limit = 10, user_id } = input;
+  const { query, limit = 10, user_id, project_id } = input;
 
   const results: SearchResult[] = await client.searchMemories(query, {
     limit,
     user_id,
+    project_id,
   });
 
   return {

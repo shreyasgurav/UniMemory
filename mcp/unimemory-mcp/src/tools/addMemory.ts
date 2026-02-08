@@ -9,6 +9,7 @@ export interface AddMemoryInput {
   content: string;
   category?: string;
   user_id?: string;
+  project_id?: string;
 }
 
 export const addMemoryTool = {
@@ -30,6 +31,10 @@ export const addMemoryTool = {
         type: 'string',
         description: 'Optional user ID to scope this memory to a specific user.',
       },
+      project_id: {
+        type: 'string',
+        description: 'Optional project ID to save this memory to. Use get_projects to find project IDs.',
+      },
     },
     required: ['content'],
   },
@@ -42,6 +47,7 @@ export async function executeAddMemory(
   const result = await client.saveMemory(input.content, {
     category: input.category,
     user_id: input.user_id,
+    project_id: input.project_id,
   });
 
   return {

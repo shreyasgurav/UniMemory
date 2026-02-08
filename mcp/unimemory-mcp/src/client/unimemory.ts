@@ -88,18 +88,19 @@ export class UniMemoryClient {
     options: {
       limit?: number;
       user_id?: string;
+      project_id?: string;
     } = {}
   ): Promise<SearchResult[]> {
-    const { limit = 10, user_id } = options;
+    const { limit = 10, user_id, project_id } = options;
+
+    const body: Record<string, any> = { query, limit };
+    if (user_id) body.user_id = user_id;
+    if (project_id) body.project_id = project_id;
 
     const response = await this.request<{ results: SearchResult[] }>(
       'POST',
       '/api/v1/search',
-      {
-        query,
-        limit,
-        user_id,
-      }
+      body
     );
 
     return response.results || [];
@@ -181,13 +182,15 @@ export class UniMemoryClient {
     options: {
       user_id?: string;
       category?: string;
+      project_id?: string;
     } = {}
   ): Promise<Memory> {
-    const response = await this.request<Memory>('POST', '/api/v1/memories', {
-      content,
-      user_id: options.user_id,
-      category: options.category,
-    });
+    const body: Record<string, any> = { content };
+    if (options.user_id) body.user_id = options.user_id;
+    if (options.category) body.category = options.category;
+    if (options.project_id) body.project_id = options.project_id;
+
+    const response = await this.request<Memory>('POST', '/api/v1/memories', body);
     return response;
   }
 
@@ -200,6 +203,7 @@ export class UniMemoryClient {
     payload: {
       raw_content: string | Record<string, any>;
       metadata?: Record<string, any>;
+      project_id?: string;
     }
   ): Promise<{
     source_id: string;
@@ -214,6 +218,55 @@ export class UniMemoryClient {
       memories_count?: number;
     }>('POST', endpoint, payload);
     return response;
+  }
+
+  /**
+   * List all projects
+   */
+  async getProjects(): Promise<any[]> {
+    try {
+      const response = await this.request<{ projects: any[] }>(
+        'GET',
+        '/api/v1/projects'
+      );
+      return response.projects || [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Get project status with recent memories and sources
+   */
+  async getProjectStatus(projectId: string): Promise<any | null> {
+    try {
+      const response = await this.request<any>(
+        'GET',
+        `/api/v1/projects/${projectId}/status`
+      );
+      return response;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Update project status
+   */
+  async updateProjectStatus(
+    projectId: string,
+    options: { status?: string; status_note?: string }
+  ): Promise<any | null> {
+    try {
+      const response = await this.request<any>(
+        'PATCH',
+        `/api/v1/projects/${projectId}/status`,
+        options
+      );
+      return response;
+    } catch {
+      return null;
+    }
   }
 
   /**

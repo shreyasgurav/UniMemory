@@ -1550,7 +1550,19 @@ class GraphEdge(BaseModel):
     weight: float
     edge_type: str  # "doc-memory", "memory-memory", "doc-doc"
 
+class GraphProject(BaseModel):
+    id: str
+    name: str
+    slug: str
+    description: Optional[str]
+    icon: str
+    status: str
+    status_note: Optional[str]
+    memory_count: int
+    source_count: int
+
 class MemoryGraphResponse(BaseModel):
+    project: Optional[GraphProject] = None
     sources: List[GraphSource]
     atomic_memories: List[GraphMemory]
     entities: List[GraphEntity] = []
@@ -1574,6 +1586,33 @@ async def get_memory_graph(
     """
     owner_id = str(user.id)
     
+    # If project_id provided, fetch project details for the graph
+    graph_project = None
+    if project_id:
+        proj_result = await session.execute(
+            select(Project).where(Project.id == project_id, Project.owner_id == owner_id)
+        )
+        proj = proj_result.scalar_one_or_none()
+        if proj:
+            # Get counts
+            mem_c = (await session.execute(
+                select(func.count(Memory.id)).where(Memory.project_id == project_id, Memory.is_active == True)
+            )).scalar() or 0
+            src_c = (await session.execute(
+                select(func.count(Source.id)).where(Source.project_id == project_id)
+            )).scalar() or 0
+            graph_project = GraphProject(
+                id=str(proj.id),
+                name=proj.name,
+                slug=proj.slug,
+                description=proj.description,
+                icon=proj.icon or "📁",
+                status=proj.status or "active",
+                status_note=proj.status_note,
+                memory_count=mem_c,
+                source_count=src_c,
+            )
+    
     # Build memory query with optional project filter
     memory_query = select(Memory).where(Memory.owner_id == owner_id, Memory.is_active == True)
     if project_id:
@@ -1584,16 +1623,17 @@ async def get_memory_graph(
     all_memories = all_memories_result.scalars().all()
     
     if not all_memories:
-        return MemoryGraphResponse(sources=[], edges=[], stats={"sources": 0, "memories": 0, "connections": 0})
+        return MemoryGraphResponse(project=graph_project, sources=[], edges=[], stats={"sources": 0, "memories": 0, "connections": 0})
     
     all_memory_ids = [str(m.id) for m in all_memories]
     memories = {str(m.id): m for m in all_memories}
     
     # Build sources query with optional project filter
+    # Sort by created_at ASC for temporal ordering (oldest first = top of graph)
     source_query = select(Source).where(Source.owner_id == owner_id)
     if project_id:
         source_query = source_query.where(Source.project_id == project_id)
-    source_query = source_query.order_by(Source.created_at.desc()).limit(limit)
+    source_query = source_query.order_by(Source.created_at.asc()).limit(limit)
     
     sources_result = await session.execute(source_query)
     sources = sources_result.scalars().all()
@@ -1712,7 +1752,27 @@ async def get_memory_graph(
             edge_type="memory-memory"
         ))
     
-    # 3. Entity-memory edges (if entities exist)
+    # 3. Project-doc edges (connect project node to all its sources)
+    if graph_project:
+        for source in graph_sources:
+            edges.append(GraphEdge(
+                source=graph_project.id,
+                target=source.id,
+                weight=1.0,
+                edge_type="project-doc"
+            ))
+    
+    # 4. Doc-doc edges (connect consecutive sources chronologically within same project)
+    if len(graph_sources) > 1 and project_id:
+        for i in range(len(graph_sources) - 1):
+            edges.append(GraphEdge(
+                source=graph_sources[i].id,
+                target=graph_sources[i + 1].id,
+                weight=0.3,
+                edge_type="doc-doc"
+            ))
+    
+    # 5. Entity-memory edges (if entities exist)
     try:
         from app.db.models import Entity, MemoryEntity
         entities_result = await session.execute(
@@ -1754,6 +1814,7 @@ async def get_memory_graph(
         graph_entities = []
     
     return MemoryGraphResponse(
+        project=graph_project,
         sources=graph_sources,
         atomic_memories=atomic_graph_memories,
         entities=graph_entities,
