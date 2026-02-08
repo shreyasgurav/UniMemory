@@ -263,19 +263,6 @@ MCP_TOOLS = [
         }
     },
     {
-        "name": "add_memory",
-        "description": "Save a single atomic fact, preference, or piece of information as a memory to a project. Use this for explicit facts like 'User prefers FastAPI', 'Birthday is Aug 12', or 'Uses dark mode'. For full conversations or documents, use add_source instead.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "content": {"type": "string", "description": "The fact or information to remember. Should be a single, clear statement."},
-                "category": {"type": "string", "description": "Optional category like 'preference', 'fact', 'decision', or 'personal'."},
-                "project_id": {"type": "string", "description": "Optional project ID to save this memory to. Use get_projects to find project IDs."}
-            },
-            "required": ["content"]
-        }
-    },
-    {
         "name": "get_projects",
         "description": "List all projects in UniMemory. Returns project names, IDs, status, memory/source counts. Use this to find a project_id before searching or saving memories to a specific project.",
         "inputSchema": {
@@ -1136,82 +1123,6 @@ async def execute_tool(
             }
         except Exception as e:
             logger.error(f"add_source error: {e}")
-            return {"success": False, "error": str(e)}
-    
-    elif tool_name == "add_memory":
-        from app.core.embeddings import get_embedding_service
-        from app.core.simhash import compute_simhash
-        from app.core.sector import classify_sector, get_sector_decay_lambda, calculate_initial_salience
-        from app.config import settings
-        import uuid as uuid_mod
-        
-        content = args.get("content", "")
-        category = args.get("category")  # Used for extra_metadata
-        project_id = args.get("project_id")
-        
-        if not content:
-            return {"success": False, "error": "Content is required"}
-        
-        try:
-            # Generate embedding and simhash
-            embedding_service = get_embedding_service()
-            embedding, _ = await embedding_service.embed(content)
-            simhash = compute_simhash(content)
-            
-            # Classify sector and calculate salience
-            sector, additional_sectors, confidence = classify_sector(content)
-            decay_lambda = get_sector_decay_lambda(sector)
-            initial_salience = calculate_initial_salience(sector, additional_sectors)
-            
-            memory_id = str(uuid_mod.uuid4())
-            
-            # Create memory with all required fields (matching ingest.py pattern)
-            memory = Memory(
-                id=memory_id,
-                content=content,
-                simhash=simhash,
-                sector=sector,
-                salience=initial_salience,
-                decay_lambda=decay_lambda,
-                segment=0,
-                tags=[],
-                extra_metadata={"category": category} if category else {},
-                source_app="mcp",
-                user_id="mcp_user",
-                end_user_id=None,
-                owner_id=str(user.id),  # Convert to string (UUID(as_uuid=False))
-                project_id=project_id,  # Project to save memory to
-                api_key_id=None,
-                embedding=embedding,
-                embedding_model=settings.EMBEDDING_MODEL,
-                is_active=True,
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow(),
-                last_seen_at=datetime.utcnow()
-            )
-            session.add(memory)
-            await session.commit()
-            
-            await log_mcp_activity(
-                user_id=str(user.id),
-                mcp_token_id=mcp_token_id,
-                tool_name=tool_name,
-                client_type=client_type,
-                tool_args={"content_length": len(content), "category": category},
-                result_count=1,
-                session=session
-            )
-            
-            return {
-                "success": True,
-                "memory_id": memory_id,
-                "content": content,
-                "sector": sector,
-                "salience": initial_salience,
-                "message": "Memory saved successfully.",
-            }
-        except Exception as e:
-            logger.error(f"add_memory error: {e}")
             return {"success": False, "error": str(e)}
     
     elif tool_name == "get_projects":

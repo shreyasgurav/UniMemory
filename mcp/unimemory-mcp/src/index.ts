@@ -40,11 +40,6 @@ import {
   AddSourceInput,
 } from './tools/addSource.js';
 import {
-  addMemoryTool,
-  executeAddMemory,
-  AddMemoryInput,
-} from './tools/addMemory.js';
-import {
   getProjectsTool,
   executeGetProjects,
 } from './tools/getProjects.js';
@@ -91,7 +86,6 @@ function createMCPServer(client: UniMemoryClient): Server {
         getMemoryContextTool,
         getSourceTool,
         addSourceTool,
-        addMemoryTool,
         getProjectsTool,
         getProjectStatusTool,
         updateProjectStatusTool,
@@ -147,19 +141,6 @@ function createMCPServer(client: UniMemoryClient): Server {
         case 'add_source': {
           const input = args as unknown as AddSourceInput;
           const result = await executeAddSource(client, input);
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(result, null, 2),
-              },
-            ],
-          };
-        }
-
-        case 'add_memory': {
-          const input = args as unknown as AddMemoryInput;
-          const result = await executeAddMemory(client, input);
           return {
             content: [
               {
