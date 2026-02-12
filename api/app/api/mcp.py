@@ -257,113 +257,113 @@ async def oauth_token(
     Uses database-backed code storage (works across multiple workers).
     """
     try:
-        # Parse form data or JSON
-        content_type = request.headers.get("content-type", "")
+    # Parse form data or JSON
+    content_type = request.headers.get("content-type", "")
         logger.info(f"[OAuth] Token request received. Content-Type: {content_type}")
         
-        if "application/x-www-form-urlencoded" in content_type:
-            form_data = await request.form()
-            grant_type = form_data.get("grant_type")
-            code = form_data.get("code")
-            redirect_uri = form_data.get("redirect_uri")
-            code_verifier = form_data.get("code_verifier")
+    if "application/x-www-form-urlencoded" in content_type:
+        form_data = await request.form()
+        grant_type = form_data.get("grant_type")
+        code = form_data.get("code")
+        redirect_uri = form_data.get("redirect_uri")
+        code_verifier = form_data.get("code_verifier")
             client_id = form_data.get("client_id")
-        else:
-            body = await request.json()
-            grant_type = body.get("grant_type")
-            code = body.get("code")
-            redirect_uri = body.get("redirect_uri")
-            code_verifier = body.get("code_verifier")
+    else:
+        body = await request.json()
+        grant_type = body.get("grant_type")
+        code = body.get("code")
+        redirect_uri = body.get("redirect_uri")
+        code_verifier = body.get("code_verifier")
             client_id = body.get("client_id")
         
         logger.info(f"[OAuth] Token request: grant_type={grant_type}, code={code[:8] if code else 'None'}..., "
                      f"has_verifier={bool(code_verifier)}, client_id={client_id}")
-        
-        if grant_type != "authorization_code":
+    
+    if grant_type != "authorization_code":
             logger.warning(f"[OAuth] Unsupported grant_type: {grant_type}")
-            return JSONResponse(
-                status_code=400,
-                content={"error": "unsupported_grant_type"}
-            )
-        
-        if not code:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "unsupported_grant_type"}
+        )
+    
+    if not code:
             logger.warning("[OAuth] Missing code in token request")
-            return JSONResponse(
-                status_code=400,
-                content={"error": "invalid_request", "error_description": "Missing code"}
-            )
-        
+        return JSONResponse(
+            status_code=400,
+            content={"error": "invalid_request", "error_description": "Missing code"}
+        )
+    
         # Look up the code from database
         code_data = await _get_and_delete_oauth_code_db(session, code)
-        if not code_data:
+    if not code_data:
             logger.warning(f"[OAuth] Code lookup failed for: {code[:8]}...")
-            return JSONResponse(
-                status_code=400,
-                content={"error": "invalid_grant", "error_description": "Invalid or expired code"}
-            )
-        
+        return JSONResponse(
+            status_code=400,
+            content={"error": "invalid_grant", "error_description": "Invalid or expired code"}
+        )
+    
         logger.info(f"[OAuth] Code found! user_id={code_data.get('user_id', '?')[:8]}..., "
                      f"has_challenge={bool(code_data.get('code_challenge'))}")
         
-        # Verify PKCE if provided
-        if code_data.get("code_challenge") and code_verifier:
-            import base64
-            expected = base64.urlsafe_b64encode(
-                hashlib.sha256(code_verifier.encode()).digest()
-            ).decode().rstrip("=")
-            if expected != code_data["code_challenge"]:
+    # Verify PKCE if provided
+    if code_data.get("code_challenge") and code_verifier:
+        import base64
+        expected = base64.urlsafe_b64encode(
+            hashlib.sha256(code_verifier.encode()).digest()
+        ).decode().rstrip("=")
+        if expected != code_data["code_challenge"]:
                 logger.warning(f"[OAuth] PKCE verification failed! expected={expected[:8]}..., "
                                f"challenge={code_data['code_challenge'][:8]}...")
-                return JSONResponse(
-                    status_code=400,
-                    content={"error": "invalid_grant", "error_description": "PKCE verification failed"}
-                )
+            return JSONResponse(
+                status_code=400,
+                content={"error": "invalid_grant", "error_description": "PKCE verification failed"}
+            )
             logger.info("[OAuth] PKCE verification passed")
         elif code_data.get("code_challenge") and not code_verifier:
             logger.warning("[OAuth] code_challenge was stored but no code_verifier provided")
-        
-        # Get the user's MCP token
-        user_id = code_data["user_id"]
-        
-        result = await session.execute(
-            select(MCPToken)
-            .where(MCPToken.user_id == user_id, MCPToken.is_active == True)
-            .order_by(MCPToken.created_at.desc())
-            .limit(1)
-        )
-        mcp_token = result.scalar_one_or_none()
-        
-        if not mcp_token:
-            # Create a new MCP token for this user
-            token, token_hash, token_prefix = generate_mcp_token()
-            mcp_token = MCPToken(
-                user_id=user_id,
+    
+    # Get the user's MCP token
+    user_id = code_data["user_id"]
+    
+    result = await session.execute(
+        select(MCPToken)
+        .where(MCPToken.user_id == user_id, MCPToken.is_active == True)
+        .order_by(MCPToken.created_at.desc())
+        .limit(1)
+    )
+    mcp_token = result.scalar_one_or_none()
+    
+    if not mcp_token:
+        # Create a new MCP token for this user
+        token, token_hash, token_prefix = generate_mcp_token()
+        mcp_token = MCPToken(
+            user_id=user_id,
                 name="ChatGPT MCP Token",
                 client_type=code_data.get("client", "chatgpt"),
-                token_hash=token_hash,
-                token_prefix=token_prefix,
-                token_value=token,
-                is_active=True,
-            )
-            session.add(mcp_token)
-            await session.commit()
-            await session.refresh(mcp_token)
-            access_token = token
+            token_hash=token_hash,
+            token_prefix=token_prefix,
+            token_value=token,
+            is_active=True,
+        )
+        session.add(mcp_token)
+        await session.commit()
+        await session.refresh(mcp_token)
+        access_token = token
             logger.info(f"[OAuth] Created new MCP token for user {user_id[:8]}...")
-        else:
-            access_token = mcp_token.token_value
+    else:
+        access_token = mcp_token.token_value
             logger.info(f"[OAuth] Using existing MCP token for user {user_id[:8]}...")
         
         logger.info(f"[OAuth] Token issued successfully for user {user_id[:8]}... "
                      f"(token prefix: {access_token[:12]}...)")
-        
-        return {
-            "access_token": access_token,
-            "token_type": "Bearer",
-            "expires_in": 86400 * 365,  # 1 year
-            "scope": "openid profile email",
-        }
-        
+    
+    return {
+        "access_token": access_token,
+        "token_type": "Bearer",
+        "expires_in": 86400 * 365,  # 1 year
+        "scope": "openid profile email",
+    }
+
     except Exception as e:
         logger.error(f"[OAuth] Token endpoint error: {e}", exc_info=True)
         return JSONResponse(
@@ -576,11 +576,13 @@ MCP_TOOLS = [
     # ---- ChatGPT Connector Required Tools (search + fetch) ----
     {
         "name": "search",
-        "description": "Search UniMemory for relevant memories and sources. Returns a list of matching documents with IDs, titles, and URLs. Use fetch to get full content of any result.",
+        "description": "Search UniMemory for relevant knowledge. Performs semantic search over memories and summaries and returns document-level results. Use context or fetch to get full content.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "Natural language search query"}
+                "query": {"type": "string", "description": "Natural language search query"},
+                "project_id": {"type": "string", "description": "Optional project ID to scope search. Use listProjects to find IDs."},
+                "limit": {"type": "number", "description": "Maximum number of results to return (default: 10)"}
             },
             "required": ["query"]
         }
@@ -596,87 +598,36 @@ MCP_TOOLS = [
             "required": ["id"]
         }
     },
-    # ---- UniMemory-specific Tools ----
     {
-        "name": "search_memory",
-        "description": "Search your memory for relevant information. Use this to find what you know about a topic, person, preference, or past conversation. Pass project_id to search within a specific project only.",
+        "name": "context",
+        "description": "Get full context for a UniMemory document by document_id. Returns summary, raw content, extracted memories, and project information.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "What to search for in memory (natural language query)"},
-                "limit": {"type": "number", "description": "Maximum number of results to return (default: 10)"},
-                "project_id": {"type": "string", "description": "Optional project ID to scope search to a specific project. Use get_projects to find project IDs."}
+                "document_id": {"type": "string", "description": "The document ID returned by search."}
             },
-            "required": ["query"]
+            "required": ["document_id"]
         }
     },
     {
-        "name": "get_memory_context",
-        "description": "Get detailed context for a specific memory, including its source summary and a preview of the raw content.",
+        "name": "save",
+        "description": "Save new content (chat, note, or document) into UniMemory, optionally under a project. The system will generate title, summary, and extract memories automatically.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "memory_id": {"type": "string", "description": "The memory ID to get context for"}
+                "content": {"type": ["string", "object"], "description": "The content to save. Can be plain text or an object with messages for chats."},
+                "project_id": {"type": "string", "description": "Optional project ID to save this document to. Use listProjects to find IDs."}
             },
-            "required": ["memory_id"]
+            "required": ["content"]
         }
     },
     {
-        "name": "get_source",
-        "description": "Get the full source document or conversation that a memory came from.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "source_id": {"type": "string", "description": "The source ID to retrieve"}
-            },
-            "required": ["source_id"]
-        }
-    },
-    {
-        "name": "add_source",
-        "description": "Save a full document, chat, or conversation as a source to a project. The system will automatically generate a title, summary, and extract nuclear memories from the content. Use this for saving entire conversations, documents, or any substantial content.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "raw_content": {"type": ["string", "object"], "description": "The full content to save. Can be a string (for text/documents) or an object with messages array (for chats)."},
-                "type": {"type": "string", "enum": ["chat", "document", "text"], "description": "Type of source. Defaults to 'chat' if raw_content has messages, otherwise 'text'."},
-                "metadata": {"type": "object", "description": "Optional metadata like tags, context, or custom fields."},
-                "project_id": {"type": "string", "description": "Optional project ID to save this source to. Use get_projects to find project IDs."}
-            },
-            "required": ["raw_content"]
-        }
-    },
-    {
-        "name": "get_projects",
-        "description": "List all projects in UniMemory. Returns project names, IDs, status, memory/source counts. Use this to find a project_id before searching or saving memories to a specific project.",
+        "name": "listProjects",
+        "description": "List projects in UniMemory. Returns project IDs and names for scoping searches and saves.",
         "inputSchema": {
             "type": "object",
             "properties": {},
             "required": []
-        }
-    },
-    {
-        "name": "get_project_status",
-        "description": "Get detailed status of a specific project including its current status, status note, memory count, source count, and recent memories. Use this to understand where a project currently stands.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "project_id": {"type": "string", "description": "The project ID to get status for. Use get_projects to find project IDs."}
-            },
-            "required": ["project_id"]
-        }
-    },
-    {
-        "name": "update_project_status",
-        "description": "Update the status and status note of a project. Use this to log progress like 'Working on auth flow', 'Deployed v2', 'Waiting for API review', etc. Status can be: active, paused, completed, archived.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "project_id": {"type": "string", "description": "The project ID to update. Use get_projects to find project IDs."},
-                "status": {"type": "string", "enum": ["active", "paused", "completed", "archived"], "description": "Project status (active, paused, completed, archived)"},
-                "status_note": {"type": "string", "description": "Free-text note about current project state, e.g. 'Working on auth implementation', 'Deployed to staging'"}
-            },
-            "required": ["project_id"]
         }
     }
 ]
@@ -1182,35 +1133,94 @@ async def execute_tool(
 ) -> Dict[str, Any]:
     """Execute an MCP tool and return result"""
     
-    # ---- ChatGPT Connector Tools (search + fetch) ----
+    # ---- ChatGPT Connector + Core search tool ----
     
     if tool_name == "search":
         from app.core.search import hybrid_search
+        from app.db.models import Project
         
         query = args.get("query", "")
+        project_id = args.get("project_id")
+        limit = int(args.get("limit", 10) or 10)
         owner_id = str(user.id)
+        
+        # Build filters for hybrid_search
+        search_filters: Dict[str, Any] = {"owner_id": owner_id}
+        if project_id:
+            search_filters["project_id"] = project_id
         
         search_results = await hybrid_search(
             session=session,
             query=query,
-            limit=15,
-            filters={"owner_id": owner_id}
+            limit=limit,
+            filters=search_filters
         )
+        
+        # Collect memory IDs for batch mapping to sources
+        memories = [r["memory"] for r in search_results]
+        memory_ids = [m.id for m in memories]
+        
+        memory_to_source: Dict[Any, Any] = {}
+        sources_by_id: Dict[Any, Source] = {}
+        projects_by_id: Dict[Any, Project] = {}
+        
+        if memory_ids:
+            ms_rows = await session.execute(
+                select(MemorySource.memory_id, MemorySource.source_id)
+                .where(MemorySource.memory_id.in_(memory_ids))
+            )
+            for mem_id, src_id in ms_rows.all():
+                if src_id:
+                    memory_to_source[mem_id] = src_id
+            
+            source_ids = list({src_id for src_id in memory_to_source.values() if src_id})
+            if source_ids:
+                src_rows = await session.execute(
+                    select(Source).where(Source.id.in_(source_ids))
+                )
+                sources = src_rows.scalars().all()
+                for s in sources:
+                    sources_by_id[s.id] = s
+                
+                project_ids = list({s.project_id for s in sources if s.project_id})
+                if project_ids:
+                    proj_rows = await session.execute(
+                        select(Project).where(Project.id.in_(project_ids))
+                    )
+                    for p in proj_rows.scalars().all():
+                        projects_by_id[p.id] = p
         
         results = []
         for r in search_results:
             m = r["memory"]
-            # Find associated source
-            source_result = await session.execute(
-                select(MemorySource.source_id).where(MemorySource.memory_id == m.id).limit(1)
-            )
-            source_id = source_result.scalar_one_or_none()
+            src_id = memory_to_source.get(m.id)
+            source = sources_by_id.get(src_id) if src_id else None
+            project = projects_by_id.get(source.project_id) if source and source.project_id else None
+            
+            # Choose a stable document id: prefer Source.id, fall back to Memory.id
+            doc_id = str(source.id) if source else str(m.id)
+            
+            # Build snippet and title
+            snippet = m.content[:300]
+            title = (source.title if source and source.title else m.content[:100]) or "Untitled"
+            
+            # Build project object if available
+            project_obj = None
+            if project:
+                project_obj = {
+                    "id": str(project.id),
+                    "name": project.name,
+                }
             
             results.append({
-                "id": str(m.id),
-                "title": m.content[:100] + ("..." if len(m.content) > 100 else ""),
-                "url": f"https://unimemory-app.vercel.app/memories?id={m.id}",
-                "text": m.content[:300],
+                # Connector-required fields
+                "id": doc_id,
+                "title": title,
+                "url": f"https://unimemory-app.vercel.app/memories?source={doc_id}",
+                "text": snippet,
+                # Extra fields for richer MCP clients
+                "project": project_obj,
+                "score": r.get("score", 0.0),
             })
         
         await log_mcp_activity(
@@ -1218,7 +1228,7 @@ async def execute_tool(
             mcp_token_id=mcp_token_id,
             tool_name=tool_name,
             client_type=client_type,
-            tool_args={"query": query},
+            tool_args={"query": query, "project_id": project_id, "limit": limit},
             result_count=len(results),
             session=session
         )
@@ -1335,176 +1345,103 @@ async def execute_tool(
         
         return {"error": f"No memory or source found with ID: {item_id}"}
     
-    # ---- UniMemory-specific Tools ----
+    # ---- UniMemory-specific Tools (new surface) ----
     
-    elif tool_name == "search_memory":
-        from app.core.search import hybrid_search
-        from app.core.reinforcement import reinforce_memories
+    elif tool_name == "context":
+        """
+        Get full context for a UniMemory document by document_id.
+        """
+        document_id = args.get("document_id", "")
+        owner_id = str(user.id)
         
-        query = args.get("query", "")
-        limit = args.get("limit", 10)
-        project_id = args.get("project_id")
+        if not document_id:
+            return {"error": "document_id is required"}
         
-        # Build filters with optional project scoping
-        search_filters: Dict[str, Any] = {"owner_id": str(user.id)}
-        if project_id:
-            search_filters["project_id"] = project_id
-        
-        # Use hybrid_search with brain-like scoring (includes coactivation boost)
-        search_results = await hybrid_search(
-            session=session,
-            query=query,
-            limit=limit,
-            filters=search_filters
+        # First try as Source (preferred document type)
+        src_result = await session.execute(
+            select(Source).where(Source.id == document_id, Source.owner_id == owner_id)
         )
+        source = src_result.scalar_one_or_none()
         
-        results = []
-        memory_ids = []
-        for r in search_results:
-            m = r["memory"]
-            memory_ids.append(str(m.id))
-            source_result = await session.execute(
-                select(MemorySource.source_id).where(MemorySource.memory_id == m.id).limit(1)
+        memory_texts: list[str] = []
+        project_obj = None
+        
+        if source:
+            # Load project info if available
+            if source.project_id:
+                from app.db.models import Project
+                proj_result = await session.execute(
+                    select(Project).where(Project.id == source.project_id)
+                )
+                project = proj_result.scalar_one_or_none()
+                if project:
+                    project_obj = {"id": str(project.id), "name": project.name}
+            
+            # Load linked memories for extracted_memories
+            ms_rows = await session.execute(
+                select(Memory)
+                .join(MemorySource, MemorySource.memory_id == Memory.id)
+                .where(MemorySource.source_id == source.id)
+                .order_by(Memory.created_at.desc())
+                .limit(50)
             )
-            source_id = source_result.scalar_one_or_none()
-            results.append({
-                "memory_id": str(m.id),
-                "content": m.content,
-                "salience": m.salience or 0.5,
-                "source_id": str(source_id) if source_id else None,
-                "score": r.get("score", 0.0),
-            })
+            linked_memories = ms_rows.scalars().all()
+            memory_texts = [m.content for m in linked_memories]
+            
+            raw = source.raw_content
+            if isinstance(raw, dict):
+                raw_content = raw
+            else:
+                raw_content = raw
+            
+            return {
+                "id": str(source.id),
+                "title": source.title,
+                "project": project_obj,
+                "summary": source.summary,
+                "raw_content": raw_content,
+                "extracted_memories": memory_texts,
+                "metadata": source.source_metadata or {},
+            }
         
-        # Reinforce recalled memories (Hebbian learning)
-        if memory_ids:
-            try:
-                await reinforce_memories(session, memory_ids, query)
-            except Exception as e:
-                logger.warning(f"Failed to reinforce memories: {e}")
-        
-        # Log activity
-        await log_mcp_activity(
-            user_id=str(user.id),
-            mcp_token_id=mcp_token_id,
-            tool_name=tool_name,
-            client_type=client_type,
-            tool_args={"query": query, "limit": limit},
-            result_count=len(results),
-            session=session
+        # Fallback: try as Memory document
+        mem_result = await session.execute(
+            select(Memory).where(Memory.id == document_id, Memory.owner_id == owner_id)
         )
+        memory = mem_result.scalar_one_or_none()
+        if memory:
+            # Try to resolve project via Memory.project_id
+            if memory.project_id:
+                from app.db.models import Project
+                proj_result = await session.execute(
+                    select(Project).where(Project.id == memory.project_id)
+                )
+                project = proj_result.scalar_one_or_none()
+                if project:
+                    project_obj = {"id": str(project.id), "name": project.name}
+            
+            return {
+                "id": str(memory.id),
+                "title": memory.content[:80],
+                "project": project_obj,
+                "summary": None,
+                "raw_content": memory.content,
+                "extracted_memories": [],
+                "metadata": {},
+            }
         
-        return {"results": results, "count": len(results)}
+        return {"error": f"No document found with ID: {document_id}"}
     
-    elif tool_name == "get_memory_context":
-        from app.core.reinforcement import reinforce_memories
-        
-        memory_id = args.get("memory_id", "")
-        
-        result = await session.execute(
-            select(Memory).where(Memory.id == memory_id, Memory.owner_id == user.id)
-        )
-        memory = result.scalar_one_or_none()
-        
-        if not memory:
-            await log_mcp_activity(
-                user_id=str(user.id),
-                mcp_token_id=mcp_token_id,
-                tool_name=tool_name,
-                client_type=client_type,
-                tool_args={"memory_id": memory_id},
-                result_count=0,
-                session=session
-            )
-            return {"memory_id": memory_id, "content": "", "found": False}
-        
-        # Reinforce this memory (Hebbian learning - viewing = recall)
-        try:
-            await reinforce_memories(session, [str(memory_id)])
-        except Exception as e:
-            logger.warning(f"Failed to reinforce memory: {e}")
-        
-        source_result = await session.execute(
-            select(Source)
-            .join(MemorySource, MemorySource.source_id == Source.id)
-            .where(MemorySource.memory_id == memory_id)
-            .limit(1)
-        )
-        source = source_result.scalar_one_or_none()
-        
-        raw_excerpt = None
-        if source and source.raw_content:
-            raw_str = str(source.raw_content)[:500]
-            raw_excerpt = raw_str + "..." if len(str(source.raw_content)) > 500 else raw_str
-        
-        await log_mcp_activity(
-            user_id=str(user.id),
-            mcp_token_id=mcp_token_id,
-            tool_name=tool_name,
-            client_type=client_type,
-            tool_args={"memory_id": memory_id},
-            result_count=1,
-            session=session
-        )
-        
-        return {
-            "memory_id": str(memory.id),
-            "content": memory.content,
-            "summary": source.summary if source else None,
-            "source_type": source.type if source else None,
-            "source_id": str(source.id) if source else None,
-            "raw_excerpt": raw_excerpt,
-            "found": True,
-        }
-    
-    elif tool_name == "get_source":
-        source_id = args.get("source_id", "")
-        
-        result = await session.execute(
-            select(Source).where(Source.id == source_id, Source.owner_id == user.id)
-        )
-        source = result.scalar_one_or_none()
-        
-        if not source:
-            await log_mcp_activity(
-                user_id=str(user.id),
-                mcp_token_id=mcp_token_id,
-                tool_name=tool_name,
-                client_type=client_type,
-                tool_args={"source_id": source_id},
-                result_count=0,
-                session=session
-            )
-            return {"id": source_id, "type": "unknown", "found": False}
-        
-        await log_mcp_activity(
-            user_id=str(user.id),
-            mcp_token_id=mcp_token_id,
-            tool_name=tool_name,
-            client_type=client_type,
-            tool_args={"source_id": source_id},
-            result_count=1,
-            session=session
-        )
-        
-        return {
-            "id": str(source.id),
-            "type": source.type,
-            "title": source.title,
-            "summary": source.summary,
-            "raw_content": source.raw_content if isinstance(source.raw_content, dict) else None,
-            "found": True,
-        }
-    
-    elif tool_name == "add_source":
+    elif tool_name == "save":
         from app.core.embeddings import get_embedding_service
         from app.core.summarizer import SourceSummarizer
         from app.core.extractor import get_extractor
         from app.api.ingest import store_extracted_memories, get_or_create_end_user
         import uuid as uuid_module
         
-        raw_content = args.get("raw_content", "")
-        source_type = args.get("type")
-        metadata = args.get("metadata", {})
+        raw_content = args.get("content", "")
+        source_type = None  # infer
+        metadata: Dict[str, Any] = {}
         project_id = args.get("project_id")
         
         # Add client_type to metadata for frontend display
@@ -1681,24 +1618,24 @@ async def execute_tool(
                 mcp_token_id=mcp_token_id,
                 tool_name=tool_name,
                 client_type=client_type,
-                tool_args={"type": source_type, "content_length": len(str(raw_content))},
+                tool_args={"content_length": len(str(raw_content)), "project_id": project_id},
                 result_count=memories_count,
                 session=session
             )
             
             return {
                 "success": True,
-                "source_id": source_uuid,
-                "title": generated_title,
+                "document_id": source_uuid,
+                "project": {"id": project_id} if project_id else None,
                 "summary": summary,
-                "memories_extracted": memories_count,
-                "message": "Source saved successfully. Title, summary, and memories were automatically generated.",
+                "knowledge_extracted": memories_count,
+                "message": "Content saved successfully. Title, summary, and memories were automatically generated.",
             }
         except Exception as e:
-            logger.error(f"add_source error: {e}")
+            logger.error(f"save error: {e}")
             return {"success": False, "error": str(e)}
     
-    elif tool_name == "get_projects":
+    elif tool_name == "listProjects":
         from app.db.models import Project
         
         owner_id = str(user.id)
@@ -1748,168 +1685,9 @@ async def execute_tool(
                 {
                     "id": str(p.id),
                     "name": p.name,
-                    "slug": p.slug,
-                    "description": p.description,
-                    "icon": p.icon or "📁",
-                    "status": p.status or "active",
-                    "status_note": p.status_note,
-                    "is_default": p.is_default or False,
-                    "is_pinned": p.is_pinned or False,
-                    "memory_count": mc or 0,
-                    "source_count": sc or 0,
-                    "created_at": p.created_at.isoformat() if p.created_at else None,
-                    "updated_at": p.updated_at.isoformat() if p.updated_at else None,
                 }
-                for p, mc, sc in projects
-            ],
-            "count": len(projects)
-        }
-    
-    elif tool_name == "get_project_status":
-        from app.db.models import Project
-        
-        project_id = args.get("project_id", "")
-        owner_id = str(user.id)
-        
-        if not project_id:
-            return {"error": "project_id is required"}
-        
-        # Get project
-        result = await session.execute(
-            select(Project).where(Project.id == project_id, Project.owner_id == owner_id)
-        )
-        project = result.scalar_one_or_none()
-        
-        if not project:
-            return {"error": "Project not found", "found": False}
-        
-        # Get counts
-        mem_count = (await session.execute(
-            select(func.count(Memory.id))
-            .where(Memory.project_id == project_id, Memory.is_active == True)
-        )).scalar() or 0
-        
-        src_count = (await session.execute(
-            select(func.count(Source.id))
-            .where(Source.project_id == project_id)
-        )).scalar() or 0
-        
-        # Get recent memories (latest 10 as a "log")
-        recent_mems = await session.execute(
-            select(Memory)
-            .where(Memory.project_id == project_id, Memory.is_active == True, Memory.owner_id == owner_id)
-            .order_by(Memory.created_at.desc())
-            .limit(10)
-        )
-        recent_memories = recent_mems.scalars().all()
-        
-        # Get recent sources (latest 5)
-        recent_srcs = await session.execute(
-            select(Source)
-            .where(Source.project_id == project_id, Source.owner_id == owner_id)
-            .order_by(Source.created_at.desc())
-            .limit(5)
-        )
-        recent_sources = recent_srcs.scalars().all()
-        
-        await log_mcp_activity(
-            user_id=owner_id,
-            mcp_token_id=mcp_token_id,
-            tool_name=tool_name,
-            client_type=client_type,
-            tool_args={"project_id": project_id},
-            result_count=1,
-            session=session
-        )
-        
-        return {
-            "found": True,
-            "project": {
-                "id": str(project.id),
-                "name": project.name,
-                "slug": project.slug,
-                "description": project.description,
-                "icon": project.icon or "📁",
-                "status": project.status or "active",
-                "status_note": project.status_note,
-                "is_default": project.is_default or False,
-                "memory_count": mem_count,
-                "source_count": src_count,
-                "created_at": project.created_at.isoformat() if project.created_at else None,
-                "updated_at": project.updated_at.isoformat() if project.updated_at else None,
-            },
-            "recent_memories": [
-                {
-                    "id": str(m.id),
-                    "content": m.content[:200],
-                    "sector": m.sector,
-                    "memory_type": m.memory_type,
-                    "created_at": m.created_at.isoformat() if m.created_at else None,
-                }
-                for m in recent_memories
-            ],
-            "recent_sources": [
-                {
-                    "id": str(s.id),
-                    "type": s.type,
-                    "title": s.title,
-                    "summary": s.summary[:200] if s.summary else None,
-                    "created_at": s.created_at.isoformat() if s.created_at else None,
-                }
-                for s in recent_sources
-            ],
-        }
-    
-    elif tool_name == "update_project_status":
-        from app.db.models import Project
-        
-        project_id = args.get("project_id", "")
-        new_status = args.get("status")
-        status_note = args.get("status_note")
-        owner_id = str(user.id)
-        
-        if not project_id:
-            return {"error": "project_id is required"}
-        
-        # Get project
-        result = await session.execute(
-            select(Project).where(Project.id == project_id, Project.owner_id == owner_id)
-        )
-        project = result.scalar_one_or_none()
-        
-        if not project:
-            return {"error": "Project not found", "success": False}
-        
-        # Update fields
-        if new_status:
-            project.status = new_status
-        if status_note is not None:  # Allow empty string to clear note
-            project.status_note = status_note
-        project.updated_at = datetime.utcnow()
-        
-        await session.commit()
-        await session.refresh(project)
-        
-        await log_mcp_activity(
-            user_id=owner_id,
-            mcp_token_id=mcp_token_id,
-            tool_name=tool_name,
-            client_type=client_type,
-            tool_args={"project_id": project_id, "status": new_status, "status_note": status_note},
-            result_count=1,
-            session=session
-        )
-        
-        return {
-            "success": True,
-            "project": {
-                "id": str(project.id),
-                "name": project.name,
-                "status": project.status,
-                "status_note": project.status_note,
-                "updated_at": project.updated_at.isoformat() if project.updated_at else None,
-            },
-            "message": f"Project '{project.name}' status updated to '{project.status}'.",
+                for p, _, _ in projects
+            ]
         }
     
     else:
