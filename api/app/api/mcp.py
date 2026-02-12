@@ -598,25 +598,25 @@ MCP_TOOLS = [
         }
     },
     {
-        "name": "fetch",
-        "description": "Retrieve the full content of a memory or source by ID. Use after search to get complete document text for analysis and citation.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "id": {"type": "string", "description": "The memory or source ID to retrieve (from search results)"}
-            },
-            "required": ["id"]
-        }
-    },
-    {
         "name": "context",
-        "description": "Get full context for a UniMemory document by document_id. Returns summary, raw content, extracted memories, and project information.",
+        "description": "PRIMARY read API for UniMemory documents. Always use this to read full document context. Returns structured data including summary, raw content, extracted memories, and project information. This is the recommended tool for reading documents.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "document_id": {"type": "string", "description": "The document ID returned by search."}
             },
             "required": ["document_id"]
+        }
+    },
+    {
+        "name": "fetch",
+        "description": "Compatibility wrapper for legacy MCP clients. Prefer using `context` instead, which returns richer structured information. This tool exists only for MCP spec compliance.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string", "description": "The document ID to retrieve (from search results). Use context tool instead for better structured data."}
+            },
+            "required": ["id"]
         }
     },
     {
@@ -1335,6 +1335,10 @@ async def execute_tool(
         )
         
         return {"results": results}
+    
+    # IMPORTANT: `context` is the single source of truth for reading documents.
+    # `fetch` exists only for MCP compatibility and MUST delegate to `context`.
+    # Both tools use get_document_context_internal() internally.
     
     elif tool_name == "fetch":
         item_id = args.get("id", "")
