@@ -117,8 +117,68 @@ async def oauth_dynamic_register(request: Request):
     })
 
 
-# In-memory storage for OAuth codes (in production, use Redis/DB with TTL)
-_oauth_codes: Dict[str, Dict[str, Any]] = {}
+# =============================================================================
+# DATABASE-BACKED OAUTH CODE STORAGE (works across multiple workers)
+# =============================================================================
+# OAuth codes are stored as special MCP activity records in the database,
+# ensuring they work correctly when running multiple uvicorn workers.
+
+async def _store_oauth_code_db(session: AsyncSession, code: str, user_id: str, 
+                                code_challenge: Optional[str] = None, client: str = "mcp"):
+    """Store OAuth authorization code in the database (cross-worker safe)"""
+    from sqlalchemy import text
+    
+    code_data = json.dumps({
+        "user_id": user_id,
+        "code_challenge": code_challenge,
+        "client": client,
+        "created_at": datetime.utcnow().isoformat(),
+    })
+    
+    # Store as an MCP activity record with tool_name='oauth_code'
+    await session.execute(
+        text("""
+            INSERT INTO mcp_activity (id, user_id, tool_name, tool_args, created_at)
+            VALUES (:id, :user_id, 'oauth_code', :tool_args, NOW())
+        """),
+        {
+            "id": code,  # Use the code itself as the ID
+            "user_id": user_id,
+            "tool_args": code_data,
+        }
+    )
+    await session.commit()
+    logger.info(f"[OAuth] Stored code for user {user_id[:8]}... (code prefix: {code[:8]}...)")
+
+
+async def _get_and_delete_oauth_code_db(session: AsyncSession, code: str) -> Optional[Dict]:
+    """Retrieve and delete OAuth code from database (one-time use)"""
+    from sqlalchemy import text
+    
+    result = await session.execute(
+        text("""
+            SELECT tool_args FROM mcp_activity 
+            WHERE id = :code AND tool_name = 'oauth_code'
+            AND created_at > NOW() - INTERVAL '10 minutes'
+        """),
+        {"code": code}
+    )
+    row = result.fetchone()
+    
+    if not row:
+        logger.warning(f"[OAuth] Code not found or expired: {code[:8]}...")
+        return None
+    
+    # Delete the code (one-time use)
+    await session.execute(
+        text("DELETE FROM mcp_activity WHERE id = :code AND tool_name = 'oauth_code'"),
+        {"code": code}
+    )
+    await session.commit()
+    
+    code_data = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+    logger.info(f"[OAuth] Code exchanged for user {code_data.get('user_id', '?')[:8]}...")
+    return code_data
 
 
 class OAuthTokenRequest(BaseModel):
@@ -137,120 +197,122 @@ async def oauth_token(
     """
     OAuth 2.0 Token Endpoint.
     Exchanges authorization codes for access tokens.
+    Uses database-backed code storage (works across multiple workers).
     """
-    # Parse form data or JSON
-    content_type = request.headers.get("content-type", "")
-    if "application/x-www-form-urlencoded" in content_type:
-        form_data = await request.form()
-        grant_type = form_data.get("grant_type")
-        code = form_data.get("code")
-        redirect_uri = form_data.get("redirect_uri")
-        code_verifier = form_data.get("code_verifier")
-    else:
-        body = await request.json()
-        grant_type = body.get("grant_type")
-        code = body.get("code")
-        redirect_uri = body.get("redirect_uri")
-        code_verifier = body.get("code_verifier")
-    
-    if grant_type != "authorization_code":
-        return JSONResponse(
-            status_code=400,
-            content={"error": "unsupported_grant_type"}
-        )
-    
-    if not code:
-        return JSONResponse(
-            status_code=400,
-            content={"error": "invalid_request", "error_description": "Missing code"}
-        )
-    
-    # Look up the code
-    code_data = _oauth_codes.get(code)
-    if not code_data:
-        return JSONResponse(
-            status_code=400,
-            content={"error": "invalid_grant", "error_description": "Invalid or expired code"}
-        )
-    
-    # Verify PKCE if provided
-    if code_data.get("code_challenge") and code_verifier:
-        import base64
-        expected = base64.urlsafe_b64encode(
-            hashlib.sha256(code_verifier.encode()).digest()
-        ).decode().rstrip("=")
-        if expected != code_data["code_challenge"]:
+    try:
+        # Parse form data or JSON
+        content_type = request.headers.get("content-type", "")
+        if "application/x-www-form-urlencoded" in content_type:
+            form_data = await request.form()
+            grant_type = form_data.get("grant_type")
+            code = form_data.get("code")
+            redirect_uri = form_data.get("redirect_uri")
+            code_verifier = form_data.get("code_verifier")
+        else:
+            body = await request.json()
+            grant_type = body.get("grant_type")
+            code = body.get("code")
+            redirect_uri = body.get("redirect_uri")
+            code_verifier = body.get("code_verifier")
+        
+        logger.info(f"[OAuth] Token request: grant_type={grant_type}, code={code[:8] if code else 'None'}...")
+        
+        if grant_type != "authorization_code":
             return JSONResponse(
                 status_code=400,
-                content={"error": "invalid_grant", "error_description": "PKCE verification failed"}
+                content={"error": "unsupported_grant_type"}
             )
-    
-    # Delete the code (one-time use)
-    del _oauth_codes[code]
-    
-    # Get the user's MCP token
-    user_id = code_data["user_id"]
-    
-    result = await session.execute(
-        select(MCPToken)
-        .where(MCPToken.user_id == user_id, MCPToken.is_active == True)
-        .order_by(MCPToken.created_at.desc())
-        .limit(1)
-    )
-    mcp_token = result.scalar_one_or_none()
-    
-    if not mcp_token:
-        # Create a new MCP token for this user
-        token, token_hash, token_prefix = generate_mcp_token()
-        mcp_token = MCPToken(
-            user_id=user_id,
-            name="MCP OAuth Token",
-            client_type=code_data.get("client", "mcp"),
-            token_hash=token_hash,
-            token_prefix=token_prefix,
-            token_value=token,
-            is_active=True,
+        
+        if not code:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "invalid_request", "error_description": "Missing code"}
+            )
+        
+        # Look up the code from database
+        code_data = await _get_and_delete_oauth_code_db(session, code)
+        if not code_data:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "invalid_grant", "error_description": "Invalid or expired code"}
+            )
+        
+        # Verify PKCE if provided
+        if code_data.get("code_challenge") and code_verifier:
+            import base64
+            expected = base64.urlsafe_b64encode(
+                hashlib.sha256(code_verifier.encode()).digest()
+            ).decode().rstrip("=")
+            if expected != code_data["code_challenge"]:
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": "invalid_grant", "error_description": "PKCE verification failed"}
+                )
+        
+        # Get the user's MCP token
+        user_id = code_data["user_id"]
+        
+        result = await session.execute(
+            select(MCPToken)
+            .where(MCPToken.user_id == user_id, MCPToken.is_active == True)
+            .order_by(MCPToken.created_at.desc())
+            .limit(1)
         )
-        session.add(mcp_token)
-        await session.commit()
-        await session.refresh(mcp_token)
-        access_token = token
-    else:
-        access_token = mcp_token.token_value
-    
-    return {
-        "access_token": access_token,
-        "token_type": "Bearer",
-        "expires_in": 86400 * 365,  # 1 year
-        "scope": "openid profile email",
-    }
-
-
-def store_oauth_code(code: str, user_id: str, code_challenge: Optional[str] = None, client: str = "mcp"):
-    """Store an OAuth authorization code (called from consumer app)"""
-    _oauth_codes[code] = {
-        "user_id": user_id,
-        "code_challenge": code_challenge,
-        "client": client,
-        "created_at": datetime.utcnow().isoformat(),
-    }
+        mcp_token = result.scalar_one_or_none()
+        
+        if not mcp_token:
+            # Create a new MCP token for this user
+            token, token_hash, token_prefix = generate_mcp_token()
+            mcp_token = MCPToken(
+                user_id=user_id,
+                name="ChatGPT MCP Token",
+                client_type=code_data.get("client", "chatgpt"),
+                token_hash=token_hash,
+                token_prefix=token_prefix,
+                token_value=token,
+                is_active=True,
+            )
+            session.add(mcp_token)
+            await session.commit()
+            await session.refresh(mcp_token)
+            access_token = token
+        else:
+            access_token = mcp_token.token_value
+        
+        logger.info(f"[OAuth] Token issued for user {user_id[:8]}...")
+        
+        return {
+            "access_token": access_token,
+            "token_type": "Bearer",
+            "expires_in": 86400 * 365,  # 1 year
+            "scope": "openid profile email",
+        }
+        
+    except Exception as e:
+        logger.error(f"[OAuth] Token endpoint error: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"error": "server_error", "error_description": str(e)}
+        )
 
 
 @router.post("/mcp/oauth/code")
 async def create_oauth_code(
     request: Request,
     user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
 ):
     """
     Internal endpoint to create an OAuth authorization code.
     Called by the consumer app after user authenticates.
+    Stores code in database (cross-worker safe).
     """
     body = await request.json()
     code = secrets.token_urlsafe(32)
     code_challenge = body.get("code_challenge")
     client = body.get("client", "mcp")
     
-    store_oauth_code(code, str(user.id), code_challenge, client)
+    await _store_oauth_code_db(session, code, str(user.id), code_challenge, client)
     
     return {"code": code}
 
