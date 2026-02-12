@@ -2092,6 +2092,127 @@ async def mcp_sse_endpoint(request: Request, session: AsyncSession = Depends(get
     )
 
 
+@router.post("/mcp/sse")
+async def mcp_sse_post(
+    request: Request,
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Standard MCP SSE Transport - POST messages endpoint.
+
+    ChatGPT currently POSTs JSON-RPC messages directly to the same URL that is
+    used for the SSE stream (server_url). The spec only requires:
+      - an SSE endpoint (GET) for server->client
+      - an HTTP POST endpoint for client->server messages
+
+    This handler implements the POST side for /mcp/sse so that:
+      - POST /api/v1/mcp/sse returns 200 instead of 405
+      - JSON-RPC "initialize", "tools/list", and "tools/call" work over HTTP
+
+    Responses are standard JSON-RPC 2.0 objects in the HTTP body.
+    """
+    authorization = request.headers.get("Authorization", "")
+
+    try:
+        user, mcp_token = await validate_mcp_token_from_header(authorization, session)
+    except HTTPException as e:
+        # Return JSON error so the client can see the failure reason
+        return JSONResponse(
+            status_code=e.status_code,
+            content=json.loads(create_jsonrpc_error(None, -32000, e.detail))
+        )
+
+    try:
+        body = await request.json()
+    except Exception:
+        # JSON parse error
+        return JSONResponse(
+            status_code=400,
+            content=json.loads(create_jsonrpc_error(None, -32700, "Parse error"))
+        )
+
+    method = body.get("method", "")
+    params = body.get("params", {})
+    msg_id = body.get("id")
+
+    logger.info(f"[MCP SSE POST] method={method}, id={msg_id}")
+
+    # Notifications (no id) don't require a response body
+    is_notification = msg_id is None
+
+    if method == "initialize":
+        result = {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {"tools": {}},
+            "serverInfo": MCP_SERVER_INFO,
+        }
+        if is_notification:
+            return JSONResponse(status_code=200, content={})
+        return JSONResponse(
+            status_code=200,
+            content=json.loads(create_jsonrpc_response(msg_id, result))
+        )
+
+    if method == "notifications/initialized":
+        # Ack only, no response needed
+        return JSONResponse(status_code=200, content={})
+
+    if method == "tools/list":
+        result = {"tools": MCP_TOOLS}
+        if is_notification:
+            return JSONResponse(status_code=200, content={})
+        return JSONResponse(
+            status_code=200,
+            content=json.loads(create_jsonrpc_response(msg_id, result))
+        )
+
+    if method == "tools/call":
+        tool_name = params.get("name", "")
+        tool_args = params.get("arguments", {})
+
+        try:
+            tool_result = await execute_tool(
+                tool_name,
+                tool_args,
+                user,
+                session,
+                mcp_token_id=str(mcp_token.id),
+                client_type=mcp_token.client_type or "chatgpt",
+            )
+            result = {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": json.dumps(tool_result, default=str),
+                    }
+                ]
+            }
+            if is_notification:
+                return JSONResponse(status_code=200, content={})
+            return JSONResponse(
+                status_code=200,
+                content=json.loads(create_jsonrpc_response(msg_id, result))
+            )
+        except Exception as e:
+            logger.error(f"[MCP SSE POST] Tool execution error: {e}", exc_info=True)
+            if is_notification:
+                return JSONResponse(status_code=200, content={})
+            return JSONResponse(
+                status_code=500,
+                content=json.loads(create_jsonrpc_error(msg_id, -32603, str(e)))
+            )
+
+    # Unknown method
+    if is_notification:
+        return JSONResponse(status_code=200, content={})
+    return JSONResponse(
+        status_code=400,
+        content=json.loads(
+            create_jsonrpc_error(msg_id, -32601, f"Method not found: {method}")
+        ),
+    )
+
+
 @router.post("/mcp/sse/messages")
 async def mcp_sse_messages(
     request: Request,
