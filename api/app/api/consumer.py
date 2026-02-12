@@ -1386,7 +1386,7 @@ async def update_settings(
 
 class ConsumerSearchRequest(BaseModel):
     query: str
-    limit: Optional[int] = 5
+    limit: Optional[int] = 20
 
 
 class ConsumerSearchResult(BaseModel):

@@ -139,10 +139,11 @@
     showNotification('Searching memories...', 'loading');
 
     try {
-      // Search for memories via background script
+      // Search for memories via background script (fetch up to 20 related memories)
       const response = await chrome.runtime.sendMessage({
         type: 'SEARCH_NUCLEAR_MEMORIES',
-        query: promptText
+        query: promptText,
+        limit: 20
       });
 
       if (!response.success) {
@@ -179,7 +180,6 @@
   // Insert memories below the prompt
   function insertMemories(inputEl, originalPrompt, memories) {
     const memoryText = memories
-      .slice(0, 5) // Limit to 5 memories
       .map(m => `• ${m.content}`)
       .join('\n');
 

@@ -139,7 +139,7 @@ async function refreshSession(firebaseToken) {
   }
 }
 
-async function searchNuclearMemories(query, limit = 5) {
+async function searchNuclearMemories(query, limit = 20) {
   let session = await getSession();
 
   if (!session) {
@@ -509,7 +509,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
 
         case 'SEARCH_NUCLEAR_MEMORIES': {
-          const result = await searchNuclearMemories(message.query, message.limit || 5);
+          const result = await searchNuclearMemories(message.query, message.limit || 20);
           sendResponse({ success: true, memories: result });
           break;
         }
