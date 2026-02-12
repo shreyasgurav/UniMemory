@@ -184,6 +184,40 @@ async def root():
     }
 
 
+# =============================================================================
+# ROOT-LEVEL OAUTH DISCOVERY (ChatGPT checks origin root for .well-known)
+# =============================================================================
+
+_APP_URL = "https://unimemory-app.vercel.app"
+_API_URL = "https://unimemory.up.railway.app/api/v1"
+_MCP_SSE_URL = "https://unimemory.up.railway.app/api/v1/mcp/sse"
+
+@app.get("/.well-known/oauth-protected-resource")
+async def root_oauth_protected_resource():
+    """OAuth 2.0 Protected Resource Metadata at origin root"""
+    return {
+        "resource": _MCP_SSE_URL,
+        "authorization_servers": [_API_URL],
+        "scopes_supported": ["openid", "profile", "email", "offline_access"],
+        "bearer_methods_supported": ["header"],
+    }
+
+@app.get("/.well-known/oauth-authorization-server")
+async def root_oauth_authorization_server():
+    """OAuth 2.0 Authorization Server Metadata at origin root"""
+    return {
+        "issuer": _API_URL,
+        "authorization_endpoint": f"{_APP_URL}/mcp/authorize",
+        "token_endpoint": f"{_API_URL}/mcp/oauth/token",
+        "registration_endpoint": f"{_API_URL}/mcp/oauth/register",
+        "scopes_supported": ["openid", "profile", "email", "offline_access"],
+        "response_types_supported": ["code"],
+        "grant_types_supported": ["authorization_code", "refresh_token"],
+        "code_challenge_methods_supported": ["S256"],
+        "token_endpoint_auth_methods_supported": ["none"],
+    }
+
+
 @app.get("/api/v1/health/detailed")
 async def detailed_health():
     """Detailed health check with database status"""

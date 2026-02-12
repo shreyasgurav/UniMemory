@@ -24,6 +24,7 @@ router = APIRouter()
 
 # OAuth configuration
 MCP_SERVER_URL = "https://unimemory.up.railway.app/api/v1/mcp"
+MCP_SSE_SERVER_URL = "https://unimemory.up.railway.app/api/v1/mcp/sse"
 APP_URL = "https://unimemory-app.vercel.app"
 API_URL = "https://unimemory.up.railway.app/api/v1"
 
@@ -32,46 +33,88 @@ MCP_SERVER_INFO = {
     "version": "1.0.0",
 }
 
-
-# =============================================================================
-# OAUTH DISCOVERY ENDPOINTS (for install-mcp and MCP clients)
-# =============================================================================
-
-@router.get("/mcp/.well-known/oauth-protected-resource")
-async def oauth_protected_resource():
-    """
-    OAuth 2.0 Protected Resource Metadata endpoint.
-    MCP clients use this to discover the authorization server.
-    https://datatracker.ietf.org/doc/html/rfc8707
-    """
+# OAuth metadata responses (reusable)
+def _oauth_protected_resource_response():
     return {
-        "resource": MCP_SERVER_URL,
+        "resource": MCP_SSE_SERVER_URL,
         "authorization_servers": [API_URL],
         "scopes_supported": ["openid", "profile", "email", "offline_access"],
         "bearer_methods_supported": ["header"],
         "resource_documentation": "https://unimemory.app/docs/mcp",
     }
 
-
-@router.get("/mcp/.well-known/oauth-authorization-server")
-@router.get("/.well-known/oauth-authorization-server")
-async def oauth_authorization_server():
-    """
-    OAuth 2.0 Authorization Server Metadata endpoint.
-    Available at both /mcp/.well-known/ and /.well-known/ paths
-    since install-mcp queries the authorization_servers URL directly.
-    https://datatracker.ietf.org/doc/html/rfc8414
-    """
+def _oauth_authorization_server_response():
     return {
         "issuer": API_URL,
         "authorization_endpoint": f"{APP_URL}/mcp/authorize",
         "token_endpoint": f"{API_URL}/mcp/oauth/token",
+        "registration_endpoint": f"{API_URL}/mcp/oauth/register",
         "scopes_supported": ["openid", "profile", "email", "offline_access"],
         "response_types_supported": ["code"],
         "grant_types_supported": ["authorization_code", "refresh_token"],
         "code_challenge_methods_supported": ["S256"],
         "token_endpoint_auth_methods_supported": ["none"],
     }
+
+
+# =============================================================================
+# OAUTH DISCOVERY ENDPOINTS (for install-mcp, Cursor, and MCP clients)
+# =============================================================================
+
+@router.get("/mcp/.well-known/oauth-protected-resource")
+async def oauth_protected_resource():
+    """OAuth 2.0 Protected Resource Metadata (relative to /mcp)"""
+    return _oauth_protected_resource_response()
+
+
+@router.get("/mcp/sse/.well-known/oauth-protected-resource")
+async def oauth_protected_resource_sse():
+    """OAuth 2.0 Protected Resource Metadata (relative to /mcp/sse - for ChatGPT)"""
+    return _oauth_protected_resource_response()
+
+
+@router.get("/mcp/.well-known/oauth-authorization-server")
+@router.get("/.well-known/oauth-authorization-server")
+async def oauth_authorization_server():
+    """OAuth 2.0 Authorization Server Metadata (multiple paths for compatibility)"""
+    return _oauth_authorization_server_response()
+
+
+@router.get("/mcp/sse/.well-known/oauth-authorization-server")
+async def oauth_authorization_server_sse():
+    """OAuth 2.0 Authorization Server Metadata (relative to /mcp/sse - for ChatGPT)"""
+    return _oauth_authorization_server_response()
+
+
+# =============================================================================
+# DYNAMIC CLIENT REGISTRATION (required by MCP OAuth spec for ChatGPT)
+# =============================================================================
+
+@router.post("/mcp/oauth/register")
+async def oauth_dynamic_register(request: Request):
+    """
+    OAuth 2.0 Dynamic Client Registration (RFC 7591).
+    ChatGPT and other MCP clients use this to register themselves.
+    We accept any registration and return a client_id (since we use
+    token-based auth, client credentials aren't strictly needed).
+    """
+    import uuid as uuid_module
+    
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    
+    client_id = f"unimemory-{uuid_module.uuid4().hex[:12]}"
+    
+    return JSONResponse(content={
+        "client_id": client_id,
+        "client_name": body.get("client_name", "MCP Client"),
+        "redirect_uris": body.get("redirect_uris", []),
+        "grant_types": ["authorization_code", "refresh_token"],
+        "response_types": ["code"],
+        "token_endpoint_auth_method": "none",
+    })
 
 
 # In-memory storage for OAuth codes (in production, use Redis/DB with TTL)
@@ -1668,11 +1711,17 @@ async def mcp_sse_endpoint(request: Request, session: AsyncSession = Depends(get
     
     authorization = request.headers.get("Authorization", "")
     
-    # Validate auth
+    # Validate auth - return proper 401 with resource_metadata for OAuth discovery
     try:
         user, mcp_token = await validate_mcp_token_from_header(authorization, session)
     except HTTPException as e:
-        return JSONResponse(status_code=401, content={"error": e.detail})
+        return JSONResponse(
+            status_code=401,
+            content={"error": e.detail},
+            headers={
+                "WWW-Authenticate": f'Bearer resource_metadata="{MCP_SSE_SERVER_URL}/.well-known/oauth-protected-resource"'
+            }
+        )
     
     # Create a session for this SSE connection
     session_id = str(uuid_module.uuid4())
