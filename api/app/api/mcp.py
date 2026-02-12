@@ -1133,6 +1133,97 @@ async def log_mcp_activity(
         logger.error(f"Failed to log MCP activity: {e}")
 
 
+async def get_document_context_internal(
+    document_id: str,
+    user: User,
+    session: AsyncSession,
+) -> Optional[Dict[str, Any]]:
+    """
+    Shared helper to resolve a UniMemory document context by ID.
+    Tries Source first (preferred), then falls back to Memory.
+    Returns a rich context dict or None if not found.
+    """
+    if not document_id:
+        return None
+    
+    owner_id = str(user.id)
+    
+    # First try as Source (preferred document type)
+    src_result = await session.execute(
+        select(Source).where(Source.id == document_id, Source.owner_id == owner_id)
+    )
+    source = src_result.scalar_one_or_none()
+    
+    memory_texts: list[str] = []
+    project_obj = None
+    
+    if source:
+        # Load project info if available
+        if source.project_id:
+            from app.db.models import Project
+            proj_result = await session.execute(
+                select(Project).where(Project.id == source.project_id)
+            )
+            project = proj_result.scalar_one_or_none()
+            if project:
+                project_obj = {"id": str(project.id), "name": project.name}
+        
+        # Load linked memories for extracted_memories
+        ms_rows = await session.execute(
+            select(Memory)
+            .join(MemorySource, MemorySource.memory_id == Memory.id)
+            .where(MemorySource.source_id == source.id)
+            .order_by(Memory.created_at.desc())
+            .limit(50)
+        )
+        linked_memories = ms_rows.scalars().all()
+        memory_texts = [m.content for m in linked_memories]
+        
+        raw = source.raw_content
+        if isinstance(raw, dict):
+            raw_content = raw
+        else:
+            raw_content = raw
+        
+        return {
+            "id": str(source.id),
+            "title": source.title,
+            "project": project_obj,
+            "summary": source.summary,
+            "raw_content": raw_content,
+            "extracted_memories": memory_texts,
+            "metadata": source.source_metadata or {},
+        }
+    
+    # Fallback: try as Memory document
+    mem_result = await session.execute(
+        select(Memory).where(Memory.id == document_id, Memory.owner_id == owner_id)
+    )
+    memory = mem_result.scalar_one_or_none()
+    if memory:
+        # Try to resolve project via Memory.project_id
+        if memory.project_id:
+            from app.db.models import Project
+            proj_result = await session.execute(
+                select(Project).where(Project.id == memory.project_id)
+            )
+            project = proj_result.scalar_one_or_none()
+            if project:
+                project_obj = {"id": str(project.id), "name": project.name}
+        
+        return {
+            "id": str(memory.id),
+            "title": memory.content[:80],
+            "project": project_obj,
+            "summary": None,
+            "raw_content": memory.content,
+            "extracted_memories": [],
+            "metadata": {},
+        }
+    
+    return None
+
+
 async def execute_tool(
     tool_name: str, 
     args: Dict[str, Any], 
@@ -1247,113 +1338,52 @@ async def execute_tool(
     
     elif tool_name == "fetch":
         item_id = args.get("id", "")
-        owner_id = str(user.id)
         
         if not item_id:
             return {"error": "id is required"}
         
-        # Try as memory first
-        mem_result = await session.execute(
-            select(Memory).where(Memory.id == item_id, Memory.owner_id == owner_id)
+        ctx = await get_document_context_internal(item_id, user, session)
+        if not ctx:
+            return {"error": f"No document found with ID: {item_id}"}
+        
+        # Build text payload from summary + raw_content
+        text_parts = []
+        summary = ctx.get("summary")
+        if summary:
+            text_parts.append(f"Summary:\n{summary}")
+        
+        raw = ctx.get("raw_content")
+        if raw is not None:
+            if isinstance(raw, dict):
+                raw_str = json.dumps(raw, indent=2)
+            else:
+                raw_str = str(raw)
+            if len(raw_str) > 10000:
+                raw_str = raw_str[:10000] + "\n... (truncated)"
+            text_parts.append(f"\nContent:\n{raw_str}")
+        
+        text = "\n".join(text_parts) if text_parts else ""
+        
+        await log_mcp_activity(
+            user_id=str(user.id),
+            mcp_token_id=mcp_token_id,
+            tool_name=tool_name,
+            client_type=client_type,
+            tool_args={"id": item_id},
+            result_count=1,
+            session=session
         )
-        memory = mem_result.scalar_one_or_none()
         
-        if memory:
-            # Find the source for this memory
-            source_link = await session.execute(
-                select(MemorySource.source_id).where(MemorySource.memory_id == memory.id).limit(1)
-            )
-            source_id = source_link.scalar_one_or_none()
-            
-            # If has a source, fetch its full content
-            source_text = ""
-            source_title = ""
-            if source_id:
-                src_result = await session.execute(
-                    select(Source).where(Source.id == source_id)
-                )
-                source = src_result.scalar_one_or_none()
-                if source:
-                    source_title = source.title or ""
-                    # Use summary + memory content for full text
-                    parts = []
-                    if source.summary:
-                        parts.append(f"Source Summary:\n{source.summary}")
-                    parts.append(f"\nMemory:\n{memory.content}")
-                    if source.raw_content:
-                        raw = source.raw_content
-                        if isinstance(raw, dict):
-                            raw = json.dumps(raw, indent=2)
-                        if len(str(raw)) > 10000:
-                            raw = str(raw)[:10000] + "\n... (truncated)"
-                        parts.append(f"\nRaw Source Content:\n{raw}")
-                    source_text = "\n".join(parts)
-            
-            await log_mcp_activity(
-                user_id=owner_id,
-                mcp_token_id=mcp_token_id,
-                tool_name=tool_name,
-                client_type=client_type,
-                tool_args={"id": item_id},
-                result_count=1,
-                session=session
-            )
-            
-            return {
-                "id": str(memory.id),
-                "title": source_title or memory.content[:100],
-                "text": source_text or memory.content,
-                "url": f"https://unimemory-app.vercel.app/memories?id={memory.id}",
-                "metadata": {
-                    "type": "memory",
-                    "salience": memory.salience,
-                    "tags": memory.tags or [],
-                    "created_at": memory.created_at.isoformat() if memory.created_at else None,
-                    "source_id": str(source_id) if source_id else None,
-                }
-            }
-        
-        # Try as source
-        src_result = await session.execute(
-            select(Source).where(Source.id == item_id, Source.owner_id == owner_id)
-        )
-        source = src_result.scalar_one_or_none()
-        
-        if source:
-            text_parts = []
-            if source.summary:
-                text_parts.append(f"Summary:\n{source.summary}")
-            if source.raw_content:
-                raw = source.raw_content
-                if isinstance(raw, dict):
-                    raw = json.dumps(raw, indent=2)
-                if len(str(raw)) > 10000:
-                    raw = str(raw)[:10000] + "\n... (truncated)"
-                text_parts.append(f"\nFull Content:\n{raw}")
-            
-            await log_mcp_activity(
-                user_id=owner_id,
-                mcp_token_id=mcp_token_id,
-                tool_name=tool_name,
-                client_type=client_type,
-                tool_args={"id": item_id},
-                result_count=1,
-                session=session
-            )
-            
-            return {
-                "id": str(source.id),
-                "title": source.title or "Untitled Source",
-                "text": "\n".join(text_parts) if text_parts else "No content available",
-                "url": f"https://unimemory-app.vercel.app/memories?source={source.id}",
-                "metadata": {
-                    "type": "source",
-                    "source_type": source.source_type,
-                    "created_at": source.created_at.isoformat() if source.created_at else None,
-                }
-            }
-        
-        return {"error": f"No memory or source found with ID: {item_id}"}
+        return {
+            "id": ctx.get("id"),
+            "title": ctx.get("title") or "Untitled",
+            "text": text,
+            "url": f"https://unimemory-app.vercel.app/memories?source={ctx.get('id')}",
+            "metadata": {
+                "project": ctx.get("project"),
+                "extracted_memories": ctx.get("extracted_memories"),
+            },
+        }
     
     # ---- UniMemory-specific Tools (new surface) ----
     
@@ -1362,85 +1392,24 @@ async def execute_tool(
         Get full context for a UniMemory document by document_id.
         """
         document_id = args.get("document_id", "")
-        owner_id = str(user.id)
-        
         if not document_id:
             return {"error": "document_id is required"}
         
-        # First try as Source (preferred document type)
-        src_result = await session.execute(
-            select(Source).where(Source.id == document_id, Source.owner_id == owner_id)
+        ctx = await get_document_context_internal(document_id, user, session)
+        if not ctx:
+            return {"error": f"No document found with ID: {document_id}"}
+        
+        await log_mcp_activity(
+            user_id=str(user.id),
+            mcp_token_id=mcp_token_id,
+            tool_name=tool_name,
+            client_type=client_type,
+            tool_args={"document_id": document_id},
+            result_count=1,
+            session=session
         )
-        source = src_result.scalar_one_or_none()
         
-        memory_texts: list[str] = []
-        project_obj = None
-        
-        if source:
-            # Load project info if available
-            if source.project_id:
-                from app.db.models import Project
-                proj_result = await session.execute(
-                    select(Project).where(Project.id == source.project_id)
-                )
-                project = proj_result.scalar_one_or_none()
-                if project:
-                    project_obj = {"id": str(project.id), "name": project.name}
-            
-            # Load linked memories for extracted_memories
-            ms_rows = await session.execute(
-                select(Memory)
-                .join(MemorySource, MemorySource.memory_id == Memory.id)
-                .where(MemorySource.source_id == source.id)
-                .order_by(Memory.created_at.desc())
-                .limit(50)
-            )
-            linked_memories = ms_rows.scalars().all()
-            memory_texts = [m.content for m in linked_memories]
-            
-            raw = source.raw_content
-            if isinstance(raw, dict):
-                raw_content = raw
-            else:
-                raw_content = raw
-            
-            return {
-                "id": str(source.id),
-                "title": source.title,
-                "project": project_obj,
-                "summary": source.summary,
-                "raw_content": raw_content,
-                "extracted_memories": memory_texts,
-                "metadata": source.source_metadata or {},
-            }
-        
-        # Fallback: try as Memory document
-        mem_result = await session.execute(
-            select(Memory).where(Memory.id == document_id, Memory.owner_id == owner_id)
-        )
-        memory = mem_result.scalar_one_or_none()
-        if memory:
-            # Try to resolve project via Memory.project_id
-            if memory.project_id:
-                from app.db.models import Project
-                proj_result = await session.execute(
-                    select(Project).where(Project.id == memory.project_id)
-                )
-                project = proj_result.scalar_one_or_none()
-                if project:
-                    project_obj = {"id": str(project.id), "name": project.name}
-            
-            return {
-                "id": str(memory.id),
-                "title": memory.content[:80],
-                "project": project_obj,
-                "summary": None,
-                "raw_content": memory.content,
-                "extracted_memories": [],
-                "metadata": {},
-            }
-        
-        return {"error": f"No document found with ID: {document_id}"}
+        return ctx
     
     elif tool_name == "save":
         from app.core.embeddings import get_embedding_service
