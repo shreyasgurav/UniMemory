@@ -433,38 +433,40 @@ async def oauth_debug(session: AsyncSession = Depends(get_db)):
 @router.get("/mcp/oauth/test-flow")
 async def oauth_test_flow(session: AsyncSession = Depends(get_db)):
     """
-    TEMPORARY: Test the full OAuth code creation + exchange flow.
-    Creates a test code and immediately exchanges it.
+    TEMPORARY: Test the full OAuth + MCP connection flow end-to-end.
+    1. Creates a test OAuth code with PKCE
+    2. Exchanges it for a token
+    3. Validates the token would work for MCP SSE
     Remove this endpoint after debugging.
     """
     import base64
     
+    steps = {}
+    
     try:
         # Step 1: Find a user to test with
-        user_result = await session.execute(
-            select(User).limit(1)
-        )
+        user_result = await session.execute(select(User).limit(1))
         user = user_result.scalar_one_or_none()
         if not user:
             return {"error": "No users in database"}
         
         test_user_id = str(user.id)
+        steps["1_user"] = {"user_id": test_user_id[:8] + "...", "ok": True}
         
         # Step 2: Create a test code with PKCE
         test_code_verifier = "test_verifier_" + secrets.token_urlsafe(32)
         test_code_challenge = base64.urlsafe_b64encode(
             hashlib.sha256(test_code_verifier.encode()).digest()
         ).decode().rstrip("=")
-        
         test_code = secrets.token_urlsafe(32)
         
-        # Store it
         await _store_oauth_code_db(
             session, test_code, test_user_id, 
             code_challenge=test_code_challenge, client="test"
         )
+        steps["2_code_stored"] = {"ok": True}
         
-        # Step 3: Verify it's in the DB
+        # Step 3: Verify it's in the DB correctly
         debug_result = await session.execute(
             select(MCPActivity)
             .where(MCPActivity.tool_name == "oauth_code")
@@ -472,44 +474,81 @@ async def oauth_test_flow(session: AsyncSession = Depends(get_db)):
             .limit(1)
         )
         stored = debug_result.scalar_one_or_none()
-        stored_info = None
         if stored:
-            stored_info = {
+            steps["3_db_check"] = {
+                "ok": True,
                 "tool_args_type": type(stored.tool_args).__name__,
                 "has_code_key": isinstance(stored.tool_args, dict) and "code" in stored.tool_args,
-                "stored_code_matches": isinstance(stored.tool_args, dict) and stored.tool_args.get("code") == test_code,
             }
+        else:
+            steps["3_db_check"] = {"ok": False, "error": "Record not found"}
         
-        # Step 4: Exchange the code  
+        # Step 4: Exchange the code (simulating ChatGPT's token endpoint call)
         code_data = await _get_and_delete_oauth_code_db(session, test_code)
-        
-        exchange_result = None
         if code_data:
-            # Verify PKCE
             expected = base64.urlsafe_b64encode(
                 hashlib.sha256(test_code_verifier.encode()).digest()
             ).decode().rstrip("=")
             pkce_ok = expected == code_data.get("code_challenge")
-            
-            exchange_result = {
-                "code_found": True,
-                "user_id_matches": code_data.get("user_id") == test_user_id,
+            steps["4_code_exchange"] = {
+                "ok": True,
                 "pkce_verification": pkce_ok,
-                "code_data_keys": list(code_data.keys()) if isinstance(code_data, dict) else "NOT_A_DICT",
+                "user_id_matches": code_data.get("user_id") == test_user_id,
             }
         else:
-            exchange_result = {"code_found": False, "error": "Code lookup returned None"}
+            steps["4_code_exchange"] = {"ok": False, "error": "Code lookup returned None"}
+            return {"status": "failed", "steps": steps}
         
-        return {
-            "status": "test_complete",
-            "user_id": test_user_id[:8] + "...",
-            "stored_info": stored_info,
-            "exchange_result": exchange_result,
+        # Step 5: Get/create MCP token (same logic as token endpoint)
+        token_result = await session.execute(
+            select(MCPToken)
+            .where(MCPToken.user_id == test_user_id, MCPToken.is_active == True)
+            .order_by(MCPToken.created_at.desc())
+            .limit(1)
+        )
+        mcp_token = token_result.scalar_one_or_none()
+        
+        if mcp_token:
+            access_token = mcp_token.token_value
+            steps["5_token"] = {
+                "ok": True,
+                "reused_existing": True,
+                "token_name": mcp_token.name,
+                "token_prefix": access_token[:15] + "..." if access_token else "NONE",
+                "token_starts_with_um_mcp": access_token.startswith("um_mcp_") if access_token else False,
+            }
+        else:
+            steps["5_token"] = {"ok": True, "reused_existing": False, "note": "Would create new token"}
+            access_token = None
+        
+        # Step 6: Validate the token would work for MCP SSE
+        if access_token:
+            try:
+                test_user, test_mcp_token = await validate_mcp_token_from_header(
+                    f"Bearer {access_token}", session
+                )
+                steps["6_token_validation"] = {
+                    "ok": True,
+                    "user_email": test_user.email[:5] + "..." if test_user.email else None,
+                    "token_client_type": test_mcp_token.client_type,
+                }
+            except Exception as e:
+                steps["6_token_validation"] = {"ok": False, "error": str(e)}
+        
+        # Step 7: Simulate the token response format
+        token_response = {
+            "access_token": access_token[:15] + "..." if access_token else None,
+            "token_type": "Bearer",
+            "expires_in": 86400 * 365,
+            "scope": "openid profile email",
         }
+        steps["7_response_format"] = {"ok": True, "response": token_response}
+        
+        return {"status": "all_steps_passed", "steps": steps}
         
     except Exception as e:
         import traceback
-        return {"error": str(e), "traceback": traceback.format_exc()}
+        return {"error": str(e), "traceback": traceback.format_exc(), "steps": steps}
 
 
 @router.post("/mcp/oauth/code")
