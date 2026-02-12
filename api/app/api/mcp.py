@@ -213,6 +213,30 @@ async def create_oauth_code(
 
 
 MCP_TOOLS = [
+    # ---- ChatGPT Connector Required Tools (search + fetch) ----
+    {
+        "name": "search",
+        "description": "Search UniMemory for relevant memories and sources. Returns a list of matching documents with IDs, titles, and URLs. Use fetch to get full content of any result.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Natural language search query"}
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "fetch",
+        "description": "Retrieve the full content of a memory or source by ID. Use after search to get complete document text for analysis and citation.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string", "description": "The memory or source ID to retrieve (from search results)"}
+            },
+            "required": ["id"]
+        }
+    },
+    # ---- UniMemory-specific Tools ----
     {
         "name": "search_memory",
         "description": "Search your memory for relevant information. Use this to find what you know about a topic, person, preference, or past conversation. Pass project_id to search within a specific project only.",
@@ -779,7 +803,162 @@ async def execute_tool(
 ) -> Dict[str, Any]:
     """Execute an MCP tool and return result"""
     
-    if tool_name == "search_memory":
+    # ---- ChatGPT Connector Tools (search + fetch) ----
+    
+    if tool_name == "search":
+        from app.core.search import hybrid_search
+        
+        query = args.get("query", "")
+        owner_id = str(user.id)
+        
+        search_results = await hybrid_search(
+            session=session,
+            query=query,
+            limit=15,
+            filters={"owner_id": owner_id}
+        )
+        
+        results = []
+        for r in search_results:
+            m = r["memory"]
+            # Find associated source
+            source_result = await session.execute(
+                select(MemorySource.source_id).where(MemorySource.memory_id == m.id).limit(1)
+            )
+            source_id = source_result.scalar_one_or_none()
+            
+            results.append({
+                "id": str(m.id),
+                "title": m.content[:100] + ("..." if len(m.content) > 100 else ""),
+                "url": f"https://unimemory-app.vercel.app/memories?id={m.id}",
+                "text": m.content[:300],
+            })
+        
+        await log_mcp_activity(
+            user_id=owner_id,
+            mcp_token_id=mcp_token_id,
+            tool_name=tool_name,
+            client_type=client_type,
+            tool_args={"query": query},
+            result_count=len(results),
+            session=session
+        )
+        
+        return {"results": results}
+    
+    elif tool_name == "fetch":
+        item_id = args.get("id", "")
+        owner_id = str(user.id)
+        
+        if not item_id:
+            return {"error": "id is required"}
+        
+        # Try as memory first
+        mem_result = await session.execute(
+            select(Memory).where(Memory.id == item_id, Memory.owner_id == owner_id)
+        )
+        memory = mem_result.scalar_one_or_none()
+        
+        if memory:
+            # Find the source for this memory
+            source_link = await session.execute(
+                select(MemorySource.source_id).where(MemorySource.memory_id == memory.id).limit(1)
+            )
+            source_id = source_link.scalar_one_or_none()
+            
+            # If has a source, fetch its full content
+            source_text = ""
+            source_title = ""
+            if source_id:
+                src_result = await session.execute(
+                    select(Source).where(Source.id == source_id)
+                )
+                source = src_result.scalar_one_or_none()
+                if source:
+                    source_title = source.title or ""
+                    # Use summary + memory content for full text
+                    parts = []
+                    if source.summary:
+                        parts.append(f"Source Summary:\n{source.summary}")
+                    parts.append(f"\nMemory:\n{memory.content}")
+                    if source.raw_content:
+                        raw = source.raw_content
+                        if isinstance(raw, dict):
+                            raw = json.dumps(raw, indent=2)
+                        if len(str(raw)) > 10000:
+                            raw = str(raw)[:10000] + "\n... (truncated)"
+                        parts.append(f"\nRaw Source Content:\n{raw}")
+                    source_text = "\n".join(parts)
+            
+            await log_mcp_activity(
+                user_id=owner_id,
+                mcp_token_id=mcp_token_id,
+                tool_name=tool_name,
+                client_type=client_type,
+                tool_args={"id": item_id},
+                result_count=1,
+                session=session
+            )
+            
+            return {
+                "id": str(memory.id),
+                "title": source_title or memory.content[:100],
+                "text": source_text or memory.content,
+                "url": f"https://unimemory-app.vercel.app/memories?id={memory.id}",
+                "metadata": {
+                    "type": "memory",
+                    "salience": memory.salience,
+                    "tags": memory.tags or [],
+                    "created_at": memory.created_at.isoformat() if memory.created_at else None,
+                    "source_id": str(source_id) if source_id else None,
+                }
+            }
+        
+        # Try as source
+        src_result = await session.execute(
+            select(Source).where(Source.id == item_id, Source.owner_id == owner_id)
+        )
+        source = src_result.scalar_one_or_none()
+        
+        if source:
+            text_parts = []
+            if source.summary:
+                text_parts.append(f"Summary:\n{source.summary}")
+            if source.raw_content:
+                raw = source.raw_content
+                if isinstance(raw, dict):
+                    raw = json.dumps(raw, indent=2)
+                if len(str(raw)) > 10000:
+                    raw = str(raw)[:10000] + "\n... (truncated)"
+                text_parts.append(f"\nFull Content:\n{raw}")
+            
+            await log_mcp_activity(
+                user_id=owner_id,
+                mcp_token_id=mcp_token_id,
+                tool_name=tool_name,
+                client_type=client_type,
+                tool_args={"id": item_id},
+                result_count=1,
+                session=session
+            )
+            
+            return {
+                "id": str(source.id),
+                "title": source.title or "Untitled Source",
+                "text": "\n".join(text_parts) if text_parts else "No content available",
+                "url": f"https://unimemory-app.vercel.app/memories?source={source.id}",
+                "metadata": {
+                    "type": "source",
+                    "source_type": source.source_type,
+                    "created_at": source.created_at.isoformat() if source.created_at else None,
+                }
+            }
+        
+        return {"error": f"No memory or source found with ID: {item_id}"}
+    
+    # ---- UniMemory-specific Tools ----
+    
+    elif tool_name == "search_memory":
         from app.core.search import hybrid_search
         from app.core.reinforcement import reinforce_memories
         
@@ -1467,3 +1646,173 @@ async def mcp_http_sse(request: Request, session: AsyncSession = Depends(get_db)
         "serverInfo": MCP_SERVER_INFO,
         "tools": MCP_TOOLS,
     }
+
+
+# =============================================================================
+# STANDARD MCP SSE TRANSPORT (for ChatGPT Apps / Connectors)
+# =============================================================================
+
+# In-memory session store for SSE connections
+_sse_sessions: Dict[str, Dict[str, Any]] = {}
+
+
+@router.get("/mcp/sse")
+async def mcp_sse_endpoint(request: Request, session: AsyncSession = Depends(get_db)):
+    """
+    Standard MCP SSE Transport - GET endpoint.
+    Opens a persistent SSE stream and sends an `endpoint` event
+    telling the client where to POST JSON-RPC messages.
+    ChatGPT connects to this URL as the MCP Server URL.
+    """
+    import uuid as uuid_module
+    
+    authorization = request.headers.get("Authorization", "")
+    
+    # Validate auth
+    try:
+        user, mcp_token = await validate_mcp_token_from_header(authorization, session)
+    except HTTPException as e:
+        return JSONResponse(status_code=401, content={"error": e.detail})
+    
+    # Create a session for this SSE connection
+    session_id = str(uuid_module.uuid4())
+    queue: asyncio.Queue = asyncio.Queue()
+    _sse_sessions[session_id] = {
+        "queue": queue,
+        "user_id": str(user.id),
+        "mcp_token_id": str(mcp_token.id),
+        "client_type": mcp_token.client_type or "chatgpt",
+        "created_at": datetime.utcnow().isoformat(),
+    }
+    
+    logger.info(f"[MCP SSE] New session {session_id} for user {user.id}")
+    
+    # Build the messages endpoint URL
+    messages_url = f"{MCP_SERVER_URL}/sse/messages?session_id={session_id}"
+    
+    async def event_stream():
+        try:
+            # Send the endpoint event (tells client where to POST)
+            yield f"event: endpoint\ndata: {messages_url}\n\n"
+            
+            # Keep the stream alive, forwarding responses from the queue
+            while True:
+                try:
+                    # Wait for a message (with keepalive timeout)
+                    message = await asyncio.wait_for(queue.get(), timeout=30)
+                    yield f"event: message\ndata: {message}\n\n"
+                except asyncio.TimeoutError:
+                    # Send keepalive comment to prevent connection drop
+                    yield ": keepalive\n\n"
+                
+                # Check if client disconnected
+                if await request.is_disconnected():
+                    break
+        except asyncio.CancelledError:
+            pass
+        finally:
+            # Clean up session
+            _sse_sessions.pop(session_id, None)
+            logger.info(f"[MCP SSE] Session {session_id} closed")
+    
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
+
+
+@router.post("/mcp/sse/messages")
+async def mcp_sse_messages(
+    request: Request,
+    session_id: str = None,
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    Standard MCP SSE Transport - POST endpoint for JSON-RPC messages.
+    Clients POST JSON-RPC here, response is sent back on the SSE stream.
+    """
+    # Get session_id from query params
+    if not session_id:
+        from urllib.parse import parse_qs, urlparse
+        query_params = dict(request.query_params)
+        session_id = query_params.get("session_id")
+    
+    if not session_id or session_id not in _sse_sessions:
+        return JSONResponse(
+            status_code=404,
+            content={"error": "Session not found. Connect to GET /mcp/sse first."}
+        )
+    
+    sse_session = _sse_sessions[session_id]
+    queue = sse_session["queue"]
+    user_id = sse_session["user_id"]
+    mcp_token_id = sse_session["mcp_token_id"]
+    client_type = sse_session["client_type"]
+    
+    # Get the user
+    user_result = await session.execute(select(User).where(User.id == user_id))
+    user = user_result.scalar_one_or_none()
+    if not user:
+        return JSONResponse(status_code=401, content={"error": "User not found"})
+    
+    # Get MCP token for activity logging
+    token_result = await session.execute(select(MCPToken).where(MCPToken.id == mcp_token_id))
+    mcp_token = token_result.scalar_one_or_none()
+    
+    try:
+        body = await request.json()
+    except Exception:
+        error_response = create_jsonrpc_error(None, -32700, "Parse error")
+        await queue.put(error_response)
+        return JSONResponse(content={"status": "ok"})
+    
+    method = body.get("method", "")
+    params = body.get("params", {})
+    msg_id = body.get("id", 1)
+    
+    logger.info(f"[MCP SSE] Session {session_id}: {method}")
+    
+    if method == "initialize":
+        result = {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {"tools": {}},
+            "serverInfo": MCP_SERVER_INFO,
+        }
+        await queue.put(create_jsonrpc_response(msg_id, result))
+    
+    elif method == "notifications/initialized":
+        # Client ack - no response needed
+        pass
+    
+    elif method == "tools/list":
+        result = {"tools": MCP_TOOLS}
+        await queue.put(create_jsonrpc_response(msg_id, result))
+    
+    elif method == "tools/call":
+        tool_name = params.get("name", "")
+        tool_args = params.get("arguments", {})
+        
+        try:
+            tool_result = await execute_tool(
+                tool_name,
+                tool_args,
+                user,
+                session,
+                mcp_token_id=mcp_token_id,
+                client_type=client_type
+            )
+            result = {"content": [{"type": "text", "text": json.dumps(tool_result, default=str)}]}
+            await queue.put(create_jsonrpc_response(msg_id, result))
+        except Exception as e:
+            logger.error(f"[MCP SSE] Tool execution error: {e}")
+            await queue.put(create_jsonrpc_error(msg_id, -32603, str(e)))
+    
+    else:
+        await queue.put(create_jsonrpc_error(msg_id, -32601, f"Method not found: {method}"))
+    
+    return JSONResponse(content={"status": "ok"})
