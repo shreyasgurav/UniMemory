@@ -126,9 +126,11 @@ async def oauth_dynamic_register(request: Request):
 async def _store_oauth_code_db(session: AsyncSession, code: str, user_id: str, 
                                 code_challenge: Optional[str] = None, client: str = "mcp"):
     """Store OAuth authorization code in the database (cross-worker safe)"""
+    import uuid as uuid_module
     from sqlalchemy import text
     
     code_data = json.dumps({
+        "code": code,
         "user_id": user_id,
         "code_challenge": code_challenge,
         "client": client,
@@ -136,13 +138,15 @@ async def _store_oauth_code_db(session: AsyncSession, code: str, user_id: str,
     })
     
     # Store as an MCP activity record with tool_name='oauth_code'
+    # Use a proper UUID for the id column, store the code in tool_args
+    record_id = str(uuid_module.uuid4())
     await session.execute(
         text("""
             INSERT INTO mcp_activity (id, user_id, tool_name, tool_args, created_at)
             VALUES (:id, :user_id, 'oauth_code', :tool_args, NOW())
         """),
         {
-            "id": code,  # Use the code itself as the ID
+            "id": record_id,
             "user_id": user_id,
             "tool_args": code_data,
         }
@@ -155,11 +159,14 @@ async def _get_and_delete_oauth_code_db(session: AsyncSession, code: str) -> Opt
     """Retrieve and delete OAuth code from database (one-time use)"""
     from sqlalchemy import text
     
+    # Look up by the code value inside tool_args JSON
     result = await session.execute(
         text("""
-            SELECT tool_args FROM mcp_activity 
-            WHERE id = :code AND tool_name = 'oauth_code'
+            SELECT id, tool_args FROM mcp_activity 
+            WHERE tool_name = 'oauth_code'
+            AND tool_args->>'code' = :code
             AND created_at > NOW() - INTERVAL '10 minutes'
+            LIMIT 1
         """),
         {"code": code}
     )
@@ -169,14 +176,16 @@ async def _get_and_delete_oauth_code_db(session: AsyncSession, code: str) -> Opt
         logger.warning(f"[OAuth] Code not found or expired: {code[:8]}...")
         return None
     
+    record_id = row[0]
+    
     # Delete the code (one-time use)
     await session.execute(
-        text("DELETE FROM mcp_activity WHERE id = :code AND tool_name = 'oauth_code'"),
-        {"code": code}
+        text("DELETE FROM mcp_activity WHERE id = :record_id AND tool_name = 'oauth_code'"),
+        {"record_id": record_id}
     )
     await session.commit()
     
-    code_data = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+    code_data = json.loads(row[1]) if isinstance(row[1], str) else row[1]
     logger.info(f"[OAuth] Code exchanged for user {code_data.get('user_id', '?')[:8]}...")
     return code_data
 
