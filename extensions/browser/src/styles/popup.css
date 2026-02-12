@@ -191,6 +191,17 @@ body {
   background: #1a1a1a;
 }
 
+.btn-save-large:disabled,
+.btn-save-large.loading {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.btn-save-large.loading #save-btn-text::after {
+  content: '...';
+}
+
 .btn-small {
   padding: 8px 16px;
   font-size: 13px;

@@ -315,7 +315,7 @@ export default function MemoriesPage() {
             ) : (
               <button
                 onClick={() => setShowProjectDropdown(!showProjectDropdown)}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-neutral-200 text-sm font-medium hover:border-neutral-300 hover:bg-neutral-50 transition-all"
+                className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white border border-neutral-200 text-sm font-medium hover:border-neutral-300 hover:bg-neutral-50 transition-all"
               >
                 <span className="text-neutral-900 truncate">
                   {selectedProject?.name || 'All Projects'}
@@ -363,12 +363,10 @@ export default function MemoriesPage() {
 
         <button
           onClick={() => setShowGraph(true)}
-          className="group flex items-center gap-2 pl-2 pr-4 py-2 rounded-[14px] bg-neutral-900 text-white text-sm font-medium shadow-sm hover:bg-neutral-800 active:scale-[0.98] transition-all duration-150"
+          className="flex items-center gap-2 px-3 py-2 rounded-xl bg-neutral-900 text-white text-sm font-medium hover:bg-neutral-800 transition-all"
         >
-          <span className="flex items-center justify-center w-7 h-7 rounded-lg transition-colors">
-            <Workflow className="w-4 h-4 text-white/90" />
-          </span>
-          Memory Graph
+          <Workflow className="w-4 h-4 text-white/90" />
+          <span>Memory Graph</span>
         </button>
       </div>
 

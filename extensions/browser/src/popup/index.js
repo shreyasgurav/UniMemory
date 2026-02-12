@@ -31,6 +31,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Project state
   let projects = [];
   let selectedProject = null;
+  let projectsLoading = false;
   
   // AI chat platforms to detect
   const AI_CHAT_DOMAINS = [
@@ -100,12 +101,28 @@ document.addEventListener('DOMContentLoaded', async () => {
   
   // ============ Project Functions ============
   
+  function setProjectsLoading(loading) {
+    projectsLoading = loading;
+    // Disable save button while projects are loading
+    if (loading) {
+      saveCurrentPageBtn.disabled = true;
+      saveCurrentPageBtn.classList.add('loading');
+      selectedProjectName.textContent = 'Loading...';
+      selectedProjectIcon.textContent = '⏳';
+    } else {
+      saveCurrentPageBtn.disabled = false;
+      saveCurrentPageBtn.classList.remove('loading');
+    }
+  }
+
   async function loadProjects() {
+    setProjectsLoading(true);
     try {
       const response = await chrome.runtime.sendMessage({ type: 'GET_PROJECTS' });
       
       if (response.error) {
         console.error('Failed to load projects:', response.error);
+        setProjectsLoading(false);
         return;
       }
       
@@ -132,6 +149,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       renderProjectList();
     } catch (error) {
       console.error('Failed to load projects:', error);
+    } finally {
+      setProjectsLoading(false);
     }
   }
   

@@ -84,6 +84,7 @@ async function setSession(sessionData) {
 
 async function clearSession() {
   await chrome.storage.local.remove('unimemory_session');
+  await chrome.storage.local.remove('unimemory_projects_cache');
 }
 
 // ============ API Calls ============
@@ -368,6 +369,93 @@ async function ingestChat(chatData) {
   return result;
 }
 
+// ============ Project Caching ============
+
+/**
+ * Fetch projects from API and cache them locally.
+ * Called on tab switch, page load, and when popup requests projects.
+ */
+async function fetchAndCacheProjects(session) {
+  if (!session) {
+    session = await getSession();
+    if (!session) return [];
+  }
+
+  console.log('[UniMemory] Fetching fresh projects...');
+
+  // Ensure default project exists
+  const ensureResponse = await fetch(`${API_BASE_URL}/consumer/session/projects/default/ensure`, {
+    headers: { 'Authorization': `Bearer ${session.token}` }
+  });
+
+  if (ensureResponse.status === 401) {
+    await clearSession();
+    throw new Error('Session expired');
+  }
+
+  // Fetch all projects
+  const response = await fetch(`${API_BASE_URL}/consumer/session/projects`, {
+    headers: { 'Authorization': `Bearer ${session.token}` }
+  });
+
+  if (response.status === 401) {
+    await clearSession();
+    throw new Error('Session expired');
+  }
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch projects: ${response.status}`);
+  }
+
+  const projects = await response.json();
+  console.log('[UniMemory] Fetched and cached', projects.length, 'projects');
+
+  // Cache with timestamp
+  await chrome.storage.local.set({
+    unimemory_projects_cache: {
+      projects,
+      timestamp: Date.now()
+    }
+  });
+
+  return projects;
+}
+
+// Preload projects when user switches tabs (so popup opens instantly)
+chrome.tabs.onActivated.addListener(async () => {
+  try {
+    const session = await getSession();
+    if (session) {
+      // Only refresh if cache is older than 30s
+      const cached = await chrome.storage.local.get('unimemory_projects_cache');
+      const cache = cached.unimemory_projects_cache;
+      if (!cache || (Date.now() - cache.timestamp > 30 * 1000)) {
+        await fetchAndCacheProjects(session);
+      }
+    }
+  } catch (e) {
+    // Silent fail - just a preload
+  }
+});
+
+// Also preload on navigation complete (new page loaded / refresh)
+chrome.webNavigation.onCompleted.addListener(async (details) => {
+  // Only for main frame (not iframes)
+  if (details.frameId !== 0) return;
+  try {
+    const session = await getSession();
+    if (session) {
+      const cached = await chrome.storage.local.get('unimemory_projects_cache');
+      const cache = cached.unimemory_projects_cache;
+      if (!cache || (Date.now() - cache.timestamp > 30 * 1000)) {
+        await fetchAndCacheProjects(session);
+      }
+    }
+  } catch (e) {
+    // Silent fail
+  }
+});
+
 // ============ Message Handlers ============
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -402,6 +490,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           // Called from app.unimemory.app after login
           await setSession(message.data);
           sendResponse({ success: true });
+          // Preload projects immediately after login
+          fetchAndCacheProjects().catch(() => {});
           break;
         }
 
@@ -473,49 +563,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
 
           try {
-            console.log('[UniMemory] Ensuring default project...');
-            // First ensure default project exists (use session endpoint)
-            const ensureResponse = await fetch(`${API_BASE_URL}/consumer/session/projects/default/ensure`, {
-              headers: { 'Authorization': `Bearer ${session.token}` }
-            });
-            console.log('[UniMemory] Ensure default response:', ensureResponse.status);
+            // Return cached projects instantly if available
+            const cached = await chrome.storage.local.get('unimemory_projects_cache');
+            const cache = cached.unimemory_projects_cache;
+            const CACHE_TTL = 60 * 1000; // 1 minute
 
-            // If 401, session expired - clear and prompt re-login
-            if (ensureResponse.status === 401) {
-              console.log('[UniMemory] Session expired, clearing session');
-              await clearSession();
-              sendResponse({ success: false, error: 'Session expired', projects: [], needsLogin: true });
+            if (cache && cache.projects && (Date.now() - cache.timestamp < CACHE_TTL)) {
+              console.log('[UniMemory] Returning cached projects:', cache.projects.length);
+              sendResponse({ success: true, projects: cache.projects, fromCache: true });
+              // Refresh in background (fire and forget)
+              fetchAndCacheProjects(session).catch(() => {});
               break;
             }
 
-            // Then get all projects (use session endpoint)
-            console.log('[UniMemory] Fetching projects from:', `${API_BASE_URL}/consumer/session/projects`);
-            const response = await fetch(`${API_BASE_URL}/consumer/session/projects`, {
-              headers: { 'Authorization': `Bearer ${session.token}` }
-            });
-
-            console.log('[UniMemory] Projects response status:', response.status);
-
-            // If 401, session expired - clear and prompt re-login
-            if (response.status === 401) {
-              console.log('[UniMemory] Session expired, clearing session');
-              await clearSession();
-              sendResponse({ success: false, error: 'Session expired', projects: [], needsLogin: true });
-              break;
-            }
-
-            if (!response.ok) {
-              const errorText = await response.text();
-              console.error('[UniMemory] Projects API error:', errorText);
-              throw new Error(`Failed to fetch projects: ${response.status} ${errorText}`);
-            }
-
-            const projects = await response.json();
-            console.log('[UniMemory] Fetched projects:', projects);
+            // No cache or expired - fetch fresh
+            const projects = await fetchAndCacheProjects(session);
             sendResponse({ success: true, projects });
           } catch (error) {
             console.error('[UniMemory] Failed to fetch projects:', error);
-            sendResponse({ success: false, error: error.message, projects: [] });
+            // Try returning stale cache on error
+            const cached = await chrome.storage.local.get('unimemory_projects_cache');
+            const stale = cached.unimemory_projects_cache;
+            if (stale && stale.projects) {
+              sendResponse({ success: true, projects: stale.projects, fromCache: true });
+            } else {
+              sendResponse({ success: false, error: error.message, projects: [] });
+            }
           }
           break;
         }
@@ -542,6 +615,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }
 
             const project = await response.json();
+            // Invalidate cache so next load picks up the new project
+            await chrome.storage.local.remove('unimemory_projects_cache');
             sendResponse({ success: true, project });
           } catch (error) {
             console.error('[UniMemory] Failed to create project:', error);

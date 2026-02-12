@@ -297,7 +297,7 @@ export default function ConnectorsPage() {
             </div>
 
             {/* Installation Section */}
-            <div className="bg-white rounded-lg p-6 max-w-2xl">
+            <div className="bg-white rounded-lg p-6 w-full">
               {loading ? (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">

@@ -15,6 +15,7 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
   const router = useRouter();
   const pathname = usePathname();
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
+  const [avatarError, setAvatarError] = useState(false);
 
   const activeView = pathname?.includes("/memories")
     ? "memories"
@@ -88,7 +89,7 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
             onClick={() => setShowProfileDropdown(!showProfileDropdown)}
             className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-neutral-700 hover:bg-neutral-50 rounded-xl transition-all"
           >
-            {user?.photoURL ? (
+            {user?.photoURL && !avatarError ? (
               <Image
                 src={user.photoURL}
                 alt={user.displayName || "User"}
@@ -96,6 +97,7 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
                 height={28}
                 className="w-7 h-7 rounded-full object-cover"
                 unoptimized
+                onError={() => setAvatarError(true)}
               />
             ) : (
               <div className="w-7 h-7 bg-neutral-200 rounded-full flex items-center justify-center">
