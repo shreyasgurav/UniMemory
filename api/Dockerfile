@@ -39,14 +39,16 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 EXPOSE 8000
 
 # Run with production settings
-# - Workers: 2-4x CPU cores (auto-calculated)
+# - Workers: 1 (required for MCP SSE transport - SSE sessions are in-memory
+#   and must be shared between GET /mcp/sse and POST /mcp/sse/messages handlers.
+#   asyncio handles concurrent I/O, so 1 worker is sufficient for I/O-bound workloads.)
 # - Timeout: 120 seconds for long-running requests
 # - Keep-alive: 5 seconds
 # - Access log: disabled (we have middleware)
 CMD ["uvicorn", "app.main:app", \
     "--host", "0.0.0.0", \
     "--port", "8000", \
-    "--workers", "4", \
+    "--workers", "1", \
     "--timeout-keep-alive", "5", \
     "--limit-concurrency", "100", \
     "--limit-max-requests", "10000", \

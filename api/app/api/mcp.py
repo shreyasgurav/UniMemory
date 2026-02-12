@@ -127,66 +127,114 @@ async def _store_oauth_code_db(session: AsyncSession, code: str, user_id: str,
                                 code_challenge: Optional[str] = None, client: str = "mcp"):
     """Store OAuth authorization code in the database (cross-worker safe)"""
     import uuid as uuid_module
-    from sqlalchemy import text
     
-    code_data = json.dumps({
+    # IMPORTANT: Pass a Python dict, NOT json.dumps(). asyncpg double-encodes
+    # strings for JSONB columns, which would make ->>'code' lookups fail.
+    code_data_dict = {
         "code": code,
         "user_id": user_id,
         "code_challenge": code_challenge,
         "client": client,
         "created_at": datetime.utcnow().isoformat(),
-    })
+    }
     
-    # Store as an MCP activity record with tool_name='oauth_code'
-    # Use a proper UUID for the id column, store the code in tool_args
     record_id = str(uuid_module.uuid4())
-    await session.execute(
-        text("""
-            INSERT INTO mcp_activity (id, user_id, tool_name, tool_args, created_at)
-            VALUES (:id, :user_id, 'oauth_code', :tool_args, NOW())
-        """),
-        {
-            "id": record_id,
-            "user_id": user_id,
-            "tool_args": code_data,
-        }
+    
+    # Use the ORM model directly instead of raw SQL for proper JSONB handling
+    activity = MCPActivity(
+        id=record_id,
+        user_id=user_id,
+        tool_name="oauth_code",
+        tool_args=code_data_dict,
     )
+    session.add(activity)
     await session.commit()
-    logger.info(f"[OAuth] Stored code for user {user_id[:8]}... (code prefix: {code[:8]}...)")
+    logger.info(f"[OAuth] Stored code in DB for user {user_id[:8]}... (code prefix: {code[:8]}..., record: {record_id[:8]}...)")
 
 
 async def _get_and_delete_oauth_code_db(session: AsyncSession, code: str) -> Optional[Dict]:
     """Retrieve and delete OAuth code from database (one-time use)"""
-    from sqlalchemy import text
+    from sqlalchemy import text, cast
+    from sqlalchemy.dialects.postgresql import JSONB as JSONB_TYPE
     
-    # Look up by the code value inside tool_args JSON
-    result = await session.execute(
-        text("""
-            SELECT id, tool_args FROM mcp_activity 
-            WHERE tool_name = 'oauth_code'
-            AND tool_args->>'code' = :code
-            AND created_at > NOW() - INTERVAL '10 minutes'
-            LIMIT 1
-        """),
-        {"code": code}
-    )
-    row = result.fetchone()
+    # First, try to find the code. Log what we find for debugging.
+    # Use raw SQL with text cast to ensure proper JSONB query
+    try:
+        result = await session.execute(
+            select(MCPActivity)
+            .where(
+                MCPActivity.tool_name == "oauth_code",
+                MCPActivity.tool_args["code"].astext == code,
+            )
+            .order_by(MCPActivity.created_at.desc())
+            .limit(1)
+        )
+        activity = result.scalar_one_or_none()
+    except Exception as e:
+        logger.error(f"[OAuth] Error querying code with ORM: {e}")
+        # Fallback: try raw SQL with explicit JSONB cast
+        try:
+            result = await session.execute(
+                text("""
+                    SELECT id, tool_args FROM mcp_activity 
+                    WHERE tool_name = 'oauth_code'
+                    AND tool_args->>'code' = :code
+                    AND created_at > NOW() - INTERVAL '10 minutes'
+                    LIMIT 1
+                """),
+                {"code": code}
+            )
+            row = result.fetchone()
+            if row:
+                record_id = row[0]
+                await session.execute(
+                    text("DELETE FROM mcp_activity WHERE id = :rid AND tool_name = 'oauth_code'"),
+                    {"rid": str(record_id)}
+                )
+                await session.commit()
+                code_data = json.loads(row[1]) if isinstance(row[1], str) else row[1]
+                logger.info(f"[OAuth] Code exchanged (fallback) for user {code_data.get('user_id', '?')[:8]}...")
+                return code_data
+            else:
+                logger.warning(f"[OAuth] Code not found (fallback): {code[:8]}...")
+                return None
+        except Exception as e2:
+            logger.error(f"[OAuth] Fallback query also failed: {e2}")
+            return None
     
-    if not row:
-        logger.warning(f"[OAuth] Code not found or expired: {code[:8]}...")
+    if not activity:
+        # Log how many oauth_code records exist for debugging
+        count_result = await session.execute(
+            select(func.count(MCPActivity.id))
+            .where(MCPActivity.tool_name == "oauth_code")
+        )
+        total_codes = count_result.scalar() or 0
+        logger.warning(f"[OAuth] Code not found: {code[:8]}... (total oauth_code records in DB: {total_codes})")
         return None
     
-    record_id = row[0]
+    # Check TTL (10 minutes)
+    if activity.created_at:
+        from datetime import timezone
+        created = activity.created_at
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        age_seconds = (datetime.now(timezone.utc) - created).total_seconds()
+        if age_seconds > 600:  # 10 minutes
+            logger.warning(f"[OAuth] Code expired (age: {age_seconds:.0f}s): {code[:8]}...")
+            await session.delete(activity)
+            await session.commit()
+            return None
+    
+    # Extract data
+    code_data = activity.tool_args
+    if isinstance(code_data, str):
+        code_data = json.loads(code_data)
     
     # Delete the code (one-time use)
-    await session.execute(
-        text("DELETE FROM mcp_activity WHERE id = :record_id AND tool_name = 'oauth_code'"),
-        {"record_id": record_id}
-    )
+    await session.delete(activity)
     await session.commit()
     
-    code_data = json.loads(row[1]) if isinstance(row[1], str) else row[1]
-    logger.info(f"[OAuth] Code exchanged for user {code_data.get('user_id', '?')[:8]}...")
+    logger.info(f"[OAuth] Code exchanged for user {code_data.get('user_id', '?')[:8]}... (record: {str(activity.id)[:8]}...)")
     return code_data
 
 
@@ -211,28 +259,35 @@ async def oauth_token(
     try:
         # Parse form data or JSON
         content_type = request.headers.get("content-type", "")
+        logger.info(f"[OAuth] Token request received. Content-Type: {content_type}")
+        
         if "application/x-www-form-urlencoded" in content_type:
             form_data = await request.form()
             grant_type = form_data.get("grant_type")
             code = form_data.get("code")
             redirect_uri = form_data.get("redirect_uri")
             code_verifier = form_data.get("code_verifier")
+            client_id = form_data.get("client_id")
         else:
             body = await request.json()
             grant_type = body.get("grant_type")
             code = body.get("code")
             redirect_uri = body.get("redirect_uri")
             code_verifier = body.get("code_verifier")
+            client_id = body.get("client_id")
         
-        logger.info(f"[OAuth] Token request: grant_type={grant_type}, code={code[:8] if code else 'None'}...")
+        logger.info(f"[OAuth] Token request: grant_type={grant_type}, code={code[:8] if code else 'None'}..., "
+                     f"has_verifier={bool(code_verifier)}, client_id={client_id}")
         
         if grant_type != "authorization_code":
+            logger.warning(f"[OAuth] Unsupported grant_type: {grant_type}")
             return JSONResponse(
                 status_code=400,
                 content={"error": "unsupported_grant_type"}
             )
         
         if not code:
+            logger.warning("[OAuth] Missing code in token request")
             return JSONResponse(
                 status_code=400,
                 content={"error": "invalid_request", "error_description": "Missing code"}
@@ -241,10 +296,14 @@ async def oauth_token(
         # Look up the code from database
         code_data = await _get_and_delete_oauth_code_db(session, code)
         if not code_data:
+            logger.warning(f"[OAuth] Code lookup failed for: {code[:8]}...")
             return JSONResponse(
                 status_code=400,
                 content={"error": "invalid_grant", "error_description": "Invalid or expired code"}
             )
+        
+        logger.info(f"[OAuth] Code found! user_id={code_data.get('user_id', '?')[:8]}..., "
+                     f"has_challenge={bool(code_data.get('code_challenge'))}")
         
         # Verify PKCE if provided
         if code_data.get("code_challenge") and code_verifier:
@@ -253,10 +312,15 @@ async def oauth_token(
                 hashlib.sha256(code_verifier.encode()).digest()
             ).decode().rstrip("=")
             if expected != code_data["code_challenge"]:
+                logger.warning(f"[OAuth] PKCE verification failed! expected={expected[:8]}..., "
+                               f"challenge={code_data['code_challenge'][:8]}...")
                 return JSONResponse(
                     status_code=400,
                     content={"error": "invalid_grant", "error_description": "PKCE verification failed"}
                 )
+            logger.info("[OAuth] PKCE verification passed")
+        elif code_data.get("code_challenge") and not code_verifier:
+            logger.warning("[OAuth] code_challenge was stored but no code_verifier provided")
         
         # Get the user's MCP token
         user_id = code_data["user_id"]
@@ -285,10 +349,13 @@ async def oauth_token(
             await session.commit()
             await session.refresh(mcp_token)
             access_token = token
+            logger.info(f"[OAuth] Created new MCP token for user {user_id[:8]}...")
         else:
             access_token = mcp_token.token_value
+            logger.info(f"[OAuth] Using existing MCP token for user {user_id[:8]}...")
         
-        logger.info(f"[OAuth] Token issued for user {user_id[:8]}...")
+        logger.info(f"[OAuth] Token issued successfully for user {user_id[:8]}... "
+                     f"(token prefix: {access_token[:12]}...)")
         
         return {
             "access_token": access_token,
@@ -303,6 +370,42 @@ async def oauth_token(
             status_code=500,
             content={"error": "server_error", "error_description": str(e)}
         )
+
+
+@router.get("/mcp/oauth/debug")
+async def oauth_debug(session: AsyncSession = Depends(get_db)):
+    """Debug endpoint to check OAuth code storage state (remove in production later)"""
+    from sqlalchemy import text
+    
+    try:
+        # Check recent oauth_code records
+        result = await session.execute(
+            select(MCPActivity)
+            .where(MCPActivity.tool_name == "oauth_code")
+            .order_by(MCPActivity.created_at.desc())
+            .limit(5)
+        )
+        activities = result.scalars().all()
+        
+        records = []
+        for a in activities:
+            tool_args = a.tool_args
+            records.append({
+                "id": str(a.id)[:8] + "...",
+                "user_id": str(a.user_id)[:8] + "...",
+                "tool_args_type": type(tool_args).__name__,
+                "has_code_key": isinstance(tool_args, dict) and "code" in tool_args,
+                "code_prefix": tool_args.get("code", "?")[:8] + "..." if isinstance(tool_args, dict) else "NOT_A_DICT",
+                "created_at": str(a.created_at),
+            })
+        
+        return {
+            "total_oauth_codes": len(activities),
+            "records": records,
+            "note": "If tool_args_type is 'str' instead of 'dict', JSONB was double-encoded (bug)",
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 
 @router.post("/mcp/oauth/code")
@@ -1855,63 +1958,76 @@ async def mcp_sse_messages(
     """
     Standard MCP SSE Transport - POST endpoint for JSON-RPC messages.
     Clients POST JSON-RPC here, response is sent back on the SSE stream.
+    Also supports direct auth fallback when SSE session is not found.
     """
     # Get session_id from query params
     if not session_id:
-        from urllib.parse import parse_qs, urlparse
         query_params = dict(request.query_params)
         session_id = query_params.get("session_id")
     
-    if not session_id or session_id not in _sse_sessions:
+    queue = None
+    user = None
+    mcp_token_id = None
+    client_type = None
+    
+    # Try session-based auth first
+    if session_id and session_id in _sse_sessions:
+        sse_session = _sse_sessions[session_id]
+        queue = sse_session["queue"]
+        user_id = sse_session["user_id"]
+        mcp_token_id = sse_session["mcp_token_id"]
+        client_type = sse_session["client_type"]
+        
+        user_result = await session.execute(select(User).where(User.id == user_id))
+        user = user_result.scalar_one_or_none()
+    
+    # Fallback: validate Bearer token directly (for cross-worker compatibility)
+    if not user:
+        authorization = request.headers.get("Authorization", "")
+        if authorization:
+            try:
+                user, mcp_token_obj = await validate_mcp_token_from_header(authorization, session)
+                mcp_token_id = str(mcp_token_obj.id)
+                client_type = mcp_token_obj.client_type or "chatgpt"
+                logger.info(f"[MCP SSE] Using direct auth fallback for session {session_id}")
+            except HTTPException:
+                pass
+    
+    if not user:
         return JSONResponse(
             status_code=404,
-            content={"error": "Session not found. Connect to GET /mcp/sse first."}
+            content={"error": "Session not found and no valid auth. Connect to GET /mcp/sse first."}
         )
-    
-    sse_session = _sse_sessions[session_id]
-    queue = sse_session["queue"]
-    user_id = sse_session["user_id"]
-    mcp_token_id = sse_session["mcp_token_id"]
-    client_type = sse_session["client_type"]
-    
-    # Get the user
-    user_result = await session.execute(select(User).where(User.id == user_id))
-    user = user_result.scalar_one_or_none()
-    if not user:
-        return JSONResponse(status_code=401, content={"error": "User not found"})
-    
-    # Get MCP token for activity logging
-    token_result = await session.execute(select(MCPToken).where(MCPToken.id == mcp_token_id))
-    mcp_token = token_result.scalar_one_or_none()
     
     try:
         body = await request.json()
     except Exception:
         error_response = create_jsonrpc_error(None, -32700, "Parse error")
-        await queue.put(error_response)
-        return JSONResponse(content={"status": "ok"})
+        if queue:
+            await queue.put(error_response)
+        return JSONResponse(content={"status": "error", "message": "Parse error"})
     
     method = body.get("method", "")
     params = body.get("params", {})
     msg_id = body.get("id", 1)
     
-    logger.info(f"[MCP SSE] Session {session_id}: {method}")
+    logger.info(f"[MCP SSE] Session {session_id}: {method} (queue={'yes' if queue else 'no'})")
+    
+    response_data = None
     
     if method == "initialize":
-        result = {
+        response_data = create_jsonrpc_response(msg_id, {
             "protocolVersion": "2024-11-05",
             "capabilities": {"tools": {}},
             "serverInfo": MCP_SERVER_INFO,
-        }
-        await queue.put(create_jsonrpc_response(msg_id, result))
+        })
     
     elif method == "notifications/initialized":
         # Client ack - no response needed
         pass
     
     elif method == "tools/list":
-        result = {"tools": MCP_TOOLS}
-        await queue.put(create_jsonrpc_response(msg_id, result))
+        response_data = create_jsonrpc_response(msg_id, {"tools": MCP_TOOLS})
     
     elif method == "tools/call":
         tool_name = params.get("name", "")
@@ -1927,12 +2043,18 @@ async def mcp_sse_messages(
                 client_type=client_type
             )
             result = {"content": [{"type": "text", "text": json.dumps(tool_result, default=str)}]}
-            await queue.put(create_jsonrpc_response(msg_id, result))
+            response_data = create_jsonrpc_response(msg_id, result)
         except Exception as e:
             logger.error(f"[MCP SSE] Tool execution error: {e}")
-            await queue.put(create_jsonrpc_error(msg_id, -32603, str(e)))
+            response_data = create_jsonrpc_error(msg_id, -32603, str(e))
     
     else:
-        await queue.put(create_jsonrpc_error(msg_id, -32601, f"Method not found: {method}"))
+        response_data = create_jsonrpc_error(msg_id, -32601, f"Method not found: {method}")
+    
+    # Send response via SSE queue if available, otherwise return directly
+    if response_data:
+        if queue:
+            await queue.put(response_data)
+        # Always return ok (the SSE stream delivers the actual response)
     
     return JSONResponse(content={"status": "ok"})
