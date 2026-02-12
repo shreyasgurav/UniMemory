@@ -686,6 +686,25 @@ MCP_TOOLS = [
 # REQUEST/RESPONSE MODELS
 # =============================================================================
 
+
+def get_resources() -> Dict[str, Any]:
+    """
+    Map MCP_TOOLS into ChatGPT App resources.
+    Each MCP tool becomes an 'action' resource with the same schema.
+    """
+    return {
+        "resources": [
+            {
+                "name": tool.get("name"),
+                "description": tool.get("description", ""),
+                "inputSchema": tool.get("inputSchema", {}),
+                "type": "action",
+            }
+            for tool in MCP_TOOLS
+        ]
+    }
+
+
 class CreateMCPTokenRequest(BaseModel):
     client_type: str  # cursor, claude, vscode, windsurf, cline, gemini, custom
     name: Optional[str] = None
@@ -1953,6 +1972,14 @@ async def mcp_http_handler(request: Request, session: AsyncSession = Depends(get
             media_type="text/event-stream"
         )
     
+    elif method == "resources/list":
+        # ChatGPT Apps calls this to discover actions.
+        result = get_resources()
+        return StreamingResponse(
+            iter([f"data: {create_jsonrpc_response(msg_id, result)}\n\n"]),
+            media_type="text/event-stream"
+        )
+    
     elif method == "tools/list":
         result = {"tools": MCP_TOOLS}
         return StreamingResponse(
@@ -2168,6 +2195,16 @@ async def mcp_sse_post(
             content=json.loads(create_jsonrpc_response(msg_id, result))
         )
 
+    if method == "resources/list":
+        # Used by ChatGPT Apps "Refresh actions" to discover available actions.
+        result = get_resources()
+        if is_notification:
+            return JSONResponse(status_code=200, content={})
+        return JSONResponse(
+            status_code=200,
+            content=json.loads(create_jsonrpc_response(msg_id, result))
+        )
+
     if method == "notifications/initialized":
         # Ack only, no response needed
         return JSONResponse(status_code=200, content={})
@@ -2309,6 +2346,10 @@ async def mcp_sse_messages(
     elif method == "notifications/initialized":
         # Client ack - no response needed
         pass
+    
+    elif method == "resources/list":
+        # Used by ChatGPT Apps "Refresh actions" to discover available actions.
+        response_data = create_jsonrpc_response(msg_id, get_resources())
     
     elif method == "tools/list":
         response_data = create_jsonrpc_response(msg_id, {"tools": MCP_TOOLS})
