@@ -375,7 +375,6 @@ async def oauth_token(
 @router.get("/mcp/oauth/debug")
 async def oauth_debug(session: AsyncSession = Depends(get_db)):
     """Debug endpoint to check OAuth code storage state (remove in production later)"""
-    from sqlalchemy import text
     
     try:
         # Check recent oauth_code records
@@ -399,13 +398,118 @@ async def oauth_debug(session: AsyncSession = Depends(get_db)):
                 "created_at": str(a.created_at),
             })
         
+        # Also check if there are any MCP tokens (for ChatGPT)
+        token_result = await session.execute(
+            select(MCPToken)
+            .where(MCPToken.is_active == True)
+            .order_by(MCPToken.created_at.desc())
+            .limit(5)
+        )
+        tokens = token_result.scalars().all()
+        
+        token_records = []
+        for t in tokens:
+            token_records.append({
+                "id": str(t.id)[:8] + "...",
+                "name": t.name,
+                "client_type": t.client_type,
+                "has_token_value": bool(t.token_value),
+                "last_used_at": str(t.last_used_at) if t.last_used_at else None,
+                "usage_count": t.usage_count,
+                "created_at": str(t.created_at),
+            })
+        
         return {
             "total_oauth_codes": len(activities),
-            "records": records,
+            "code_records": records,
+            "total_mcp_tokens": len(token_records),
+            "token_records": token_records,
             "note": "If tool_args_type is 'str' instead of 'dict', JSONB was double-encoded (bug)",
         }
     except Exception as e:
         return {"error": str(e)}
+
+
+@router.get("/mcp/oauth/test-flow")
+async def oauth_test_flow(session: AsyncSession = Depends(get_db)):
+    """
+    TEMPORARY: Test the full OAuth code creation + exchange flow.
+    Creates a test code and immediately exchanges it.
+    Remove this endpoint after debugging.
+    """
+    import base64
+    
+    try:
+        # Step 1: Find a user to test with
+        user_result = await session.execute(
+            select(User).limit(1)
+        )
+        user = user_result.scalar_one_or_none()
+        if not user:
+            return {"error": "No users in database"}
+        
+        test_user_id = str(user.id)
+        
+        # Step 2: Create a test code with PKCE
+        test_code_verifier = "test_verifier_" + secrets.token_urlsafe(32)
+        test_code_challenge = base64.urlsafe_b64encode(
+            hashlib.sha256(test_code_verifier.encode()).digest()
+        ).decode().rstrip("=")
+        
+        test_code = secrets.token_urlsafe(32)
+        
+        # Store it
+        await _store_oauth_code_db(
+            session, test_code, test_user_id, 
+            code_challenge=test_code_challenge, client="test"
+        )
+        
+        # Step 3: Verify it's in the DB
+        debug_result = await session.execute(
+            select(MCPActivity)
+            .where(MCPActivity.tool_name == "oauth_code")
+            .order_by(MCPActivity.created_at.desc())
+            .limit(1)
+        )
+        stored = debug_result.scalar_one_or_none()
+        stored_info = None
+        if stored:
+            stored_info = {
+                "tool_args_type": type(stored.tool_args).__name__,
+                "has_code_key": isinstance(stored.tool_args, dict) and "code" in stored.tool_args,
+                "stored_code_matches": isinstance(stored.tool_args, dict) and stored.tool_args.get("code") == test_code,
+            }
+        
+        # Step 4: Exchange the code  
+        code_data = await _get_and_delete_oauth_code_db(session, test_code)
+        
+        exchange_result = None
+        if code_data:
+            # Verify PKCE
+            expected = base64.urlsafe_b64encode(
+                hashlib.sha256(test_code_verifier.encode()).digest()
+            ).decode().rstrip("=")
+            pkce_ok = expected == code_data.get("code_challenge")
+            
+            exchange_result = {
+                "code_found": True,
+                "user_id_matches": code_data.get("user_id") == test_user_id,
+                "pkce_verification": pkce_ok,
+                "code_data_keys": list(code_data.keys()) if isinstance(code_data, dict) else "NOT_A_DICT",
+            }
+        else:
+            exchange_result = {"code_found": False, "error": "Code lookup returned None"}
+        
+        return {
+            "status": "test_complete",
+            "user_id": test_user_id[:8] + "...",
+            "stored_info": stored_info,
+            "exchange_result": exchange_result,
+        }
+        
+    except Exception as e:
+        import traceback
+        return {"error": str(e), "traceback": traceback.format_exc()}
 
 
 @router.post("/mcp/oauth/code")
