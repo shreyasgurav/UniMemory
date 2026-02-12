@@ -257,113 +257,123 @@ async def oauth_token(
     Uses database-backed code storage (works across multiple workers).
     """
     try:
-    # Parse form data or JSON
-    content_type = request.headers.get("content-type", "")
+        # Parse form data or JSON
+        content_type = request.headers.get("content-type", "")
         logger.info(f"[OAuth] Token request received. Content-Type: {content_type}")
         
-    if "application/x-www-form-urlencoded" in content_type:
-        form_data = await request.form()
-        grant_type = form_data.get("grant_type")
-        code = form_data.get("code")
-        redirect_uri = form_data.get("redirect_uri")
-        code_verifier = form_data.get("code_verifier")
+        if "application/x-www-form-urlencoded" in content_type:
+            form_data = await request.form()
+            grant_type = form_data.get("grant_type")
+            code = form_data.get("code")
+            redirect_uri = form_data.get("redirect_uri")
+            code_verifier = form_data.get("code_verifier")
             client_id = form_data.get("client_id")
-    else:
-        body = await request.json()
-        grant_type = body.get("grant_type")
-        code = body.get("code")
-        redirect_uri = body.get("redirect_uri")
-        code_verifier = body.get("code_verifier")
+        else:
+            body = await request.json()
+            grant_type = body.get("grant_type")
+            code = body.get("code")
+            redirect_uri = body.get("redirect_uri")
+            code_verifier = body.get("code_verifier")
             client_id = body.get("client_id")
         
-        logger.info(f"[OAuth] Token request: grant_type={grant_type}, code={code[:8] if code else 'None'}..., "
-                     f"has_verifier={bool(code_verifier)}, client_id={client_id}")
-    
-    if grant_type != "authorization_code":
-            logger.warning(f"[OAuth] Unsupported grant_type: {grant_type}")
-        return JSONResponse(
-            status_code=400,
-            content={"error": "unsupported_grant_type"}
+        logger.info(
+            f"[OAuth] Token request: grant_type={grant_type}, "
+            f"code={code[:8] if code else 'None'}..., "
+            f"has_verifier={bool(code_verifier)}, client_id={client_id}"
         )
-    
-    if not code:
-            logger.warning("[OAuth] Missing code in token request")
-        return JSONResponse(
-            status_code=400,
-            content={"error": "invalid_request", "error_description": "Missing code"}
-        )
-    
-        # Look up the code from database
-        code_data = await _get_and_delete_oauth_code_db(session, code)
-    if not code_data:
-            logger.warning(f"[OAuth] Code lookup failed for: {code[:8]}...")
-        return JSONResponse(
-            status_code=400,
-            content={"error": "invalid_grant", "error_description": "Invalid or expired code"}
-        )
-    
-        logger.info(f"[OAuth] Code found! user_id={code_data.get('user_id', '?')[:8]}..., "
-                     f"has_challenge={bool(code_data.get('code_challenge'))}")
         
-    # Verify PKCE if provided
-    if code_data.get("code_challenge") and code_verifier:
-        import base64
-        expected = base64.urlsafe_b64encode(
-            hashlib.sha256(code_verifier.encode()).digest()
-        ).decode().rstrip("=")
-        if expected != code_data["code_challenge"]:
-                logger.warning(f"[OAuth] PKCE verification failed! expected={expected[:8]}..., "
-                               f"challenge={code_data['code_challenge'][:8]}...")
+        if grant_type != "authorization_code":
+            logger.warning(f"[OAuth] Unsupported grant_type: {grant_type}")
             return JSONResponse(
                 status_code=400,
-                content={"error": "invalid_grant", "error_description": "PKCE verification failed"}
+                content={"error": "unsupported_grant_type"}
             )
+        
+        if not code:
+            logger.warning("[OAuth] Missing code in token request")
+            return JSONResponse(
+                status_code=400,
+                content={"error": "invalid_request", "error_description": "Missing code"}
+            )
+        
+        # Look up the code from database
+        code_data = await _get_and_delete_oauth_code_db(session, code)
+        if not code_data:
+            logger.warning(f"[OAuth] Code lookup failed for: {code[:8]}...")
+            return JSONResponse(
+                status_code=400,
+                content={"error": "invalid_grant", "error_description": "Invalid or expired code"}
+            )
+        
+        logger.info(
+            f"[OAuth] Code found! user_id={code_data.get('user_id', '?')[:8]}..., "
+            f"has_challenge={bool(code_data.get('code_challenge'))}"
+        )
+        
+        # Verify PKCE if provided
+        if code_data.get("code_challenge") and code_verifier:
+            import base64
+            expected = base64.urlsafe_b64encode(
+                hashlib.sha256(code_verifier.encode()).digest()
+            ).decode().rstrip("=")
+            if expected != code_data["code_challenge"]:
+                logger.warning(
+                    "[OAuth] PKCE verification failed! "
+                    f"expected={expected[:8]}..., "
+                    f"challenge={code_data['code_challenge'][:8]}..."
+                )
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": "invalid_grant", "error_description": "PKCE verification failed"}
+                )
             logger.info("[OAuth] PKCE verification passed")
         elif code_data.get("code_challenge") and not code_verifier:
             logger.warning("[OAuth] code_challenge was stored but no code_verifier provided")
-    
-    # Get the user's MCP token
-    user_id = code_data["user_id"]
-    
-    result = await session.execute(
-        select(MCPToken)
-        .where(MCPToken.user_id == user_id, MCPToken.is_active == True)
-        .order_by(MCPToken.created_at.desc())
-        .limit(1)
-    )
-    mcp_token = result.scalar_one_or_none()
-    
-    if not mcp_token:
-        # Create a new MCP token for this user
-        token, token_hash, token_prefix = generate_mcp_token()
-        mcp_token = MCPToken(
-            user_id=user_id,
+        
+        # Get the user's MCP token
+        user_id = code_data["user_id"]
+        
+        result = await session.execute(
+            select(MCPToken)
+            .where(MCPToken.user_id == user_id, MCPToken.is_active == True)
+            .order_by(MCPToken.created_at.desc())
+            .limit(1)
+        )
+        mcp_token = result.scalar_one_or_none()
+        
+        if not mcp_token:
+            # Create a new MCP token for this user
+            token, token_hash, token_prefix = generate_mcp_token()
+            mcp_token = MCPToken(
+                user_id=user_id,
                 name="ChatGPT MCP Token",
                 client_type=code_data.get("client", "chatgpt"),
-            token_hash=token_hash,
-            token_prefix=token_prefix,
-            token_value=token,
-            is_active=True,
-        )
-        session.add(mcp_token)
-        await session.commit()
-        await session.refresh(mcp_token)
-        access_token = token
+                token_hash=token_hash,
+                token_prefix=token_prefix,
+                token_value=token,
+                is_active=True,
+            )
+            session.add(mcp_token)
+            await session.commit()
+            await session.refresh(mcp_token)
+            access_token = token
             logger.info(f"[OAuth] Created new MCP token for user {user_id[:8]}...")
-    else:
-        access_token = mcp_token.token_value
+        else:
+            access_token = mcp_token.token_value
             logger.info(f"[OAuth] Using existing MCP token for user {user_id[:8]}...")
         
-        logger.info(f"[OAuth] Token issued successfully for user {user_id[:8]}... "
-                     f"(token prefix: {access_token[:12]}...)")
+        logger.info(
+            f"[OAuth] Token issued successfully for user {user_id[:8]}... "
+            f"(token prefix: {access_token[:12]}...)"
+        )
+        
+        return {
+            "access_token": access_token,
+            "token_type": "Bearer",
+            "expires_in": 86400 * 365,  # 1 year
+            "scope": "openid profile email",
+        }
     
-    return {
-        "access_token": access_token,
-        "token_type": "Bearer",
-        "expires_in": 86400 * 365,  # 1 year
-        "scope": "openid profile email",
-    }
-
     except Exception as e:
         logger.error(f"[OAuth] Token endpoint error: {e}", exc_info=True)
         return JSONResponse(
