@@ -1940,7 +1940,12 @@ async def mcp_http_handler(request: Request, session: AsyncSession = Depends(get
     if method == "initialize":
         result = {
             "protocolVersion": "2024-11-05",
-            "capabilities": {"tools": {}},
+            "capabilities": {
+                "tools": {
+                    "list": True,
+                    "call": True,
+                }
+            },
             "serverInfo": MCP_SERVER_INFO,
         }
         return StreamingResponse(
@@ -2002,7 +2007,12 @@ async def mcp_http_sse(request: Request, session: AsyncSession = Depends(get_db)
     
     return {
         "protocolVersion": "2024-11-05",
-        "capabilities": {"tools": {}},
+        "capabilities": {
+            "tools": {
+                "list": True,
+                "call": True,
+            }
+        },
         "serverInfo": MCP_SERVER_INFO,
         "tools": MCP_TOOLS,
     }
@@ -2143,7 +2153,12 @@ async def mcp_sse_post(
     if method == "initialize":
         result = {
             "protocolVersion": "2024-11-05",
-            "capabilities": {"tools": {}},
+            "capabilities": {
+                "tools": {
+                    "list": True,
+                    "call": True,
+                }
+            },
             "serverInfo": MCP_SERVER_INFO,
         }
         if is_notification:
@@ -2282,7 +2297,12 @@ async def mcp_sse_messages(
     if method == "initialize":
         response_data = create_jsonrpc_response(msg_id, {
             "protocolVersion": "2024-11-05",
-            "capabilities": {"tools": {}},
+            "capabilities": {
+                "tools": {
+                    "list": True,
+                    "call": True,
+                }
+            },
             "serverInfo": MCP_SERVER_INFO,
         })
     
