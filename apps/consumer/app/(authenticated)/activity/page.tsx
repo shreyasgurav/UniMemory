@@ -70,20 +70,9 @@ export default function ActivityPage() {
       return "UniMemory";
     }
     
-    // MCP activity - check multiple fields for client type
+    // MCP activity - always show as "MCP" (like Chrome Extension), not Cursor/Cline/etc.
     if (event.source === "mcp" || event.source_app === "mcp") {
-      const clientType = event.agent || (event.source_metadata as any)?.client_type || "";
-      const agentMap: Record<string, string> = {
-        cursor: "Cursor",
-        claude: "Claude Desktop",
-        "claude-code": "Claude Code",
-        vscode: "VS Code",
-        windsurf: "Windsurf",
-        cline: "Cline",
-        antigravity: "Antigravity",
-        gemini: "Gemini CLI"
-      };
-      return agentMap[clientType.toLowerCase()] || clientType || "MCP";
+      return "MCP";
     }
     
     // Use platform field from backend if available
@@ -126,6 +115,26 @@ export default function ActivityPage() {
           src="/unimemory-logo.png" 
           alt="UniMemory"
           className="w-8 h-8 rounded-lg object-contain"
+        />
+      );
+    }
+    
+    // MCP - MCP logo for all MCP clients (Cursor, Cline, etc.)
+    if (sourceName === "MCP") {
+      return (
+        <img 
+          src="/mcplogo.png"
+          alt="MCP"
+          className="w-8 h-8 rounded-lg object-contain bg-transparent"
+          onError={(e) => {
+            // Fallback to letter avatar if image fails to load
+            const target = e.currentTarget;
+            target.style.display = 'none';
+            const parent = target.parentElement;
+            if (parent) {
+              parent.innerHTML = `<div class="w-8 h-8 rounded-lg bg-neutral-200 flex items-center justify-center text-neutral-600 font-semibold text-xs">M</div>`;
+            }
+          }}
         />
       );
     }
