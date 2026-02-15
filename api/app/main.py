@@ -5,7 +5,7 @@ Production-ready with proper middleware and error handling
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from contextlib import asynccontextmanager
 import logging
@@ -216,6 +216,16 @@ async def root_oauth_authorization_server():
         "code_challenge_methods_supported": ["S256"],
         "token_endpoint_auth_methods_supported": ["none"],
     }
+
+
+# OpenAI App Store domain verification (must be plain text, no auth)
+OPENAI_APPS_VERIFICATION_TOKEN = "8O7a57Spgwr60czvrTZc1W7qsPtypEqtiZKWJ11VxN0"
+
+
+@app.get("/.well-known/openai-apps-challenge", response_class=PlainTextResponse)
+async def openai_domain_verify():
+    """OpenAI domain ownership verification - return token as plain text only."""
+    return OPENAI_APPS_VERIFICATION_TOKEN
 
 
 @app.get("/api/v1/health/detailed")
