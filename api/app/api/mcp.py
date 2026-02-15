@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # OAuth configuration
+OAUTH_ROOT = "https://unimemory.up.railway.app"
 MCP_SERVER_URL = "https://unimemory.up.railway.app/api/v1/mcp"
 MCP_SSE_SERVER_URL = "https://unimemory.up.railway.app/api/v1/mcp/sse"
 APP_URL = "https://unimemory-app.vercel.app"
@@ -37,7 +38,7 @@ MCP_SERVER_INFO = {
 def _oauth_protected_resource_response():
     return {
         "resource": MCP_SSE_SERVER_URL,
-        "authorization_servers": [API_URL],
+        "authorization_servers": [OAUTH_ROOT],
         "scopes_supported": ["openid", "profile", "email", "offline_access"],
         "bearer_methods_supported": ["header"],
         "resource_documentation": "https://unimemory.app/docs/mcp",
@@ -45,7 +46,7 @@ def _oauth_protected_resource_response():
 
 def _oauth_authorization_server_response():
     return {
-        "issuer": API_URL,
+        "issuer": OAUTH_ROOT,
         "authorization_endpoint": f"{APP_URL}/mcp/authorize",
         "token_endpoint": f"{API_URL}/mcp/oauth/token",
         "registration_endpoint": f"{API_URL}/mcp/oauth/register",
@@ -1660,7 +1661,10 @@ async def mcp_sse_endpoint(request: Request, session: AsyncSession = Depends(get
             status_code=401,
             content={"error": e.detail},
             headers={
-                "WWW-Authenticate": f'Bearer resource_metadata="{MCP_SSE_SERVER_URL}/.well-known/oauth-protected-resource"'
+                "WWW-Authenticate": (
+                    f'Bearer resource_metadata="'
+                    f'{OAUTH_ROOT}/.well-known/oauth-protected-resource"'
+                )
             }
         )
     
@@ -1740,10 +1744,22 @@ async def mcp_sse_post(
     try:
         user, mcp_token = await validate_mcp_token_from_header(authorization, session)
     except HTTPException as e:
-        # Return JSON error so the client can see the failure reason
+        # OAuth-protected MCP: on auth failure return 401 + WWW-Authenticate so
+        # clients (e.g. ChatGPT Scan Tools) can discover the OAuth metadata.
+        if e.status_code == 401:
+            return JSONResponse(
+                status_code=401,
+                content={"error": e.detail},
+                headers={
+                    "WWW-Authenticate": (
+                        f'Bearer resource_metadata="'
+                        f'{OAUTH_ROOT}/.well-known/oauth-protected-resource"'
+                    )
+                },
+            )
         return JSONResponse(
             status_code=e.status_code,
-            content=json.loads(create_jsonrpc_error(None, -32000, e.detail))
+            content=json.loads(create_jsonrpc_error(None, -32000, e.detail)),
         )
 
     try:
