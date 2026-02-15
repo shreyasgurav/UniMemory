@@ -849,37 +849,55 @@ async def revoke_mcp_token(
 # MCP TOKEN VALIDATION (used by MCP server)
 # =============================================================================
 
+async def _resolve_mcp_token(
+    token: str, session: AsyncSession
+) -> tuple[User, MCPToken] | None:
+    """Resolve Bearer token to (User, MCPToken). Accepts um_mcp_* (by hash) or OAuth-issued token (by value)."""
+    if not token or not token.strip():
+        return None
+    token = token.strip()
+    # 1) um_mcp_*: lookup by hash (Cursor, direct MCP clients)
+    if token.startswith("um_mcp_"):
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        result = await session.execute(
+            select(MCPToken).where(
+                MCPToken.token_hash == token_hash,
+                MCPToken.is_active == True
+            )
+        )
+        mcp_token = result.scalar_one_or_none()
+    else:
+        # 2) OAuth access token (e.g. ChatGPT): lookup by stored token_value
+        result = await session.execute(
+            select(MCPToken).where(
+                MCPToken.token_value == token,
+                MCPToken.is_active == True
+            )
+        )
+        mcp_token = result.scalar_one_or_none()
+    if not mcp_token:
+        return None
+    user_result = await session.execute(select(User).where(User.id == mcp_token.user_id))
+    user = user_result.scalar_one_or_none()
+    if not user:
+        return None
+    return user, mcp_token
+
+
 async def validate_mcp_token(
     authorization: str = Header(None),
     session: AsyncSession = Depends(get_db)
 ) -> User:
-    """Validate MCP token from Authorization header and return user"""
+    """Validate MCP token from Authorization header and return user. Accepts um_mcp_* or OAuth access token."""
     if not authorization:
         raise HTTPException(status_code=401, detail="Authorization header required")
-    
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Invalid authorization format")
-    
-    token = authorization[7:]  # Remove "Bearer " prefix
-    
-    if not token.startswith("um_mcp_"):
-        raise HTTPException(status_code=401, detail="Invalid MCP token format")
-    
-    # Hash the token to look it up
-    token_hash = hashlib.sha256(token.encode()).hexdigest()
-    
-    result = await session.execute(
-        select(MCPToken).where(
-            MCPToken.token_hash == token_hash,
-            MCPToken.is_active == True
-        )
-    )
-    mcp_token = result.scalar_one_or_none()
-    
-    if not mcp_token:
+    token = authorization[7:].strip()
+    resolved = await _resolve_mcp_token(token, session)
+    if not resolved:
         raise HTTPException(status_code=401, detail="Invalid or revoked MCP token")
-    
-    # Update usage stats
+    user, mcp_token = resolved
     await session.execute(
         update(MCPToken)
         .where(MCPToken.id == mcp_token.id)
@@ -889,16 +907,6 @@ async def validate_mcp_token(
         )
     )
     await session.commit()
-    
-    # Get the user
-    user_result = await session.execute(
-        select(User).where(User.id == mcp_token.user_id)
-    )
-    user = user_result.scalar_one_or_none()
-    
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
-    
     return user
 
 
@@ -907,44 +915,22 @@ async def validate_mcp_token(
 # =============================================================================
 
 async def validate_mcp_token_from_header(authorization: str, session: AsyncSession) -> tuple[User, MCPToken]:
-    """Validate MCP token and return user + token (non-dependency version for SSE)"""
+    """Validate MCP token and return user + token. Accepts um_mcp_* (Cursor) or OAuth access token (ChatGPT)."""
     if not authorization:
         raise HTTPException(status_code=401, detail="Authorization header required")
-    
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Invalid authorization format")
-    
-    token = authorization[7:]
-    
-    if not token.startswith("um_mcp_"):
-        raise HTTPException(status_code=401, detail="Invalid MCP token format")
-    
-    token_hash = hashlib.sha256(token.encode()).hexdigest()
-    
-    result = await session.execute(
-        select(MCPToken).where(
-            MCPToken.token_hash == token_hash,
-            MCPToken.is_active == True
-        )
-    )
-    mcp_token = result.scalar_one_or_none()
-    
-    if not mcp_token:
+    token = authorization[7:].strip()
+    resolved = await _resolve_mcp_token(token, session)
+    if not resolved:
         raise HTTPException(status_code=401, detail="Invalid or revoked MCP token")
-    
+    user, mcp_token = resolved
     await session.execute(
         update(MCPToken)
         .where(MCPToken.id == mcp_token.id)
         .values(last_used_at=datetime.utcnow(), usage_count=MCPToken.usage_count + 1)
     )
     await session.commit()
-    
-    user_result = await session.execute(select(User).where(User.id == mcp_token.user_id))
-    user = user_result.scalar_one_or_none()
-    
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
-    
     return user, mcp_token
 
 
