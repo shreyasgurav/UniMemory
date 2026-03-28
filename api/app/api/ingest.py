@@ -732,6 +732,33 @@ async def ingest_chat(
         for msg in request.messages
     ])
     
+    # Source-level dedup: reject if same URL ingested by same user within 60s
+    source_url = (request.source_metadata or {}).get("url")
+    if source_url:
+        from datetime import timedelta
+        cutoff = datetime.utcnow() - timedelta(seconds=60)
+        dup_check = await session.execute(
+            select(Source.id, Source.title)
+            .where(
+                Source.owner_id == owner_id,
+                Source.type == "chat",
+                Source.source_metadata["url"].astext == source_url,
+                Source.created_at >= cutoff
+            )
+            .limit(1)
+        )
+        existing = dup_check.first()
+        if existing:
+            logger.info(f"[Ingest] Duplicate chat blocked: URL={source_url} already ingested as {existing.id}")
+            return IngestResponse(
+                stored=0,
+                skipped=0,
+                memory_ids=[],
+                tokens_used=0,
+                source_id=str(existing.id),
+                source_title=existing.title
+            )
+    
     # Get or create end_user (fast DB lookup)
     end_user = await get_or_create_end_user(
         session=session,

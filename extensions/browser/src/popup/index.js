@@ -381,10 +381,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       window.close();
 
       // Send message to content script to save the page with project_id
+      // IMPORTANT: frameId 0 = main frame only, prevents duplicate saves from iframes
       await chrome.tabs.sendMessage(tab.id, {
         type: 'SAVE_CURRENT_PAGE',
         projectId: selectedProject?.id || null
-      });
+      }, { frameId: 0 });
     } catch (error) {
       console.error('Failed to save page:', error);
       showStatus('Failed to save page', 'error');
