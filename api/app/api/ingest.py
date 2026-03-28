@@ -10,7 +10,7 @@ Guardrails:
 """
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Header, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, update
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from pydantic import BaseModel, Field
@@ -515,6 +515,200 @@ async def ingest_text(
     )
 
 
+async def _process_chat_background(
+    source_id: str,
+    owner_id: str,
+    end_user_id: str,
+    user_id: str,
+    project_id: Optional[str],
+    app_id: Optional[str],
+    api_key_id: Optional[str],
+    conversation: str,
+    messages: List[Dict[str, str]],
+    source_metadata: Optional[Dict[str, Any]],
+):
+    """
+    Background task that handles all heavy LLM processing for chat ingestion.
+    Runs AFTER the endpoint has already returned a fast response to the client.
+    
+    Steps:
+    1. Generate title + summary + extract memories (parallel LLM calls)
+    2. Update source record with title, summary, embedding
+    3. Deduplicate, embed, and store memories
+    4. Build waypoints (semantic graph links)
+    """
+    logger.info(f"[IngestBG] Starting background processing for source {source_id[:8]}...")
+    
+    try:
+        extractor = get_extractor()
+        summarizer = SourceSummarizer()
+        embedding_service = get_embedding_service()
+        
+        # Step 1: Run title, summary, and memory extraction in parallel
+        title_task = summarizer.generate_title(conversation, "chat", metadata=source_metadata)
+        summary_task = summarizer.summarize_and_embed(conversation, "chat", metadata=source_metadata)
+        extraction_task = extractor.extract_memories(conversation, metadata=source_metadata)
+        
+        (generated_title, title_tokens), (summary, summary_embedding, summary_tokens), extraction = await asyncio.gather(
+            title_task, summary_task, extraction_task
+        )
+        
+        logger.info(f"[IngestBG] Source {source_id[:8]}: title='{generated_title}', memories={len(extraction.memories)}")
+        
+        # Step 2: Update source with title, summary, embedding
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                update(Source)
+                .where(Source.id == source_id)
+                .values(
+                    title=generated_title,
+                    summary=summary,
+                    summary_embedding=summary_embedding,
+                    updated_at=datetime.utcnow()
+                )
+            )
+            await session.commit()
+        
+        # Step 3: Store extracted memories (dedup + embed + save)
+        if extraction.memories:
+            async with AsyncSessionLocal() as session:
+                # Pre-fetch existing memories for deduplication
+                stmt = select(Memory).where(
+                    Memory.simhash.isnot(None),
+                    Memory.is_active == True,
+                    Memory.owner_id == owner_id,
+                    Memory.user_id == user_id
+                ).order_by(Memory.salience.desc()).limit(500)
+                
+                result = await session.execute(stmt)
+                existing_memories = result.scalars().all()
+                simhash_to_memory = {em.simhash: em for em in existing_memories if em.simhash}
+                
+                # Phase 1: Deduplicate and classify
+                unique_items = []
+                skipped_count = 0
+                
+                for mem_item in extraction.memories:
+                    mem_content = mem_item.content.strip()
+                    if not mem_content:
+                        continue
+                    
+                    simhash = compute_simhash(mem_content)
+                    is_duplicate = False
+                    for existing_hash, existing_mem in simhash_to_memory.items():
+                        if hamming_distance(simhash, existing_hash) <= 3:
+                            existing_mem.salience = min(1.0, (existing_mem.salience or 0.5) + 0.15)
+                            existing_mem.last_seen_at = datetime.utcnow()
+                            skipped_count += 1
+                            is_duplicate = True
+                            break
+                    
+                    if is_duplicate:
+                        continue
+                    
+                    sector, additional_sectors, confidence = classify_sector(mem_content)
+                    decay_lambda = get_sector_decay_lambda(sector)
+                    initial_salience = calculate_initial_salience(sector, additional_sectors)
+                    memory_type = classify_memory_type(mem_content, sector)
+                    priority = determine_priority(memory_type, initial_salience, sector)
+                    unique_items.append((mem_item, simhash, sector, decay_lambda, initial_salience, memory_type, priority))
+                
+                if not unique_items:
+                    await session.commit()
+                    logger.info(f"[IngestBG] Source {source_id[:8]}: all {skipped_count} memories were duplicates")
+                    return
+                
+                # Phase 2: Generate all embeddings in parallel
+                contents = [item[0].content.strip() for item in unique_items]
+                embeddings_results = await asyncio.gather(
+                    *[embedding_service.embed(c) for c in contents],
+                    return_exceptions=True
+                )
+                
+                # Phase 3: Create memory objects
+                memory_ids = []
+                stored_count = 0
+                
+                for i, (mem_item, simhash, sector, decay_lambda, initial_salience, memory_type, priority) in enumerate(unique_items):
+                    emb_result = embeddings_results[i]
+                    if isinstance(emb_result, Exception):
+                        logger.error(f"[IngestBG] Embedding failed: {emb_result}")
+                        continue
+                    embedding, dim = emb_result
+                    
+                    memory_id = str(uuid.uuid4())
+                    memory = Memory(
+                        id=memory_id,
+                        content=mem_item.content.strip(),
+                        simhash=simhash,
+                        sector=sector,
+                        salience=initial_salience,
+                        decay_lambda=decay_lambda,
+                        segment=0,
+                        tags=mem_item.tags or [],
+                        extra_metadata={},
+                        source_app=app_id,
+                        user_id=user_id,
+                        end_user_id=end_user_id,
+                        owner_id=owner_id,
+                        api_key_id=api_key_id,
+                        project_id=project_id,
+                        embedding=embedding,
+                        embedding_model=settings.EMBEDDING_MODEL,
+                        memory_type=memory_type,
+                        priority=priority,
+                        recall_count=0,
+                        last_recalled_at=None,
+                        coactivation_score=0.0,
+                        valid_from=datetime.utcnow(),
+                        valid_to=None,
+                        is_active=True,
+                        created_at=datetime.utcnow(),
+                        updated_at=datetime.utcnow(),
+                        last_seen_at=datetime.utcnow()
+                    )
+                    session.add(memory)
+                    simhash_to_memory[simhash] = memory
+                    memory_ids.append(memory_id)
+                    stored_count += 1
+                
+                # Link memories to source
+                for mid in memory_ids:
+                    ms = MemorySource(
+                        id=str(uuid.uuid4()),
+                        memory_id=mid,
+                        source_id=source_id,
+                        created_at=datetime.utcnow()
+                    )
+                    session.add(ms)
+                
+                await session.commit()
+                
+                logger.info(f"[IngestBG] Source {source_id[:8]}: stored {stored_count}, skipped {skipped_count}")
+                
+                # Step 4: Build waypoints (semantic graph links)
+                if memory_ids:
+                    try:
+                        async with AsyncSessionLocal() as wp_session:
+                            total_created = 0
+                            for mid in memory_ids[:MAX_WAYPOINTS_PER_INGEST]:
+                                try:
+                                    count = await create_waypoint_for_memory(wp_session, mid, owner_id)
+                                    total_created += count
+                                except Exception as e:
+                                    logger.error(f"[IngestBG] Waypoint failed for {mid[:8]}: {e}")
+                            logger.info(f"[IngestBG] Created {total_created} waypoints for {len(memory_ids)} memories")
+                    except Exception as e:
+                        logger.error(f"[IngestBG] Waypoint task failed: {e}")
+        else:
+            logger.info(f"[IngestBG] Source {source_id[:8]}: no memories extracted")
+        
+        logger.info(f"[IngestBG] COMPLETED for source {source_id[:8]}")
+        
+    except Exception as e:
+        logger.error(f"[IngestBG] FAILED for source {source_id[:8]}: {e}", exc_info=True)
+
+
 @router.post("/ingest/chat", response_model=IngestResponse)
 async def ingest_chat(
     request: IngestChatRequest,
@@ -525,19 +719,12 @@ async def ingest_chat(
     """
     Ingest chat messages and extract memories using LLM.
     
-    Accepts an array of messages in OpenAI format:
-    [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]
-    
-    Extracts relevant facts, preferences, and insights from the conversation.
-    
-    Can be disabled via user settings: {"ingest_enabled": false}
+    Returns immediately after storing raw source (~2s).
+    All heavy processing (title, summary, extraction, embeddings, waypoints)
+    runs in the background.
     """
     user, api_key, source_app = user_info
     owner_id = str(user.id)
-    
-    extractor = get_extractor()
-    summarizer = SourceSummarizer()
-    total_tokens = 0
     
     # Combine messages into conversation text
     conversation = "\n".join([
@@ -545,85 +732,64 @@ async def ingest_chat(
         for msg in request.messages
     ])
     
-    # Step 1: Check worthiness (TEMPORARILY DISABLED FOR DEBUGGING)
-    # worthiness = await extractor.check_worthiness(conversation)
-    # total_tokens += worthiness.tokens_used
-    # 
-    # if not worthiness.is_worth_remembering:
-    #     return IngestResponse(
-    #         stored=0,
-    #         skipped=0,
-    #         memory_ids=[],
-    #         tokens_used=total_tokens,
-    #         source_id=None
-    #     )
-    
-    # Step 2: Run title, summary, memory extraction, and end_user lookup in parallel
-    # These are independent operations - running them concurrently saves ~30-40s
-    title_task = summarizer.generate_title(conversation, "chat", metadata=request.source_metadata)
-    summary_task = summarizer.summarize_and_embed(conversation, "chat", metadata=request.source_metadata)
-    extraction_task = extractor.extract_memories(conversation, metadata=request.source_metadata)
-    end_user_task = get_or_create_end_user(session=session, owner_id=owner_id, external_user_id=request.user_id or "anonymous")
-    
-    (generated_title, title_tokens), (summary, summary_embedding, summary_tokens), extraction, end_user = await asyncio.gather(
-        title_task, summary_task, extraction_task, end_user_task
+    # Get or create end_user (fast DB lookup)
+    end_user = await get_or_create_end_user(
+        session=session,
+        owner_id=owner_id,
+        external_user_id=request.user_id or "anonymous"
     )
-    total_tokens += title_tokens + summary_tokens + extraction.tokens_used
     
+    # Create source with raw content immediately (no LLM calls)
     source_uuid = str(uuid.uuid4())
+    # Generate a quick title from metadata or first message (no LLM)
+    quick_title = (request.source_metadata or {}).get("title") or "Processing..."
+    
     source = Source(
         id=source_uuid,
         owner_id=owner_id,
         end_user_id=str(end_user.id),
-        project_id=request.project_id,  # Project to save to
+        project_id=request.project_id,
         type="chat",
         source_app=request.app_id or source_app,
-        title=generated_title,  # Use generated title instead of tab title
+        title=quick_title,  # Will be updated by background task
         raw_content={"messages": request.messages},
-        summary=summary,
-        summary_embedding=summary_embedding,
+        summary=None,  # Will be filled by background task
+        summary_embedding=None,  # Will be filled by background task
         source_metadata=request.source_metadata or {},
         external_ref=request.source_id,
-        event_at=datetime.utcnow(),  # When the content was created
-        ingested_at=datetime.utcnow(),  # When we processed it
+        event_at=datetime.utcnow(),
+        ingested_at=datetime.utcnow(),
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow()
     )
     session.add(source)
-    await session.flush()
+    await session.commit()
     
-    # Step 3: Check extracted memories (extraction already done in parallel above)
-    if not extraction.memories:
-        await session.commit()
-        return IngestResponse(
-            stored=0,
-            skipped=0,
-            memory_ids=[],
-            tokens_used=total_tokens,
-            source_id=source_uuid
-        )
+    logger.info(f"[Ingest] Source {source_uuid[:8]} saved, scheduling background processing...")
     
-    # Step 4: Store extracted memories and link to source
-    stored, skipped, memory_ids = await store_extracted_memories(
-        session=session,
-        extracted=extraction.memories,
+    # Schedule ALL heavy processing as background task
+    background_tasks.add_task(
+        _process_chat_background,
+        source_id=source_uuid,
         owner_id=owner_id,
-        user_id=request.user_id or "anonymous",
         end_user_id=str(end_user.id),
+        user_id=request.user_id or "anonymous",
+        project_id=request.project_id,
         app_id=request.app_id or source_app,
         api_key_id=str(api_key.id) if api_key else None,
-        source_uuid=source_uuid,
-        background_tasks=background_tasks,
-        project_id=request.project_id
+        conversation=conversation,
+        messages=request.messages,
+        source_metadata=request.source_metadata,
     )
     
+    # Return immediately - memories will be processed in background
     return IngestResponse(
-        stored=stored,
-        skipped=skipped,
-        memory_ids=memory_ids,
-        tokens_used=total_tokens,
+        stored=0,  # Will be processed in background
+        skipped=0,
+        memory_ids=[],
+        tokens_used=0,
         source_id=source_uuid,
-        source_title=generated_title
+        source_title=quick_title
     )
 
 

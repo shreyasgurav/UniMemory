@@ -1110,9 +1110,8 @@
       console.log('[UniMemory] SAVE_CHAT response:', response);
       
       if (response && response.success) {
-        const memoryCount = response.data?.stored || 0;
         const title = response.data?.source_title || metadata.title || 'Chat';
-        showToast(`Saved "${title}" - ${memoryCount} ${memoryCount === 1 ? 'memory' : 'memories'} extracted`, 'success');
+        showToast(`Saved "${title}" — memories extracting in background`, 'success');
       } else {
         const errorMsg = response?.error || 'Failed to save memory';
         console.error('[UniMemory] Save failed:', errorMsg);
