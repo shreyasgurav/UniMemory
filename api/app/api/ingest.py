@@ -16,6 +16,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 import uuid
 import logging
+import asyncio
 
 from app.db.database import get_db, AsyncSessionLocal
 from app.db.models import Memory, ProcessingLog, MemorySource, User, Source, EndUser, EntitySource
@@ -202,6 +203,9 @@ async def store_extracted_memories(
     memory_ids = []
     new_memories_for_waypoints = []
     
+    # Phase 1: Deduplicate and classify (no API calls)
+    unique_items = []  # (mem_item, simhash, sector, additional_sectors, decay_lambda, initial_salience, memory_type, priority)
+    
     for mem_item in extracted:
         mem_content = mem_item.content.strip()
         if not mem_content:
@@ -230,13 +234,33 @@ async def store_extracted_memories(
         initial_salience = calculate_initial_salience(sector, additional_sectors)
         memory_type = classify_memory_type(mem_content, sector)
         priority = determine_priority(memory_type, initial_salience, sector)
+        unique_items.append((mem_item, simhash, sector, additional_sectors, decay_lambda, initial_salience, memory_type, priority))
+    
+    # Phase 2: Generate all embeddings in parallel
+    if not unique_items:
+        await session.commit()
+        return (0, skipped_count, [])
+    
+    contents_to_embed = [item[0].content.strip() for item in unique_items]
+    try:
+        embeddings_results = await asyncio.gather(
+            *[embedding_service.embed(c) for c in contents_to_embed],
+            return_exceptions=True
+        )
+    except Exception as e:
+        logger.error(f"Batch embedding generation failed: {e}")
+        embeddings_results = [e] * len(contents_to_embed)
+    
+    # Phase 3: Create memory objects with embeddings
+    for i, (mem_item, simhash, sector, additional_sectors, decay_lambda, initial_salience, memory_type, priority) in enumerate(unique_items):
+        mem_content = mem_item.content.strip()
         
-        # Generate embedding
-        try:
-            embedding, dim = await embedding_service.embed(mem_content)
-        except Exception as e:
-            logger.error(f"Failed to generate embedding: {e}")
+        # Check embedding result
+        emb_result = embeddings_results[i]
+        if isinstance(emb_result, Exception):
+            logger.error(f"Failed to generate embedding for memory: {emb_result}")
             continue
+        embedding, dim = emb_result
         
         # Create memory
         memory_id = str(uuid.uuid4())
@@ -534,29 +558,17 @@ async def ingest_chat(
     #         source_id=None
     #     )
     
-    # Step 2: Generate meaningful title from content
-    generated_title, title_tokens = await summarizer.generate_title(
-        conversation,
-        "chat",
-        metadata=request.source_metadata
-    )
-    total_tokens += title_tokens
+    # Step 2: Run title, summary, memory extraction, and end_user lookup in parallel
+    # These are independent operations - running them concurrently saves ~30-40s
+    title_task = summarizer.generate_title(conversation, "chat", metadata=request.source_metadata)
+    summary_task = summarizer.summarize_and_embed(conversation, "chat", metadata=request.source_metadata)
+    extraction_task = extractor.extract_memories(conversation, metadata=request.source_metadata)
+    end_user_task = get_or_create_end_user(session=session, owner_id=owner_id, external_user_id=request.user_id or "anonymous")
     
-    # Step 3: Create Source record with raw chat + summary + embedding
-    # Pass metadata to help summarizer detect if this is a conversation or web page
-    summary, summary_embedding, summary_tokens = await summarizer.summarize_and_embed(
-        conversation, 
-        "chat",
-        metadata=request.source_metadata
+    (generated_title, title_tokens), (summary, summary_embedding, summary_tokens), extraction, end_user = await asyncio.gather(
+        title_task, summary_task, extraction_task, end_user_task
     )
-    total_tokens += summary_tokens
-    
-    # Get or create end_user
-    end_user = await get_or_create_end_user(
-        session=session,
-        owner_id=owner_id,
-        external_user_id=request.user_id or "anonymous"
-    )
+    total_tokens += title_tokens + summary_tokens + extraction.tokens_used
     
     source_uuid = str(uuid.uuid4())
     source = Source(
@@ -580,11 +592,7 @@ async def ingest_chat(
     session.add(source)
     await session.flush()
     
-    # Step 3: Extract memories
-    # Pass metadata to help extractor detect if this is a conversation or web page
-    extraction = await extractor.extract_memories(conversation, metadata=request.source_metadata)
-    total_tokens += extraction.tokens_used
-    
+    # Step 3: Check extracted memories (extraction already done in parallel above)
     if not extraction.memories:
         await session.commit()
         return IngestResponse(

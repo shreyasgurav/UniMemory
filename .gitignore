@@ -68,6 +68,11 @@ coverage/
 *.tgz
 *.tar.gz
 
+# Debug & Test files
+debug_*.md
+debug_*.sql
+test_*.sh
+*_test.sh
 
 # OpenMemory - IDE/Assistant specific rules
 .windsurf/rules/openmemory.md

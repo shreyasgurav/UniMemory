@@ -336,7 +336,7 @@ async function ingestChat(chatData) {
         captured_at: new Date().toISOString()
       }
     })
-  }, 30000);  // 30 second timeout
+  }, 90000);  // 90 second timeout - ingestion involves multiple LLM calls
 
   // If 401 Unauthorized, session might be expired - prompt re-login
   if (response.status === 401) {
