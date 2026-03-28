@@ -1035,8 +1035,16 @@ async def get_session_source(
     session: AsyncSession = Depends(get_db)
 ):
     """Get a single source with linked memories (extension / consumer session token)."""
+    from sqlalchemy.orm import load_only
+    
+    # Exclude summary_embedding (large vector) - not needed in response
     result = await session.execute(
         select(Source)
+        .options(load_only(
+            Source.id, Source.type, Source.title, Source.raw_content,
+            Source.summary, Source.source_metadata, Source.end_user_id,
+            Source.owner_id, Source.created_at, Source.updated_at
+        ))
         .where(Source.id == source_id)
         .where(Source.owner_id == str(user.id))
     )
@@ -1045,9 +1053,14 @@ async def get_session_source(
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
     
-    # Get linked memories
+    # Get linked memories (exclude embedding column - huge vector not needed)
     memories_result = await session.execute(
         select(Memory)
+        .options(load_only(
+            Memory.id, Memory.content, Memory.sector, Memory.salience,
+            Memory.tags, Memory.user_id, Memory.is_active,
+            Memory.created_at, Memory.updated_at
+        ))
         .join(MemorySource, MemorySource.memory_id == Memory.id)
         .where(MemorySource.source_id == source_id)
         .where(Memory.is_active == True)

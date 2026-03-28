@@ -300,102 +300,68 @@ async def hybrid_search(
     if min_salience > 0:
         stmt = stmt.where(Memory.salience >= min_salience)
     
-    # Use pgvector cosine distance - reduced fetch size for performance
-    # Fetch limit * 1.5 instead of limit * 3 to reduce DB load
-    fetch_limit = min(limit * 2, 30)  # Cap at 30 for performance
+    # Use pgvector cosine distance for fast ANN search
+    fetch_limit = min(limit * 2, 30)
     stmt = stmt.order_by(Memory.embedding.cosine_distance(query_embedding)).limit(fetch_limit)
     
     result = await session.execute(stmt)
     vector_results = result.scalars().all()
     
-    # Quick path: if we have enough high-quality results, skip expensive processing
-    if len(vector_results) >= limit:
-        # Calculate similarities for top results only
-        similarities = []
-        candidate_ids = []
-        for mem in vector_results[:limit]:
-            if mem.embedding is not None:
-                try:
-                    if hasattr(mem.embedding, 'tolist'):
-                        embedding_list = mem.embedding.tolist()
-                    elif hasattr(mem.embedding, '__iter__') and not isinstance(mem.embedding, str):
-                        embedding_list = list(mem.embedding)
-                    else:
-                        embedding_list = mem.embedding
-                    
-                    sim = cosine_similarity(query_embedding, embedding_list)
-                    similarities.append(sim)
-                    candidate_ids.append(mem.id)
-                except Exception:
-                    candidate_ids.append(mem.id)
-        
-        avg_similarity = sum(similarities) / len(similarities) if similarities else 0.0
-        high_confidence = avg_similarity >= 0.5  # Lowered threshold for faster path
-    else:
-        # Calculate all similarities if we don't have enough results
-        similarities = []
-        candidate_ids = []
-        for mem in vector_results:
-            if mem.embedding is not None:
-                try:
-                    if hasattr(mem.embedding, 'tolist'):
-                        embedding_list = mem.embedding.tolist()
-                    elif hasattr(mem.embedding, '__iter__') and not isinstance(mem.embedding, str):
-                        embedding_list = list(mem.embedding)
-                    else:
-                        embedding_list = mem.embedding
-                    
-                    sim = cosine_similarity(query_embedding, embedding_list)
-                    similarities.append(sim)
-                    candidate_ids.append(mem.id)
-                except Exception:
-                    candidate_ids.append(mem.id)
-        
-        avg_similarity = sum(similarities) / len(similarities) if similarities else 0.0
-        high_confidence = avg_similarity >= 0.55
+    # Build candidates dict from vector results (REUSE - no re-fetch)
+    candidates = {mem.id: mem for mem in vector_results}
+    
+    # Calculate similarities using numpy for speed
+    query_arr = np.array(query_embedding)
+    query_norm = np.linalg.norm(query_arr)
+    
+    similarity_map = {}
+    for mem in vector_results:
+        if mem.embedding is not None:
+            try:
+                mem_arr = np.array(mem.embedding if not hasattr(mem.embedding, 'tolist') else mem.embedding.tolist())
+                dot = np.dot(query_arr, mem_arr)
+                mem_norm = np.linalg.norm(mem_arr)
+                sim = float(dot / (query_norm * mem_norm)) if query_norm > 0 and mem_norm > 0 else 0.0
+                similarity_map[mem.id] = sim
+            except Exception:
+                similarity_map[mem.id] = 0.0
+    
+    candidate_ids = list(candidates.keys())
+    avg_similarity = sum(similarity_map.values()) / len(similarity_map) if similarity_map else 0.0
+    high_confidence = avg_similarity >= 0.5
     
     # Step 5: Waypoint expansion (ONLY if low confidence AND few results)
-    # Skip for most queries to improve performance
     waypoint_expansion = {}
     if not high_confidence and len(candidate_ids) < limit and candidate_ids:
         waypoint_expansion = await expand_via_waypoints(
-            session, candidate_ids[:5], max_expansion=limit  # Reduced from limit*2
+            session, candidate_ids[:5], max_expansion=limit
         )
-        candidate_ids.extend(waypoint_expansion.keys())
+        # Fetch ONLY the expanded memories we don't already have
+        new_ids = [mid for mid in waypoint_expansion.keys() if mid not in candidates]
+        if new_ids:
+            expanded_result = await session.execute(
+                select(Memory).where(Memory.id.in_(new_ids))
+            )
+            for mem in expanded_result.scalars().all():
+                candidates[mem.id] = mem
+                # Calculate similarity for expanded memories
+                if mem.embedding is not None:
+                    try:
+                        mem_arr = np.array(mem.embedding if not hasattr(mem.embedding, 'tolist') else mem.embedding.tolist())
+                        dot = np.dot(query_arr, mem_arr)
+                        mem_norm = np.linalg.norm(mem_arr)
+                        similarity_map[mem.id] = float(dot / (query_norm * mem_norm)) if query_norm > 0 and mem_norm > 0 else 0.0
+                    except Exception:
+                        similarity_map[mem.id] = 0.0
     
-    # Step 6: Score all candidates
+    # Step 6: Score all candidates (using already-loaded data)
     query_tokens = canonical_token_set(core_query)
     scored_results = []
     
-    # Get all candidate memories
-    if candidate_ids:
-        stmt = select(Memory).where(Memory.id.in_(candidate_ids))
-        result = await session.execute(stmt)
-        candidates = {mem.id: mem for mem in result.scalars().all()}
-    else:
-        candidates = {}
-    
-    for mem_id in set(candidate_ids):
-        mem = candidates.get(mem_id)
-        if not mem:
-            continue
+    for mem_id, mem in candidates.items():
+        similarity = similarity_map.get(mem_id, 0.0)
         
-        # Calculate similarity
-        similarity = 0.0
-        if mem.embedding is not None:
-            # Convert pgvector Vector to list if needed (handle numpy arrays)
-            try:
-                if hasattr(mem.embedding, 'tolist'):
-                    embedding_list = mem.embedding.tolist()
-                elif hasattr(mem.embedding, '__iter__') and not isinstance(mem.embedding, str):
-                    embedding_list = list(mem.embedding)
-                else:
-                    embedding_list = mem.embedding
-                similarity = cosine_similarity(query_embedding, embedding_list)
-            except Exception:
-                similarity = 0.0
-        
-        # Sector relationship weight (same as Mac app - full matrix)
+        # Sector relationship weight
         if mem.sector and query_sector:
             sector_weight = get_sector_relationship_weight(query_sector, mem.sector)
         else:
@@ -458,10 +424,49 @@ async def hybrid_search(
     scored_results.sort(key=lambda x: x["score"], reverse=True)
     top_results = scored_results[:limit]
     
-    # Step 8: Reinforce retrieved memories (boost salience)
-    await reinforce_retrieved_memories(session, top_results)
+    # Step 8: Reinforce retrieved memories in background (non-blocking)
+    # Extract IDs so background task can use its own session
+    result_memory_ids = [r["memory"].id for r in top_results]
+    if result_memory_ids:
+        import asyncio as _asyncio
+        _asyncio.create_task(_reinforce_background(result_memory_ids))
     
     return top_results
+
+
+async def _reinforce_background(memory_ids: list):
+    """Non-blocking reinforcement with its own DB session"""
+    try:
+        from app.db.database import AsyncSessionLocal
+        async with AsyncSessionLocal() as bg_session:
+            # Re-fetch memories in this session
+            result = await bg_session.execute(
+                select(Memory).where(Memory.id.in_(memory_ids))
+            )
+            memories = result.scalars().all()
+            
+            SALIENCE_BOOST = 0.1
+            COACTIVATION_BOOST = 0.05
+            
+            for mem in memories:
+                mem.salience = min(1.0, (mem.salience or 0.0) + SALIENCE_BOOST)
+                mem.last_seen_at = datetime.now(mem.last_seen_at.tzinfo if mem.last_seen_at and mem.last_seen_at.tzinfo else None)
+                if hasattr(mem, 'recall_count'):
+                    mem.recall_count = (mem.recall_count or 0) + 1
+                if hasattr(mem, 'last_recalled_at'):
+                    mem.last_recalled_at = datetime.utcnow()
+                if hasattr(mem, 'coactivation_score'):
+                    mem.coactivation_score = min(1.0, (mem.coactivation_score or 0.0) + COACTIVATION_BOOST)
+                bg_session.add(mem)
+            
+            # Strengthen co-recalled waypoints
+            if len(memory_ids) > 1:
+                await strengthen_coactivated_waypoints(bg_session, memory_ids)
+            
+            await bg_session.commit()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"[Search] Background reinforce failed: {e}")
 
 
 async def reinforce_retrieved_memories(
@@ -534,48 +539,60 @@ async def strengthen_coactivated_waypoints(
     """
     Strengthen waypoints between memories that were recalled together.
     This implements "neurons that fire together wire together".
+    Uses batch query instead of O(n²) individual queries.
     """
     from datetime import datetime
+    from sqlalchemy import or_, tuple_
     import uuid as uuid_module
+    
+    if len(memory_ids) < 2:
+        return
     
     WEIGHT_BOOST = 0.05
     MAX_WEIGHT = 1.0
     
-    # Process pairs of co-recalled memories
+    # Build all pairs with consistent ordering
+    pairs = []
     for i, mem1_id in enumerate(memory_ids):
         for mem2_id in memory_ids[i+1:]:
-            # Ensure consistent ordering
             src_id = min(str(mem1_id), str(mem2_id))
             dst_id = max(str(mem1_id), str(mem2_id))
-            
-            # Check if waypoint exists
-            stmt = select(Waypoint).where(
-                Waypoint.src_id == src_id,
-                Waypoint.dst_id == dst_id
+            pairs.append((src_id, dst_id))
+    
+    if not pairs:
+        return
+    
+    # Batch fetch ALL existing waypoints for these pairs (1 query instead of N²)
+    conditions = [
+        and_(Waypoint.src_id == src, Waypoint.dst_id == dst)
+        for src, dst in pairs
+    ]
+    result = await session.execute(
+        select(Waypoint).where(or_(*conditions))
+    )
+    existing = {(w.src_id, w.dst_id): w for w in result.scalars().all()}
+    
+    # Update existing or create new
+    for src_id, dst_id in pairs:
+        waypoint = existing.get((src_id, dst_id))
+        if waypoint:
+            waypoint.weight = min(MAX_WEIGHT, waypoint.weight + WEIGHT_BOOST)
+            if hasattr(waypoint, 'coactivation_count'):
+                waypoint.coactivation_count = (waypoint.coactivation_count or 0) + 1
+            if hasattr(waypoint, 'last_coactivated_at'):
+                waypoint.last_coactivated_at = datetime.utcnow()
+            waypoint.updated_at = datetime.utcnow()
+        else:
+            new_waypoint = Waypoint(
+                id=str(uuid_module.uuid4()),
+                src_id=src_id,
+                dst_id=dst_id,
+                weight=0.3,
+                coactivation_count=1,
+                last_coactivated_at=datetime.utcnow(),
+                relationship_type='coactivated',
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
             )
-            result = await session.execute(stmt)
-            waypoint = result.scalar_one_or_none()
-            
-            if waypoint:
-                # Strengthen existing waypoint
-                waypoint.weight = min(MAX_WEIGHT, waypoint.weight + WEIGHT_BOOST)
-                if hasattr(waypoint, 'coactivation_count'):
-                    waypoint.coactivation_count = (waypoint.coactivation_count or 0) + 1
-                if hasattr(waypoint, 'last_coactivated_at'):
-                    waypoint.last_coactivated_at = datetime.utcnow()
-                waypoint.updated_at = datetime.utcnow()
-            else:
-                # Create new waypoint with low initial weight
-                new_waypoint = Waypoint(
-                    id=str(uuid_module.uuid4()),
-                    src_id=src_id,
-                    dst_id=dst_id,
-                    weight=0.3,
-                    coactivation_count=1,
-                    last_coactivated_at=datetime.utcnow(),
-                    relationship_type='coactivated',
-                    created_at=datetime.utcnow(),
-                    updated_at=datetime.utcnow()
-                )
-                session.add(new_waypoint)
+            session.add(new_waypoint)
 
