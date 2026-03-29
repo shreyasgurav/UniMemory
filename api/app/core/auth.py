@@ -62,15 +62,55 @@ def get_firebase_app():
 security = HTTPBearer(auto_error=False)
 
 
+# ============ Firebase User Cache ============
+# Caches verified Firebase user data to avoid re-verifying on every request
+import asyncio
+import time as _time
+
+_firebase_user_cache: dict[str, dict] = {}  # token -> {user_data, expires_at}
+_FIREBASE_CACHE_TTL = 300  # 5 minutes
+_FIREBASE_CACHE_MAX = 200
+
+def _get_cached_firebase_user(token: str) -> Optional[dict]:
+    """Check if we have a cached user for this Firebase token."""
+    cached = _firebase_user_cache.get(token)
+    if cached and cached["expires_at"] > _time.time():
+        return cached["user_data"]
+    if cached:
+        del _firebase_user_cache[token]
+    return None
+
+def _cache_firebase_user(token: str, user_data: dict):
+    """Cache verified Firebase user data."""
+    if len(_firebase_user_cache) >= _FIREBASE_CACHE_MAX:
+        # Evict oldest entries
+        now = _time.time()
+        expired = [k for k, v in _firebase_user_cache.items() if v["expires_at"] < now]
+        for k in expired:
+            del _firebase_user_cache[k]
+        if len(_firebase_user_cache) >= _FIREBASE_CACHE_MAX:
+            oldest = min(_firebase_user_cache.items(), key=lambda x: x[1]["expires_at"])
+            del _firebase_user_cache[oldest[0]]
+    _firebase_user_cache[token] = {
+        "user_data": user_data,
+        "expires_at": _time.time() + _FIREBASE_CACHE_TTL
+    }
+
+
 async def verify_firebase_token(token: str) -> dict:
     """
     Verify Firebase ID token and return decoded claims.
+    Runs in executor since firebase_auth.verify_id_token is blocking.
     
     Returns dict with: uid, email, name, picture, etc.
     """
     try:
         get_firebase_app()
-        decoded = firebase_auth.verify_id_token(token)
+        # Run blocking Firebase verification in thread pool executor
+        loop = asyncio.get_event_loop()
+        decoded = await loop.run_in_executor(
+            None, firebase_auth.verify_id_token, token
+        )
         return decoded
     except firebase_auth.InvalidIdTokenError:
         raise HTTPException(
@@ -154,13 +194,18 @@ async def create_mcp_tokens_for_user(user_id: str, session: AsyncSession) -> lis
     return created_tokens
 
 
+# Track last_login_at updates to avoid DB writes on every request
+_last_login_updates: dict[str, float] = {}  # user_id -> last_update_timestamp
+_LOGIN_UPDATE_INTERVAL = 300  # Only update last_login_at every 5 minutes
+
 async def get_or_create_user(
     firebase_data: dict,
     session: AsyncSession
 ) -> User:
     """
     Get existing user or create new one from Firebase data.
-    Also ensures MCP tokens exist for all supported clients.
+    MCP tokens are only created for NEW users (not checked on every request).
+    last_login_at is rate-limited to avoid unnecessary DB writes.
     """
     firebase_uid = firebase_data.get("uid")
     
@@ -170,19 +215,33 @@ async def get_or_create_user(
     user = result.scalar_one_or_none()
     
     if user:
-        # Update last login
-        user.last_login_at = datetime.utcnow()
-        # Update profile if changed
+        now = _time.time()
+        user_id_str = str(user.id)
+        needs_commit = False
+        
+        # Rate-limit last_login_at updates (once per 5 min, not every request)
+        last_update = _last_login_updates.get(user_id_str, 0)
+        if now - last_update > _LOGIN_UPDATE_INTERVAL:
+            user.last_login_at = datetime.utcnow()
+            _last_login_updates[user_id_str] = now
+            needs_commit = True
+        
+        # Update profile only if changed
         if firebase_data.get("email") and user.email != firebase_data.get("email"):
             user.email = firebase_data.get("email")
+            needs_commit = True
         if firebase_data.get("name") and user.display_name != firebase_data.get("name"):
             user.display_name = firebase_data.get("name")
+            needs_commit = True
         if firebase_data.get("picture") and user.avatar_url != firebase_data.get("picture"):
             user.avatar_url = firebase_data.get("picture")
-        await session.commit()
+            needs_commit = True
         
-        # Ensure MCP tokens exist for this user
-        await create_mcp_tokens_for_user(str(user.id), session)
+        if needs_commit:
+            await session.commit()
+        
+        # SKIP create_mcp_tokens_for_user here - only needed on first setup
+        # MCP tokens are created on user creation and via /consumer/mcp-config endpoint
         
         return user
     
@@ -198,7 +257,7 @@ async def get_or_create_user(
     await session.commit()
     await session.refresh(user)
     
-    # Create MCP tokens for all supported clients
+    # Create MCP tokens only for NEW users
     await create_mcp_tokens_for_user(str(user.id), session)
     
     return user
@@ -210,6 +269,7 @@ async def get_current_user(
 ) -> User:
     """
     Dependency to get current user from Firebase token.
+    Uses cache to avoid Firebase verification + DB lookup on every request.
     
     Usage: @router.get("/endpoint")
            async def endpoint(user: User = Depends(get_current_user)):
@@ -221,6 +281,18 @@ async def get_current_user(
         )
     
     token = credentials.credentials
+    
+    # Check cache first (avoids Firebase network call + DB queries)
+    cached = _get_cached_firebase_user(token)
+    if cached:
+        user = User()
+        user.id = cached["id"]
+        user.email = cached.get("email")
+        user.display_name = cached.get("display_name")
+        user.is_active = cached.get("is_active", True)
+        return user
+    
+    # Cache miss - verify with Firebase and fetch/create user
     firebase_data = await verify_firebase_token(token)
     user = await get_or_create_user(firebase_data, session)
     
@@ -229,6 +301,14 @@ async def get_current_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User account is deactivated"
         )
+    
+    # Cache for future requests
+    _cache_firebase_user(token, {
+        "id": str(user.id),
+        "email": user.email,
+        "display_name": user.display_name,
+        "is_active": user.is_active
+    })
     
     return user
 

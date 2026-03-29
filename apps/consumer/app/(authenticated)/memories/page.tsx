@@ -111,11 +111,12 @@ export default function MemoriesPage() {
       const token = await auth.currentUser?.getIdToken();
       if (!token) return;
 
-      // Ensure default project exists
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/consumer/projects/default/ensure`, {
+      // Fire-and-forget: ensure default project exists (don't block on it)
+      fetch(`${process.env.NEXT_PUBLIC_API_URL}/consumer/projects/default/ensure`, {
         headers: { Authorization: `Bearer ${token}` },
-      });
+      }).catch(() => {});
 
+      // Fetch projects immediately (don't wait for ensure)
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/consumer/projects`, {
         headers: { Authorization: `Bearer ${token}` },
       });
