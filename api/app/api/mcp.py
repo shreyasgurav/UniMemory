@@ -1051,6 +1051,188 @@ async def get_document_context_internal(
     return None
 
 
+async def _process_mcp_save_background(
+    source_id: str,
+    owner_id: str,
+    end_user_id: str,
+    project_id: Optional[str],
+    conversation: str,
+    source_type: str,
+    metadata: Dict[str, Any],
+    client_type: Optional[str] = None,
+):
+    """
+    Background task for MCP save. Runs AFTER the tool has returned a fast response.
+    Same pattern as _process_chat_background in ingest.py.
+    
+    Steps:
+    1. Generate title + summary + extract memories (parallel LLM calls)
+    2. Update source record with title, summary, embedding
+    3. Deduplicate, embed, and store memories (batched)
+    4. Build waypoints (semantic graph links)
+    """
+    from app.db.database import AsyncSessionLocal
+    from app.core.embeddings import get_embedding_service
+    from app.core.summarizer import SourceSummarizer
+    from app.core.extractor import get_extractor
+    from app.core.simhash import compute_simhash, hamming_distance
+    from app.core.sector import classify_sector, get_sector_decay_lambda, calculate_initial_salience, classify_memory_type, determine_priority
+    from app.config import settings
+    from sqlalchemy import update as sql_update
+    import uuid as uuid_module
+    
+    logger.info(f"[MCP-SaveBG] Starting background processing for source {source_id[:8]}...")
+    
+    try:
+        extractor = get_extractor()
+        summarizer = SourceSummarizer()
+        embedding_service = get_embedding_service()
+        
+        # Step 1: Run title, summary, and memory extraction in PARALLEL
+        title_task = summarizer.generate_title(conversation, source_type, metadata=metadata)
+        summary_task = summarizer.summarize_and_embed(conversation, source_type, metadata=metadata)
+        extraction_task = extractor.extract_memories(conversation, metadata=metadata)
+        
+        (generated_title, _), (summary, summary_embedding, _), extraction = await asyncio.gather(
+            title_task, summary_task, extraction_task
+        )
+        
+        logger.info(f"[MCP-SaveBG] Source {source_id[:8]}: title='{generated_title}', memories={len(extraction.memories)}")
+        
+        # Step 2: Update source with title, summary, embedding
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                sql_update(Source)
+                .where(Source.id == source_id)
+                .values(
+                    title=generated_title,
+                    summary=summary,
+                    summary_embedding=summary_embedding,
+                    updated_at=datetime.utcnow()
+                )
+            )
+            await session.commit()
+        
+        # Step 3: Store extracted memories (dedup + embed + save)
+        if extraction.memories:
+            async with AsyncSessionLocal() as session:
+                # Pre-fetch existing memories for deduplication
+                stmt = select(Memory).where(
+                    Memory.simhash.isnot(None),
+                    Memory.is_active == True,
+                    Memory.owner_id == owner_id,
+                    Memory.user_id == "mcp_user"
+                ).order_by(Memory.salience.desc()).limit(500)
+                
+                result = await session.execute(stmt)
+                existing_memories = result.scalars().all()
+                simhash_to_memory = {em.simhash: em for em in existing_memories if em.simhash}
+                
+                # Phase 1: Deduplicate and classify
+                unique_items = []
+                for mem_item in extraction.memories:
+                    mem_content = mem_item.content.strip()
+                    if not mem_content:
+                        continue
+                    
+                    simhash = compute_simhash(mem_content)
+                    is_duplicate = False
+                    for existing_hash in simhash_to_memory.keys():
+                        if hamming_distance(simhash, existing_hash) <= 3:
+                            is_duplicate = True
+                            break
+                    
+                    if is_duplicate:
+                        continue
+                    
+                    sector, additional_sectors, confidence = classify_sector(mem_content)
+                    decay_lambda = get_sector_decay_lambda(sector)
+                    initial_salience = calculate_initial_salience(sector, additional_sectors)
+                    unique_items.append((mem_item, simhash, sector, decay_lambda, initial_salience))
+                    simhash_to_memory[simhash] = True  # Mark as seen
+                
+                if not unique_items:
+                    logger.info(f"[MCP-SaveBG] Source {source_id[:8]}: all memories were duplicates")
+                    return
+                
+                # Phase 2: Generate all embeddings in PARALLEL (batched)
+                contents = [item[0].content.strip() for item in unique_items]
+                embeddings_results = await asyncio.gather(
+                    *[embedding_service.embed(c) for c in contents],
+                    return_exceptions=True
+                )
+                
+                # Phase 3: Create memory objects and links
+                new_memories_for_waypoints = []
+                stored_count = 0
+                
+                for i, (mem_item, simhash, sector, decay_lambda, initial_salience) in enumerate(unique_items):
+                    emb_result = embeddings_results[i]
+                    if isinstance(emb_result, Exception):
+                        logger.error(f"[MCP-SaveBG] Embedding failed: {emb_result}")
+                        continue
+                    embedding, _ = emb_result
+                    
+                    memory_id = str(uuid_module.uuid4())
+                    memory = Memory(
+                        id=memory_id,
+                        content=mem_item.content.strip(),
+                        simhash=simhash,
+                        sector=sector,
+                        salience=initial_salience,
+                        decay_lambda=decay_lambda,
+                        segment=0,
+                        tags=mem_item.tags or [],
+                        extra_metadata={},
+                        source_app="mcp",
+                        user_id="mcp_user",
+                        end_user_id=end_user_id,
+                        owner_id=owner_id,
+                        project_id=project_id,
+                        api_key_id=None,
+                        embedding=embedding,
+                        embedding_model=settings.EMBEDDING_MODEL,
+                        is_active=True,
+                        created_at=datetime.utcnow(),
+                        updated_at=datetime.utcnow(),
+                        last_seen_at=datetime.utcnow()
+                    )
+                    session.add(memory)
+                    new_memories_for_waypoints.append((memory_id, embedding))
+                    
+                    link = MemorySource(
+                        id=str(uuid_module.uuid4()),
+                        memory_id=memory_id,
+                        source_id=source_id,
+                    )
+                    session.add(link)
+                    stored_count += 1
+                
+                # Single commit for all memories and links
+                await session.commit()
+                logger.info(f"[MCP-SaveBG] Source {source_id[:8]}: stored {stored_count} memories")
+                
+                # Step 4: Create waypoints in background
+                if new_memories_for_waypoints:
+                    try:
+                        from app.api.ingest import create_waypoints_background
+                        await create_waypoints_background(
+                            AsyncSessionLocal,
+                            [m[0] for m in new_memories_for_waypoints],
+                            [m[1] for m in new_memories_for_waypoints],
+                            "mcp_user"
+                        )
+                    except Exception as e:
+                        logger.error(f"[MCP-SaveBG] Waypoint task failed: {e}")
+        else:
+            logger.info(f"[MCP-SaveBG] Source {source_id[:8]}: no memories extracted")
+        
+        logger.info(f"[MCP-SaveBG] COMPLETED for source {source_id[:8]}")
+        
+    except Exception as e:
+        logger.error(f"[MCP-SaveBG] FAILED for source {source_id[:8]}: {e}", exc_info=True)
+
+
 async def execute_tool(
     tool_name: str, 
     args: Dict[str, Any], 
@@ -1243,10 +1425,7 @@ async def execute_tool(
         return ctx
     
     elif tool_name == "save":
-        from app.core.embeddings import get_embedding_service
-        from app.core.summarizer import SourceSummarizer
-        from app.core.extractor import get_extractor
-        from app.api.ingest import store_extracted_memories, get_or_create_end_user
+        from app.api.ingest import get_or_create_end_user
         import uuid as uuid_module
         
         raw_content = args.get("content", "")
@@ -1266,8 +1445,6 @@ async def execute_tool(
                 source_type = "text"
         
         try:
-            summarizer = SourceSummarizer()
-            extractor = get_extractor()
             owner_id = str(user.id)
             
             # Convert to conversation text for processing
@@ -1282,154 +1459,54 @@ async def execute_tool(
                 conversation = raw_content if isinstance(raw_content, str) else json.dumps(raw_content)
                 raw_content_store = {"content": conversation}
             
-            # Generate title
-            generated_title, _ = await summarizer.generate_title(conversation, source_type, metadata=metadata)
-            
-            # Generate summary and embedding
-            summary, summary_embedding, _ = await summarizer.summarize_and_embed(conversation, source_type, metadata=metadata)
-            
-            # Get or create end_user
+            # Get or create end_user (fast DB lookup)
             end_user = await get_or_create_end_user(
                 session=session,
-                owner_id=str(user.id),  # Convert UUID to string
+                owner_id=owner_id,
                 external_user_id="mcp_user"
             )
             
-            # Create Source record
+            # Save raw source IMMEDIATELY (no LLM calls) - same pattern as ingest_chat
             source_uuid = str(uuid_module.uuid4())
             source = Source(
                 id=source_uuid,
-                owner_id=str(user.id),  # Convert to string (UUID(as_uuid=False))
-                end_user_id=end_user.id,  # Already a string from get_or_create_end_user
-                project_id=project_id,  # Project to save source to
+                owner_id=owner_id,
+                end_user_id=end_user.id,
+                project_id=project_id,
                 type=source_type,
                 source_app="mcp",
-                title=generated_title,
+                title="Processing...",  # Will be updated by background task
                 raw_content=raw_content_store,
-                summary=summary,
-                summary_embedding=summary_embedding,
+                summary=None,  # Will be filled by background task
+                summary_embedding=None,  # Will be filled by background task
                 source_metadata=metadata,
                 created_at=datetime.utcnow(),
                 updated_at=datetime.utcnow()
             )
             session.add(source)
-            await session.flush()
-            
-            # Extract memories
-            extraction = await extractor.extract_memories(conversation, metadata=metadata)
-            memories_count = 0
-            
-            if extraction.memories:
-                # Store memories without background tasks (MCP context doesn't have BackgroundTasks)
-                embedding_service = get_embedding_service()
-                from app.core.simhash import compute_simhash, hamming_distance
-                from app.core.sector import classify_sector, get_sector_decay_lambda, calculate_initial_salience
-                from app.config import settings
-                
-                # Fetch existing memories for deduplication
-                stmt = select(Memory).where(
-                    Memory.simhash.isnot(None),
-                    Memory.is_active == True,
-                    Memory.owner_id == owner_id,
-                    Memory.user_id == "mcp_user"
-                ).order_by(Memory.salience.desc()).limit(500)
-                
-                result = await session.execute(stmt)
-                existing_memories = result.scalars().all()
-                simhash_to_memory = {em.simhash: em for em in existing_memories if em.simhash}
-                
-                stored_count = 0
-                new_memories_for_waypoints = []  # Collect (memory_id, embedding) for waypoint creation
-                for mem_item in extraction.memories:
-                    mem_content = mem_item.content.strip()
-                    if not mem_content:
-                        continue
-                    
-                    simhash = compute_simhash(mem_content)
-                    
-                    # Check for duplicates
-                    is_duplicate = False
-                    for existing_hash in simhash_to_memory.keys():
-                        if hamming_distance(simhash, existing_hash) <= 3:
-                            is_duplicate = True
-                            break
-                    
-                    if is_duplicate:
-                        continue
-                    
-                    # Classify sector and calculate salience
-                    sector, additional_sectors, confidence = classify_sector(mem_content)
-                    decay_lambda = get_sector_decay_lambda(sector)
-                    initial_salience = calculate_initial_salience(sector, additional_sectors)
-                    
-                    # Generate embedding
-                    embedding, _ = await embedding_service.embed(mem_content)
-                    memory_id = str(uuid_module.uuid4())
-                    
-                    # Create memory with all required fields (matching ingest.py pattern)
-                    memory = Memory(
-                        id=memory_id,
-                        content=mem_content,
-                        simhash=simhash,
-                        sector=sector,
-                        salience=initial_salience,
-                        decay_lambda=decay_lambda,
-                        segment=0,
-                        tags=mem_item.tags or [],
-                        extra_metadata={},
-                        source_app="mcp",
-                        user_id="mcp_user",
-                        end_user_id=end_user.id,  # Already a string from get_or_create_end_user
-                        owner_id=str(user.id),  # Convert to string (UUID(as_uuid=False))
-                        project_id=project_id,  # Project to save memory to
-                        api_key_id=None,
-                        embedding=embedding,
-                        embedding_model=settings.EMBEDDING_MODEL,
-                        is_active=True,
-                        created_at=datetime.utcnow(),
-                        updated_at=datetime.utcnow(),
-                        last_seen_at=datetime.utcnow()
-                    )
-                    session.add(memory)
-                    simhash_to_memory[simhash] = memory
-                    new_memories_for_waypoints.append((memory_id, embedding))
-                    
-                    # Link to source (same pattern as ingest.py)
-                    if source_uuid:
-                        link = MemorySource(
-                            id=str(uuid_module.uuid4()),
-                            memory_id=memory_id,
-                            source_id=source_uuid,
-                        )
-                        session.add(link)
-                        await session.commit()  # Commit each link individually like ingest.py
-                    
-                    stored_count += 1
-                
-                memories_count = stored_count
-            
             await session.commit()
             
-            # Create waypoints in background (MCP has no BackgroundTasks, use asyncio)
-            if new_memories_for_waypoints:
-                from app.api.ingest import create_waypoints_background
-                from app.db.database import AsyncSessionLocal
-                asyncio.create_task(
-                    create_waypoints_background(
-                        AsyncSessionLocal,
-                        [m[0] for m in new_memories_for_waypoints],
-                        [m[1] for m in new_memories_for_waypoints],
-                        "mcp_user"
-                    )
+            # Schedule ALL heavy processing as background task (non-blocking)
+            asyncio.create_task(
+                _process_mcp_save_background(
+                    source_id=source_uuid,
+                    owner_id=owner_id,
+                    end_user_id=end_user.id,
+                    project_id=project_id,
+                    conversation=conversation,
+                    source_type=source_type,
+                    metadata=metadata,
+                    client_type=client_type,
                 )
+            )
             
             await log_mcp_activity(
-                user_id=str(user.id),
+                user_id=owner_id,
                 mcp_token_id=mcp_token_id,
                 tool_name=tool_name,
                 client_type=client_type,
                 tool_args={"content_length": len(str(raw_content)), "project_id": project_id},
-                result_count=memories_count,
+                result_count=0,
                 session=session
             )
             
@@ -1437,9 +1514,9 @@ async def execute_tool(
                 "success": True,
                 "document_id": source_uuid,
                 "project": {"id": project_id} if project_id else None,
-                "summary": summary,
-                "knowledge_extracted": memories_count,
-                "message": "Content saved successfully. Title, summary, and memories were automatically generated.",
+                "summary": None,
+                "knowledge_extracted": 0,
+                "message": "Content saved. Title, summary, and memories are being extracted in the background.",
             }
         except Exception as e:
             logger.error(f"save error: {e}")
