@@ -66,25 +66,24 @@ export default function MemoriesPage() {
     }, [offset, selectedUserId]);
 
     const [editingId, setEditingId] = useState<string | null>(null);
-    const [editContent, setEditContent] = useState("");
+    const [editTags, setEditTags] = useState("");
     const [savingId, setSavingId] = useState<string | null>(null);
 
     const handleEditStart = (memory: Memory) => {
         setEditingId(memory.id);
-        setEditContent(memory.content);
+        setEditTags((memory.tags || []).join(", "));
     };
 
     const handleEditSave = async (memoryId: string) => {
-        if (!editContent.trim()) return;
-
         setSavingId(memoryId);
         try {
             const token = await getIdToken();
             if (!token) return;
 
-            await updateMemory(token, memoryId, { content: editContent.trim() });
+            const newTags = editTags.split(",").map(t => t.trim()).filter(Boolean);
+            await updateMemory(token, memoryId, { tags: newTags });
             setMemories(prev => prev.map(m =>
-                m.id === memoryId ? { ...m, content: editContent.trim() } : m
+                m.id === memoryId ? { ...m, tags: newTags } : m
             ));
             setEditingId(null);
         } catch (error) {
@@ -247,12 +246,20 @@ export default function MemoriesPage() {
                                     <div className="flex-1 pr-8">
                                         {editingId === memory.id ? (
                                             <div className="space-y-3">
-                                                <textarea
-                                                    value={editContent}
-                                                    onChange={(e) => setEditContent(e.target.value)}
-                                                    className="w-full min-h-[100px] p-3 text-[15px] text-neutral-700 bg-white border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-neutral-900/5 focus:border-neutral-300 transition-all resize-none"
-                                                    autoFocus
-                                                />
+                                                <p className="text-[15px] text-neutral-700 leading-relaxed">
+                                                    {memory.content}
+                                                </p>
+                                                <div>
+                                                    <label className="text-[11px] font-medium text-neutral-500 uppercase tracking-wider mb-1.5 block">Tags (comma-separated)</label>
+                                                    <input
+                                                        type="text"
+                                                        value={editTags}
+                                                        onChange={(e) => setEditTags(e.target.value)}
+                                                        placeholder="e.g. important, work, personal"
+                                                        className="w-full px-3 py-2 text-sm text-neutral-700 bg-white border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-neutral-900/5 focus:border-neutral-300 transition-all"
+                                                        autoFocus
+                                                    />
+                                                </div>
                                                 <div className="flex items-center gap-2">
                                                     <button
                                                         onClick={() => handleEditSave(memory.id)}
@@ -264,7 +271,7 @@ export default function MemoriesPage() {
                                                         ) : (
                                                             <Check className="w-3.5 h-3.5" />
                                                         )}
-                                                        Save Changes
+                                                        Save Tags
                                                     </button>
                                                     <button
                                                         onClick={() => setEditingId(null)}

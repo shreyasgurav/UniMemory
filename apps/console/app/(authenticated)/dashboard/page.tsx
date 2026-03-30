@@ -84,11 +84,14 @@ export default function DashboardPage() {
         </div>
 
         <div className="bg-white border border-gray-100 rounded-2xl p-6">
-          <p className="text-sm text-neutral-500 mb-2">Requests (24h)</p>
+          <p className="text-sm text-neutral-500 mb-2">Requests (24h / 7d)</p>
           {loading ? (
             <div className="h-8 w-16 bg-neutral-200 rounded animate-pulse" />
           ) : (
-            <p className="text-2xl font-semibold text-neutral-900">{stats?.requests_24h ?? 0}</p>
+            <p className="text-2xl font-semibold text-neutral-900">
+              {stats?.requests_24h ?? 0}
+              <span className="text-sm font-normal text-neutral-400 ml-1">/ {stats?.requests_7d ?? 0}</span>
+            </p>
           )}
         </div>
       </div>

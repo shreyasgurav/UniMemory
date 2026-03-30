@@ -155,7 +155,7 @@ export const deleteMemory = async (token: string, memoryId: string) => {
 export const updateMemory = async (
   token: string,
   memoryId: string,
-  updates: { content?: string; salience?: number; tags?: string[] }
+  updates: { salience?: number; tags?: string[]; metadata?: Record<string, any> }
 ) => {
   return request<Memory>(`/memories/me/${memoryId}`, {
     method: "PATCH",

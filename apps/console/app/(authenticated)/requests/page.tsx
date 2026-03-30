@@ -63,15 +63,17 @@ export default function RequestsPage() {
           <p className="text-xl font-semibold text-neutral-900">{total}</p>
         </div>
         <div className="bg-white border border-gray-100 rounded-2xl p-5">
-          <p className="text-sm text-neutral-500 mb-1">Worth Remembering</p>
+          <p className="text-sm text-neutral-500 mb-1">Stored (this page)</p>
           <p className="text-xl font-semibold text-green-600">
             {logs.filter(l => l.was_worth_remembering).length}
+            <span className="text-xs font-normal text-neutral-400 ml-1">/ {logs.length}</span>
           </p>
         </div>
         <div className="bg-white border border-gray-100 rounded-2xl p-5">
-          <p className="text-sm text-neutral-500 mb-1">Skipped</p>
+          <p className="text-sm text-neutral-500 mb-1">Skipped (this page)</p>
           <p className="text-xl font-semibold text-neutral-400">
             {logs.filter(l => !l.was_worth_remembering).length}
+            <span className="text-xs font-normal text-neutral-400 ml-1">/ {logs.length}</span>
           </p>
         </div>
       </div>
