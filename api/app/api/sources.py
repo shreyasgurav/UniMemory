@@ -71,7 +71,8 @@ async def list_sources(
     session: AsyncSession = Depends(get_db)
 ):
     """List sources for the authenticated user"""
-    owner_id, _ = user_info
+    user, api_key = user_info
+    owner_id = str(user.id)
 
     query = select(Source).where(Source.owner_id == owner_id)
     
@@ -103,7 +104,8 @@ async def get_source(
     session: AsyncSession = Depends(get_db)
 ):
     """Get a source by ID with full content"""
-    owner_id, _ = user_info
+    user, api_key = user_info
+    owner_id = str(user.id)
 
     result = await session.execute(
         select(Source).where(
@@ -134,7 +136,8 @@ async def get_sources_for_memory(
     session: AsyncSession = Depends(get_db)
 ):
     """Get sources linked to a memory"""
-    owner_id, _ = user_info
+    user, api_key = user_info
+    owner_id = str(user.id)
 
     # Verify memory belongs to user
     memory_result = await session.execute(

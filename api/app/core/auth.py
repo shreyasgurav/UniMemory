@@ -341,26 +341,42 @@ async def validate_api_key_optimized(
     if cached:
         # Verify the full key against cached hash
         if verify_api_key(x_api_key, cached["key_hash"]):
-            # Get fresh user and key from DB (for up-to-date data)
-            stmt = select(APIKey).where(
-                APIKey.id == cached["key_id"],
-                APIKey.is_active == True
-            )
-            result = await session.execute(stmt)
-            api_key = result.scalar_one_or_none()
+            # Reconstruct User and APIKey from cache (NO DB queries)
+            user = User()
+            user.id = cached["user_id"]
+            user.email = cached.get("user_email")
+            user.display_name = cached.get("user_display_name")
+            user.is_active = True  # Was active when cached
             
-            if api_key:
-                # Get user
-                stmt = select(User).where(User.id == api_key.user_id)
-                result = await session.execute(stmt)
-                user = result.scalar_one_or_none()
-                
-                if user and user.is_active:
-                    # Update usage (non-blocking in production)
-                    api_key.last_used_at = datetime.utcnow()
-                    api_key.usage_count = (api_key.usage_count or 0) + 1
-                    await session.commit()
-                    return user, api_key
+            api_key = APIKey()
+            api_key.id = cached["key_id"]
+            api_key.user_id = cached["user_id"]
+            api_key.name = cached.get("key_name", "")
+            api_key.key_prefix = cached.get("key_prefix_stored", "")
+            api_key.is_active = True
+            api_key.usage_count = cached.get("usage_count", 0)
+            
+            # Update usage in background (non-blocking, no await)
+            import asyncio as _asyncio
+            async def _update_usage(kid: str):
+                try:
+                    from app.db.database import AsyncSessionLocal
+                    async with AsyncSessionLocal() as bg:
+                        from sqlalchemy import update as sql_update
+                        await bg.execute(
+                            sql_update(APIKey)
+                            .where(APIKey.id == kid)
+                            .values(
+                                last_used_at=datetime.utcnow(),
+                                usage_count=APIKey.usage_count + 1
+                            )
+                        )
+                        await bg.commit()
+                except Exception:
+                    pass
+            _asyncio.create_task(_update_usage(cached["key_id"]))
+            
+            return user, api_key
     
     # Step 2: Not in cache or cache miss - query by prefix
     # Only get keys that match the prefix (much smaller set to check)
@@ -414,11 +430,16 @@ async def validate_api_key_optimized(
             detail="User not found or inactive"
         )
     
-    # Step 3: Cache the key data for future lookups
+    # Step 3: Cache the key data for future lookups (includes user data to skip DB on cache hit)
     await set_cached_api_key(key_prefix, {
         "key_id": str(matched_key.id),
         "key_hash": matched_key.key_hash,
         "user_id": str(user.id),
+        "user_email": user.email,
+        "user_display_name": user.display_name,
+        "key_name": matched_key.name,
+        "key_prefix_stored": matched_key.key_prefix,
+        "usage_count": matched_key.usage_count or 0,
     }, ttl=300)  # 5 minute cache
     
     # Update usage tracking

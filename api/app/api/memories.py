@@ -5,6 +5,7 @@ Production-ready with batch operations and proper validation
 from fastapi import APIRouter, Depends, HTTPException, Body, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from sqlalchemy.orm import load_only
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from pydantic import BaseModel, Field, validator
@@ -271,9 +272,8 @@ async def create_memory(
     )
     
     session.add(memory)
-    await session.commit()
     
-    # Step 6: Log activity
+    # Step 6: Log activity (single commit with memory)
     try:
         source = "extension" if not api_key else "api"
         agent = request.app_id or "Chrome Extension"
@@ -294,10 +294,10 @@ async def create_memory(
             description=f"Added memory: {content_preview}..."
         )
         session.add(activity)
-        await session.commit()
     except Exception as e:
-        logger.error(f"Failed to log activity: {e}")
-        # Don't fail the main operation if logging fails
+        logger.error(f"Failed to create activity log: {e}")
+    
+    await session.commit()
     
     # Step 7: Create waypoints in background
     from app.db.database import AsyncSessionLocal
@@ -355,7 +355,13 @@ async def list_my_memories(
     limit = min(limit, settings.MAX_SEARCH_LIMIT)
     
     # Always filter by owner_id (multi-tenant isolation)
-    stmt = select(Memory).where(
+    stmt = select(Memory).options(
+        load_only(
+            Memory.id, Memory.content, Memory.sector, Memory.salience,
+            Memory.tags, Memory.source_app, Memory.user_id, Memory.api_key_id,
+            Memory.created_at, Memory.updated_at, Memory.last_seen_at
+        )
+    ).where(
         Memory.is_active == True,
         Memory.owner_id == owner_id
     )
@@ -430,7 +436,12 @@ async def list_memories(
     limit = min(limit, settings.MAX_SEARCH_LIMIT)
     
     # Always filter by owner_id (multi-tenant isolation)
-    stmt = select(Memory).where(
+    stmt = select(Memory).options(
+        load_only(
+            Memory.id, Memory.content, Memory.sector, Memory.salience,
+            Memory.tags, Memory.user_id, Memory.created_at, Memory.updated_at
+        )
+    ).where(
         Memory.is_active == True,
         Memory.owner_id == owner_id
     )
@@ -500,10 +511,20 @@ async def get_memory(
     if not memory:
         raise HTTPException(status_code=404, detail="Memory not found")
     
-    # Update last_seen_at
-    memory.last_seen_at = datetime.utcnow()
-    await session.commit()
-    await session.refresh(memory)  # Refresh to get updated values after commit
+    # Update last_seen_at in background (don't block the read)
+    import asyncio as _asyncio
+    async def _update_last_seen(mid: str):
+        try:
+            from app.db.database import AsyncSessionLocal
+            async with AsyncSessionLocal() as bg_session:
+                from sqlalchemy import update as sql_update
+                await bg_session.execute(
+                    sql_update(Memory).where(Memory.id == mid).values(last_seen_at=datetime.utcnow())
+                )
+                await bg_session.commit()
+        except Exception:
+            pass
+    _asyncio.create_task(_update_last_seen(memory_id))
     
     return MemoryDetailResponse(
         id=str(memory.id),
@@ -517,30 +538,6 @@ async def get_memory(
         updated_at=memory.updated_at,
         last_seen_at=memory.last_seen_at
     )
-
-
-# =============================================================================
-# PUBLIC RESPONSE MODELS
-# =============================================================================
-
-class InternalMemoryResponse(MemoryDetailResponse):
-    """Full detail response for dashboard (includes internal fields)"""
-    pass
-
-
-class PublicMemoryResponse(BaseModel):
-    """Stable public memory response (SDK-safe)"""
-    id: str
-    content: str
-    sector: Optional[str]
-    salience: float
-    tags: List[str]
-    user_id: str
-    created_at: datetime
-    updated_at: Optional[datetime]
-    
-    class Config:
-        from_attributes = True
 
 
 async def _update_memory_internal(

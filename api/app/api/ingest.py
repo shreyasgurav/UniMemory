@@ -347,11 +347,9 @@ async def ingest_text(
     """
     Ingest raw text and extract memories using LLM.
     
-    This endpoint:
-    - Checks if content is worth remembering
-    - Extracts structured memories using LLM
-    - Deduplicates and stores memories
-    - Creates graph waypoints
+    Returns immediately after saving raw source (~1-2s).
+    All heavy processing (worthiness, summary, extraction, embeddings, waypoints)
+    runs in the background.
     
     Use POST /memories for explicit, known memories.
     Use this endpoint for intelligent extraction from raw content.
@@ -360,39 +358,10 @@ async def ingest_text(
     """
     user, api_key, source_app = user_info
     owner_id = str(user.id)
-    
-    extractor = get_extractor()
-    summarizer = SourceSummarizer()
     content = request.content
-    total_tokens = 0
     create_source = request.create_source
     
-    # Step 1: Check worthiness
-    worthiness = await extractor.check_worthiness(content)
-    total_tokens += worthiness.tokens_used
-    
-    if not worthiness.is_worth_remembering:
-        # Log internally only
-        log = ProcessingLog(
-            id=str(uuid.uuid4()),
-            raw_content_hash=compute_simhash(content),
-            processed_at=datetime.utcnow(),
-            was_worth_remembering=False,
-            reason=worthiness.reason,
-            extracted_count=0
-        )
-        session.add(log)
-        await session.commit()
-        
-        return IngestResponse(
-            stored=0,
-            skipped=0,
-            memory_ids=[],
-            tokens_used=total_tokens,
-            source_id=None
-        )
-    
-    # Get or create end_user (needed for memories regardless of source creation)
+    # Get or create end_user (fast DB lookup)
     end_user = await get_or_create_end_user(
         session=session,
         owner_id=owner_id,
@@ -402,117 +371,316 @@ async def ingest_text(
     source_uuid: Optional[str] = None
 
     if create_source:
-        # Step 2: Create Source record with raw content + summary + embedding
-        summary, summary_embedding, summary_tokens = await summarizer.summarize_and_embed(content, "text")
-        total_tokens += summary_tokens
-
+        # Save raw source IMMEDIATELY (no LLM calls)
         source_uuid = str(uuid.uuid4())
         source = Source(
             id=source_uuid,
             owner_id=owner_id,
             end_user_id=str(end_user.id),
-            project_id=request.project_id,  # Project to save to
+            project_id=request.project_id,
             type="text",
             source_app=request.app_id or source_app,
-            title=None,
+            title="Processing...",  # Will be updated by background task
             raw_content={"content": content},
-            summary=summary,
-            summary_embedding=summary_embedding,
+            summary=None,  # Will be filled by background task
+            summary_embedding=None,  # Will be filled by background task
             source_metadata={},
             external_ref=request.source_id,
-            event_at=datetime.utcnow(),  # When the content was created
-            ingested_at=datetime.utcnow(),  # When we processed it
+            event_at=datetime.utcnow(),
+            ingested_at=datetime.utcnow(),
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow()
         )
         session.add(source)
-        await session.flush()
-    
-    # Step 3: Extract entities and facts (with error handling to prevent crashes)
-    try:
-        entity_extractor = EntityExtractor()
-        event_time = datetime.utcnow()  # Can be extracted from metadata if available
-        
-        # Extract entities
-        extracted_entities = await entity_extractor.extract_entities(content, request.source_metadata)
-        
-        # Resolve entities and store
-        entity_map = await entity_extractor.resolve_entities(
-            session, extracted_entities, owner_id, str(end_user.id)
-        )
-        
-        # Link entities to source
-        if source_uuid and entity_map:
-            for entity in entity_map.values():
-                entity_source = EntitySource(
-                    id=str(uuid.uuid4()),
-                    entity_id=entity.id,
-                    source_id=source_uuid,
-                    created_at=datetime.utcnow()
-                )
-                session.add(entity_source)
-        
-        # Extract facts
-        extracted_facts = await entity_extractor.extract_facts(content, list(entity_map.values()), event_time)
-        
-        # Store facts with conflict resolution
-        created_facts = await entity_extractor.resolve_and_store_facts(
-            session, extracted_facts, entity_map, owner_id, str(end_user.id), source_uuid
-        )
-        logger.info(f"[Ingest] Extracted {len(entity_map)} entities and {len(created_facts)} facts")
-    except Exception as e:
-        # Log error but don't fail the entire ingest - memories are more important
-        logger.error(f"[Ingest] Entity/fact extraction failed (non-fatal): {e}", exc_info=True)
-    
-    # Step 4: Extract memories
-    extraction = await extractor.extract_memories(content)
-    total_tokens += extraction.tokens_used
-    
-    if not extraction.memories:
         await session.commit()
-        return IngestResponse(
-            stored=0,
-            skipped=0,
-            memory_ids=[],
-            tokens_used=total_tokens,
-            source_id=source_uuid
-        )
     
-    # Step 4: Store extracted memories and link to source
-    stored, skipped, memory_ids = await store_extracted_memories(
-        session=session,
-        extracted=extraction.memories,
+    # Schedule ALL heavy processing as background task
+    background_tasks.add_task(
+        _process_text_background,
+        source_id=source_uuid,
         owner_id=owner_id,
-        user_id=request.user_id or "anonymous",
         end_user_id=str(end_user.id),
+        user_id=request.user_id or "anonymous",
+        project_id=request.project_id,
         app_id=request.app_id or source_app,
         api_key_id=str(api_key.id) if api_key else None,
-        source_uuid=source_uuid,
-        background_tasks=background_tasks,
-        project_id=request.project_id
+        content=content,
+        create_source=create_source,
+        source_metadata=getattr(request, 'source_metadata', None),
     )
     
-    # Log processing
-    log = ProcessingLog(
-        id=str(uuid.uuid4()),
-        raw_content_hash=compute_simhash(content),
-        processed_at=datetime.utcnow(),
-        was_worth_remembering=True,
-        reason="Extracted successfully",
-        extracted_count=stored
-    )
-    session.add(log)
-    await session.commit()
-    
+    # Return immediately
     return IngestResponse(
-        stored=stored,
-        skipped=skipped,
-        memory_ids=memory_ids,
-        tokens_used=total_tokens,
+        stored=0,  # Will be processed in background
+        skipped=0,
+        memory_ids=[],
+        tokens_used=0,
         source_id=source_uuid,
-        # For /ingest/text we don't generate a display title; keep this None
-        source_title=None
+        source_title="Processing..."
     )
+
+
+async def _process_text_background(
+    source_id: Optional[str],
+    owner_id: str,
+    end_user_id: str,
+    user_id: str,
+    project_id: Optional[str],
+    app_id: Optional[str],
+    api_key_id: Optional[str],
+    content: str,
+    create_source: bool,
+    source_metadata: Optional[Dict[str, Any]] = None,
+):
+    """
+    Background task for text ingestion. Same pattern as _process_chat_background.
+    
+    Steps:
+    1. Check worthiness (fast LLM call)
+    2. If worthy: summary + extract memories in PARALLEL
+    3. Update source with summary + embedding
+    4. Deduplicate, embed, and store memories (batched)
+    5. Entity/fact extraction (non-critical)
+    6. Build waypoints
+    """
+    log_prefix = f"[IngestTextBG] Source {source_id[:8] if source_id else 'none'}:"
+    logger.info(f"{log_prefix} Starting background processing...")
+    
+    try:
+        extractor = get_extractor()
+        summarizer = SourceSummarizer()
+        embedding_service = get_embedding_service()
+        
+        # Step 1: Check worthiness
+        worthiness = await extractor.check_worthiness(content)
+        
+        if not worthiness.is_worth_remembering:
+            logger.info(f"{log_prefix} Not worth remembering: {worthiness.reason}")
+            # Log it
+            async with AsyncSessionLocal() as session:
+                log = ProcessingLog(
+                    id=str(uuid.uuid4()),
+                    raw_content_hash=compute_simhash(content),
+                    processed_at=datetime.utcnow(),
+                    was_worth_remembering=False,
+                    reason=worthiness.reason,
+                    extracted_count=0
+                )
+                session.add(log)
+                # If source was created, update title to indicate not worth remembering
+                if source_id:
+                    await session.execute(
+                        update(Source).where(Source.id == source_id)
+                        .values(title="(Not worth remembering)", updated_at=datetime.utcnow())
+                    )
+                await session.commit()
+            return
+        
+        # Step 2: Run summary + memory extraction in PARALLEL
+        summary_task = summarizer.summarize_and_embed(content, "text", metadata=source_metadata)
+        extraction_task = extractor.extract_memories(content, metadata=source_metadata)
+        
+        (summary, summary_embedding, summary_tokens), extraction = await asyncio.gather(
+            summary_task, extraction_task
+        )
+        
+        logger.info(f"{log_prefix} summary done, memories={len(extraction.memories)}")
+        
+        # Step 3: Update source with summary + embedding
+        if source_id and create_source:
+            async with AsyncSessionLocal() as session:
+                await session.execute(
+                    update(Source).where(Source.id == source_id)
+                    .values(
+                        title=content[:100].strip(),  # Use first 100 chars as title
+                        summary=summary,
+                        summary_embedding=summary_embedding,
+                        updated_at=datetime.utcnow()
+                    )
+                )
+                await session.commit()
+        
+        # Step 4: Store extracted memories
+        if extraction.memories:
+            async with AsyncSessionLocal() as session:
+                # Pre-fetch existing memories for deduplication
+                stmt = select(Memory).where(
+                    Memory.simhash.isnot(None),
+                    Memory.is_active == True,
+                    Memory.owner_id == owner_id,
+                    Memory.user_id == user_id
+                ).order_by(Memory.salience.desc()).limit(500)
+                
+                result = await session.execute(stmt)
+                existing_memories = result.scalars().all()
+                simhash_to_memory = {em.simhash: em for em in existing_memories if em.simhash}
+                
+                # Phase 1: Deduplicate and classify
+                unique_items = []
+                skipped_count = 0
+                
+                for mem_item in extraction.memories:
+                    mem_content = mem_item.content.strip()
+                    if not mem_content:
+                        continue
+                    
+                    simhash = compute_simhash(mem_content)
+                    is_duplicate = False
+                    for existing_hash, existing_mem in simhash_to_memory.items():
+                        if hamming_distance(simhash, existing_hash) <= 3:
+                            existing_mem.salience = min(1.0, (existing_mem.salience or 0.5) + 0.15)
+                            existing_mem.last_seen_at = datetime.utcnow()
+                            skipped_count += 1
+                            is_duplicate = True
+                            break
+                    
+                    if is_duplicate:
+                        continue
+                    
+                    sector, additional_sectors, confidence = classify_sector(mem_content)
+                    decay_lambda = get_sector_decay_lambda(sector)
+                    initial_salience = calculate_initial_salience(sector, additional_sectors)
+                    memory_type = classify_memory_type(mem_content, sector)
+                    priority = determine_priority(memory_type, initial_salience, sector)
+                    unique_items.append((mem_item, simhash, sector, decay_lambda, initial_salience, memory_type, priority))
+                
+                if not unique_items:
+                    await session.commit()
+                    logger.info(f"{log_prefix} all {skipped_count} memories were duplicates")
+                else:
+                    # Phase 2: Generate all embeddings in parallel
+                    contents = [item[0].content.strip() for item in unique_items]
+                    embeddings_results = await asyncio.gather(
+                        *[embedding_service.embed(c) for c in contents],
+                        return_exceptions=True
+                    )
+                    
+                    # Phase 3: Create memory objects
+                    memory_ids = []
+                    stored_count = 0
+                    
+                    for i, (mem_item, simhash, sector, decay_lambda, initial_salience, memory_type, priority) in enumerate(unique_items):
+                        emb_result = embeddings_results[i]
+                        if isinstance(emb_result, Exception):
+                            logger.error(f"{log_prefix} Embedding failed: {emb_result}")
+                            continue
+                        embedding, dim = emb_result
+                        
+                        memory_id = str(uuid.uuid4())
+                        memory = Memory(
+                            id=memory_id,
+                            content=mem_item.content.strip(),
+                            simhash=simhash,
+                            sector=sector,
+                            salience=initial_salience,
+                            decay_lambda=decay_lambda,
+                            segment=0,
+                            tags=mem_item.tags or [],
+                            extra_metadata={},
+                            source_app=app_id,
+                            user_id=user_id,
+                            end_user_id=end_user_id,
+                            owner_id=owner_id,
+                            api_key_id=api_key_id,
+                            project_id=project_id,
+                            embedding=embedding,
+                            embedding_model=settings.EMBEDDING_MODEL,
+                            memory_type=memory_type,
+                            priority=priority,
+                            recall_count=0,
+                            last_recalled_at=None,
+                            coactivation_score=0.0,
+                            valid_from=datetime.utcnow(),
+                            valid_to=None,
+                            is_active=True,
+                            created_at=datetime.utcnow(),
+                            updated_at=datetime.utcnow(),
+                            last_seen_at=datetime.utcnow()
+                        )
+                        session.add(memory)
+                        simhash_to_memory[simhash] = memory
+                        memory_ids.append(memory_id)
+                        stored_count += 1
+                    
+                    # Link memories to source
+                    if source_id:
+                        for mid in memory_ids:
+                            ms = MemorySource(
+                                id=str(uuid.uuid4()),
+                                memory_id=mid,
+                                source_id=source_id,
+                                created_at=datetime.utcnow()
+                            )
+                            session.add(ms)
+                    
+                    # Single commit for all memories and links
+                    await session.commit()
+                    logger.info(f"{log_prefix} stored {stored_count}, skipped {skipped_count}")
+                    
+                    # Step 5: Build waypoints
+                    if memory_ids:
+                        try:
+                            async with AsyncSessionLocal() as wp_session:
+                                total_created = 0
+                                for mid in memory_ids[:MAX_WAYPOINTS_PER_INGEST]:
+                                    try:
+                                        from app.core.waypoints import create_waypoint_for_memory
+                                        count = await create_waypoint_for_memory(wp_session, mid, owner_id)
+                                        total_created += count
+                                    except Exception as e:
+                                        logger.error(f"{log_prefix} Waypoint failed for {mid[:8]}: {e}")
+                                logger.info(f"{log_prefix} Created {total_created} waypoints")
+                        except Exception as e:
+                            logger.error(f"{log_prefix} Waypoint task failed: {e}")
+        
+        # Step 6: Entity/fact extraction (non-critical, best-effort)
+        if source_id:
+            try:
+                entity_extractor = EntityExtractor()
+                event_time = datetime.utcnow()
+                
+                async with AsyncSessionLocal() as session:
+                    extracted_entities = await entity_extractor.extract_entities(content, source_metadata)
+                    entity_map = await entity_extractor.resolve_entities(
+                        session, extracted_entities, owner_id, end_user_id
+                    )
+                    
+                    if entity_map:
+                        for entity in entity_map.values():
+                            entity_source = EntitySource(
+                                id=str(uuid.uuid4()),
+                                entity_id=entity.id,
+                                source_id=source_id,
+                                created_at=datetime.utcnow()
+                            )
+                            session.add(entity_source)
+                    
+                    extracted_facts = await entity_extractor.extract_facts(content, list(entity_map.values()), event_time)
+                    created_facts = await entity_extractor.resolve_and_store_facts(
+                        session, extracted_facts, entity_map, owner_id, end_user_id, source_id
+                    )
+                    await session.commit()
+                    logger.info(f"{log_prefix} Extracted {len(entity_map)} entities and {len(created_facts)} facts")
+            except Exception as e:
+                logger.error(f"{log_prefix} Entity/fact extraction failed (non-fatal): {e}", exc_info=True)
+        
+        # Log processing
+        async with AsyncSessionLocal() as session:
+            log = ProcessingLog(
+                id=str(uuid.uuid4()),
+                raw_content_hash=compute_simhash(content),
+                processed_at=datetime.utcnow(),
+                was_worth_remembering=True,
+                reason="Extracted successfully",
+                extracted_count=len(extraction.memories) if extraction.memories else 0
+            )
+            session.add(log)
+            await session.commit()
+        
+        logger.info(f"{log_prefix} COMPLETED")
+        
+    except Exception as e:
+        logger.error(f"{log_prefix} FAILED: {e}", exc_info=True)
 
 
 async def _process_chat_background(
@@ -830,109 +998,265 @@ async def ingest_document(
     """
     Ingest document content and extract memories using LLM.
     
-    Handles longer content (up to 100k chars) by chunking if needed.
-    Checks worthiness on FULL document first, then extracts from chunks.
+    Returns immediately after saving raw source (~1-2s).
+    All heavy processing (worthiness, summary, chunked extraction, embeddings, waypoints)
+    runs in the background.
     
     Can be disabled via user settings: {"ingest_enabled": false}
     """
     user, api_key, source_app = user_info
     owner_id = str(user.id)
-    
-    extractor = get_extractor()
-    summarizer = SourceSummarizer()
     content = request.content
-    total_tokens = 0
     
     # Add title context if provided
     if request.title:
         content = f"Document: {request.title}\n\n{content}"
     
-    # Step 1: Check worthiness on FULL document (not per-chunk)
-    # Use first 10k chars for worthiness to get aggregate signal
-    worthiness_sample = content[:10000]
-    worthiness = await extractor.check_worthiness(worthiness_sample)
-    total_tokens += worthiness.tokens_used
-    
-    if not worthiness.is_worth_remembering:
-        return IngestResponse(
-            stored=0,
-            skipped=0,
-            memory_ids=[],
-            tokens_used=total_tokens,
-            source_id=None
-        )
-    
-    # Step 2: Create Source record with raw document + summary + embedding
-    summary, summary_embedding, summary_tokens = await summarizer.summarize_and_embed(content, "document")
-    total_tokens += summary_tokens
-    
-    # Get or create end_user
+    # Get or create end_user (fast DB lookup)
     end_user = await get_or_create_end_user(
         session=session,
         owner_id=owner_id,
         external_user_id=request.user_id or "anonymous"
     )
     
+    # Save raw source IMMEDIATELY (no LLM calls)
     source_uuid = str(uuid.uuid4())
+    quick_title = request.title or "Processing..."
     source = Source(
         id=source_uuid,
         owner_id=owner_id,
         end_user_id=str(end_user.id),
-        project_id=request.project_id,  # Project to save to
+        project_id=request.project_id,
         type="document",
         source_app=request.app_id or source_app,
-        title=request.title,
+        title=quick_title,
         raw_content={"content": request.content},
-        summary=summary,
-        summary_embedding=summary_embedding,
+        summary=None,  # Will be filled by background task
+        summary_embedding=None,  # Will be filled by background task
         source_metadata={},
         external_ref=request.source_id,
-        event_at=datetime.utcnow(),  # When the content was created
-        ingested_at=datetime.utcnow(),  # When we processed it
+        event_at=datetime.utcnow(),
+        ingested_at=datetime.utcnow(),
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow()
     )
     session.add(source)
-    await session.flush()
+    await session.commit()
     
-    # Step 3: Process in chunks (worthiness already checked)
-    max_chunk_size = 10000
-    chunks = [content[i:i+max_chunk_size] for i in range(0, len(content), max_chunk_size)]
-    
-    total_stored = 0
-    total_skipped = 0
-    all_memory_ids = []
-    
-    for chunk in chunks:
-        # Extract memories (no per-chunk worthiness check)
-        extraction = await extractor.extract_memories(chunk)
-        total_tokens += extraction.tokens_used
-        
-        if not extraction.memories:
-            continue
-        
-        # Store memories and link to source
-        stored, skipped, memory_ids = await store_extracted_memories(
-            session=session,
-            extracted=extraction.memories,
-            owner_id=owner_id,
-            user_id=request.user_id or "anonymous",
-            end_user_id=str(end_user.id),
-            app_id=request.app_id or source_app,
-            api_key_id=str(api_key.id) if api_key else None,
-            source_uuid=source_uuid,
-            background_tasks=background_tasks,
-            project_id=request.project_id
-        )
-        
-        total_stored += stored
-        total_skipped += skipped
-        all_memory_ids.extend(memory_ids)
-    
-    return IngestResponse(
-        stored=total_stored,
-        skipped=total_skipped,
-        memory_ids=all_memory_ids,
-        tokens_used=total_tokens,
-        source_id=source_uuid
+    # Schedule ALL heavy processing as background task
+    background_tasks.add_task(
+        _process_document_background,
+        source_id=source_uuid,
+        owner_id=owner_id,
+        end_user_id=str(end_user.id),
+        user_id=request.user_id or "anonymous",
+        project_id=request.project_id,
+        app_id=request.app_id or source_app,
+        api_key_id=str(api_key.id) if api_key else None,
+        content=content,
+        title=request.title,
     )
+    
+    # Return immediately
+    return IngestResponse(
+        stored=0,  # Will be processed in background
+        skipped=0,
+        memory_ids=[],
+        tokens_used=0,
+        source_id=source_uuid,
+        source_title=quick_title
+    )
+
+
+async def _process_document_background(
+    source_id: str,
+    owner_id: str,
+    end_user_id: str,
+    user_id: str,
+    project_id: Optional[str],
+    app_id: Optional[str],
+    api_key_id: Optional[str],
+    content: str,
+    title: Optional[str] = None,
+):
+    """
+    Background task for document ingestion.
+    
+    Steps:
+    1. Check worthiness on first 10k chars
+    2. Summary + embed
+    3. Chunk document and extract memories from each chunk
+    4. Deduplicate, embed, and store memories (batched per chunk)
+    5. Build waypoints
+    """
+    log_prefix = f"[IngestDocBG] Source {source_id[:8]}:"
+    logger.info(f"{log_prefix} Starting background processing...")
+    
+    try:
+        extractor = get_extractor()
+        summarizer = SourceSummarizer()
+        embedding_service = get_embedding_service()
+        
+        # Step 1: Check worthiness
+        worthiness_sample = content[:10000]
+        worthiness = await extractor.check_worthiness(worthiness_sample)
+        
+        if not worthiness.is_worth_remembering:
+            logger.info(f"{log_prefix} Not worth remembering: {worthiness.reason}")
+            async with AsyncSessionLocal() as session:
+                await session.execute(
+                    update(Source).where(Source.id == source_id)
+                    .values(title=title or "(Not worth remembering)", updated_at=datetime.utcnow())
+                )
+                await session.commit()
+            return
+        
+        # Step 2: Generate summary + embedding
+        summary, summary_embedding, _ = await summarizer.summarize_and_embed(content, "document")
+        
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                update(Source).where(Source.id == source_id)
+                .values(
+                    title=title or content[:100].strip(),
+                    summary=summary,
+                    summary_embedding=summary_embedding,
+                    updated_at=datetime.utcnow()
+                )
+            )
+            await session.commit()
+        
+        # Step 3: Process in chunks
+        max_chunk_size = 10000
+        chunks = [content[i:i+max_chunk_size] for i in range(0, len(content), max_chunk_size)]
+        
+        all_memory_ids = []
+        total_stored = 0
+        
+        for chunk_idx, chunk in enumerate(chunks):
+            extraction = await extractor.extract_memories(chunk)
+            
+            if not extraction.memories:
+                continue
+            
+            async with AsyncSessionLocal() as session:
+                # Pre-fetch existing memories for deduplication
+                stmt = select(Memory).where(
+                    Memory.simhash.isnot(None),
+                    Memory.is_active == True,
+                    Memory.owner_id == owner_id,
+                    Memory.user_id == user_id
+                ).order_by(Memory.salience.desc()).limit(500)
+                
+                result = await session.execute(stmt)
+                existing_memories = result.scalars().all()
+                simhash_to_memory = {em.simhash: em for em in existing_memories if em.simhash}
+                
+                # Deduplicate and classify
+                unique_items = []
+                for mem_item in extraction.memories:
+                    mem_content = mem_item.content.strip()
+                    if not mem_content:
+                        continue
+                    
+                    simhash = compute_simhash(mem_content)
+                    is_duplicate = any(
+                        hamming_distance(simhash, eh) <= 3 for eh in simhash_to_memory.keys()
+                    )
+                    if is_duplicate:
+                        continue
+                    
+                    sector, additional_sectors, _ = classify_sector(mem_content)
+                    decay_lambda = get_sector_decay_lambda(sector)
+                    initial_salience = calculate_initial_salience(sector, additional_sectors)
+                    memory_type = classify_memory_type(mem_content, sector)
+                    priority = determine_priority(memory_type, initial_salience, sector)
+                    unique_items.append((mem_item, simhash, sector, decay_lambda, initial_salience, memory_type, priority))
+                    simhash_to_memory[simhash] = True
+                
+                if not unique_items:
+                    continue
+                
+                # Batch embed
+                contents_to_embed = [item[0].content.strip() for item in unique_items]
+                embeddings_results = await asyncio.gather(
+                    *[embedding_service.embed(c) for c in contents_to_embed],
+                    return_exceptions=True
+                )
+                
+                # Create memories
+                chunk_memory_ids = []
+                for i, (mem_item, simhash, sector, decay_lambda, initial_salience, memory_type, priority) in enumerate(unique_items):
+                    emb_result = embeddings_results[i]
+                    if isinstance(emb_result, Exception):
+                        continue
+                    embedding, _ = emb_result
+                    
+                    memory_id = str(uuid.uuid4())
+                    memory = Memory(
+                        id=memory_id,
+                        content=mem_item.content.strip(),
+                        simhash=simhash,
+                        sector=sector,
+                        salience=initial_salience,
+                        decay_lambda=decay_lambda,
+                        segment=chunk_idx,
+                        tags=mem_item.tags or [],
+                        extra_metadata={},
+                        source_app=app_id,
+                        user_id=user_id,
+                        end_user_id=end_user_id,
+                        owner_id=owner_id,
+                        api_key_id=api_key_id,
+                        project_id=project_id,
+                        embedding=embedding,
+                        embedding_model=settings.EMBEDDING_MODEL,
+                        memory_type=memory_type,
+                        priority=priority,
+                        recall_count=0,
+                        coactivation_score=0.0,
+                        valid_from=datetime.utcnow(),
+                        is_active=True,
+                        created_at=datetime.utcnow(),
+                        updated_at=datetime.utcnow(),
+                        last_seen_at=datetime.utcnow()
+                    )
+                    session.add(memory)
+                    chunk_memory_ids.append(memory_id)
+                    total_stored += 1
+                
+                # Link to source
+                for mid in chunk_memory_ids:
+                    ms = MemorySource(
+                        id=str(uuid.uuid4()),
+                        memory_id=mid,
+                        source_id=source_id,
+                        created_at=datetime.utcnow()
+                    )
+                    session.add(ms)
+                
+                await session.commit()
+                all_memory_ids.extend(chunk_memory_ids)
+            
+            logger.info(f"{log_prefix} Chunk {chunk_idx+1}/{len(chunks)}: stored {len(chunk_memory_ids)} memories")
+        
+        # Step 4: Build waypoints
+        if all_memory_ids:
+            try:
+                async with AsyncSessionLocal() as wp_session:
+                    total_wp = 0
+                    for mid in all_memory_ids[:MAX_WAYPOINTS_PER_INGEST]:
+                        try:
+                            from app.core.waypoints import create_waypoint_for_memory
+                            count = await create_waypoint_for_memory(wp_session, mid, owner_id)
+                            total_wp += count
+                        except Exception as e:
+                            logger.error(f"{log_prefix} Waypoint failed for {mid[:8]}: {e}")
+                    logger.info(f"{log_prefix} Created {total_wp} waypoints")
+            except Exception as e:
+                logger.error(f"{log_prefix} Waypoint task failed: {e}")
+        
+        logger.info(f"{log_prefix} COMPLETED: {total_stored} memories from {len(chunks)} chunks")
+        
+    except Exception as e:
+        logger.error(f"{log_prefix} FAILED: {e}", exc_info=True)
