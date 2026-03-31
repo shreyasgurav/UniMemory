@@ -386,6 +386,7 @@ async def ingest_text(
             summary_embedding=None,  # Will be filled by background task
             source_metadata={},
             external_ref=request.source_id,
+            api_key_id=str(api_key.id) if api_key else None,
             event_at=datetime.utcnow(),
             ingested_at=datetime.utcnow(),
             created_at=datetime.utcnow(),
@@ -460,6 +461,8 @@ async def _process_text_background(
             async with AsyncSessionLocal() as session:
                 log = ProcessingLog(
                     id=str(uuid.uuid4()),
+                    owner_id=owner_id,
+                    api_key_id=api_key_id,
                     raw_content_hash=compute_simhash(content),
                     processed_at=datetime.utcnow(),
                     was_worth_remembering=False,
@@ -668,6 +671,8 @@ async def _process_text_background(
         async with AsyncSessionLocal() as session:
             log = ProcessingLog(
                 id=str(uuid.uuid4()),
+                owner_id=owner_id,
+                api_key_id=api_key_id,
                 raw_content_hash=compute_simhash(content),
                 processed_at=datetime.utcnow(),
                 was_worth_remembering=True,
@@ -871,6 +876,21 @@ async def _process_chat_background(
         else:
             logger.info(f"[IngestBG] Source {source_id[:8]}: no memories extracted")
         
+        # Log processing
+        async with AsyncSessionLocal() as log_session:
+            log = ProcessingLog(
+                id=str(uuid.uuid4()),
+                owner_id=owner_id,
+                api_key_id=api_key_id,
+                raw_content_hash=compute_simhash(conversation[:500]),
+                processed_at=datetime.utcnow(),
+                was_worth_remembering=True if extraction.memories else False,
+                reason="Extracted successfully" if extraction.memories else "No memories extracted",
+                extracted_count=stored_count if extraction.memories else 0
+            )
+            log_session.add(log)
+            await log_session.commit()
+        
         logger.info(f"[IngestBG] COMPLETED for source {source_id[:8]}")
         
     except Exception as e:
@@ -952,6 +972,7 @@ async def ingest_chat(
         summary_embedding=None,  # Will be filled by background task
         source_metadata=request.source_metadata or {},
         external_ref=request.source_id,
+        api_key_id=str(api_key.id) if api_key else None,
         event_at=datetime.utcnow(),
         ingested_at=datetime.utcnow(),
         created_at=datetime.utcnow(),
@@ -1035,6 +1056,7 @@ async def ingest_document(
         summary_embedding=None,  # Will be filled by background task
         source_metadata={},
         external_ref=request.source_id,
+        api_key_id=str(api_key.id) if api_key else None,
         event_at=datetime.utcnow(),
         ingested_at=datetime.utcnow(),
         created_at=datetime.utcnow(),
@@ -1255,6 +1277,21 @@ async def _process_document_background(
                     logger.info(f"{log_prefix} Created {total_wp} waypoints")
             except Exception as e:
                 logger.error(f"{log_prefix} Waypoint task failed: {e}")
+        
+        # Log processing
+        async with AsyncSessionLocal() as log_session:
+            log = ProcessingLog(
+                id=str(uuid.uuid4()),
+                owner_id=owner_id,
+                api_key_id=api_key_id,
+                raw_content_hash=compute_simhash(content[:500]),
+                processed_at=datetime.utcnow(),
+                was_worth_remembering=total_stored > 0,
+                reason=f"Extracted {total_stored} memories from {len(chunks)} chunks" if total_stored > 0 else "No memories extracted",
+                extracted_count=total_stored
+            )
+            log_session.add(log)
+            await log_session.commit()
         
         logger.info(f"{log_prefix} COMPLETED: {total_stored} memories from {len(chunks)} chunks")
         

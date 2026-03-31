@@ -354,7 +354,8 @@ async def list_my_memories(
     # Enforce limits
     limit = min(limit, settings.MAX_SEARCH_LIMIT)
     
-    # Always filter by owner_id (multi-tenant isolation)
+    # Developer console: only show API-key-created memories
+    # Consumer/MCP/extension data (api_key_id=NULL) stays in consumer app
     stmt = select(Memory).options(
         load_only(
             Memory.id, Memory.content, Memory.sector, Memory.salience,
@@ -363,7 +364,8 @@ async def list_my_memories(
         )
     ).where(
         Memory.is_active == True,
-        Memory.owner_id == owner_id
+        Memory.owner_id == owner_id,
+        Memory.api_key_id.isnot(None)
     )
     
     if user_id:
@@ -380,10 +382,11 @@ async def list_my_memories(
     result = await session.execute(stmt)
     memories = result.scalars().all()
     
-    # Get total count (also filtered by owner_id)
+    # Get total count (API key scoped)
     count_stmt = select(func.count(Memory.id)).where(
         Memory.is_active == True,
-        Memory.owner_id == owner_id
+        Memory.owner_id == owner_id,
+        Memory.api_key_id.isnot(None)
     )
     if user_id:
         count_stmt = count_stmt.where(Memory.user_id == user_id)

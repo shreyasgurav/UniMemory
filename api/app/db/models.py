@@ -62,6 +62,9 @@ class Source(Base):
     event_at = Column(DateTime(timezone=True))  # When the event occurred
     ingested_at = Column(DateTime(timezone=True), server_default=func.now())  # When recorded
     
+    # API key tracking (NULL = consumer/MCP, NOT NULL = developer API)
+    api_key_id = Column(UUID(as_uuid=False), ForeignKey("api_keys.id", ondelete="SET NULL"), nullable=True, index=True)
+    
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
@@ -76,6 +79,7 @@ class Source(Base):
         Index("idx_sources_owner_app", "owner_id", "source_app"),
         Index("idx_sources_owner_created", "owner_id", "created_at"),
         Index("idx_sources_owner_project", "owner_id", "project_id"),
+        Index("idx_sources_api_key", "api_key_id"),
         Index("idx_sources_summary_embedding", "summary_embedding", postgresql_using="ivfflat", postgresql_with={"lists": 100}),
     )
     
@@ -306,6 +310,8 @@ class ProcessingLog(Base):
     __tablename__ = "processing_logs"
     
     id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    owner_id = Column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    api_key_id = Column(UUID(as_uuid=False), ForeignKey("api_keys.id", ondelete="SET NULL"), nullable=True, index=True)
     raw_content_hash = Column(String(64), index=True)  # Hash of raw input
     processed_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     was_worth_remembering = Column(Boolean, nullable=False)

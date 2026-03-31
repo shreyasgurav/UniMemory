@@ -60,49 +60,64 @@ async def get_dashboard_stats(
     """Get overview stats for dashboard"""
     owner_id = str(user.id)
     
-    # Total memories
+    # Only count data created through API keys (developer console scope)
+    # Consumer/MCP/extension data has api_key_id = NULL and stays in consumer app
+    
+    # Total memories (API key only)
     memories_result = await session.execute(
         select(func.count(Memory.id)).where(
             Memory.owner_id == owner_id,
-            Memory.is_active == True
+            Memory.is_active == True,
+            Memory.api_key_id.isnot(None)
         )
     )
     total_memories = memories_result.scalar() or 0
     
-    # Total sources
+    # Total sources (API key only)
     sources_result = await session.execute(
         select(func.count(Source.id)).where(
-            Source.owner_id == owner_id
+            Source.owner_id == owner_id,
+            Source.api_key_id.isnot(None)
         )
     )
     total_sources = sources_result.scalar() or 0
     
-    # Total end users
+    # Total end users (only those with API-key-created memories)
     end_users_result = await session.execute(
-        select(func.count(EndUser.id)).where(
-            EndUser.owner_id == owner_id
-        )
+        text("""
+            SELECT COUNT(DISTINCT m.end_user_id)
+            FROM memories m
+            WHERE m.owner_id = :owner_id
+              AND m.is_active = true
+              AND m.api_key_id IS NOT NULL
+              AND m.end_user_id IS NOT NULL
+        """),
+        {"owner_id": owner_id}
     )
     total_end_users = end_users_result.scalar() or 0
     
-    # Requests last 24h
+    # Requests last 24h (API key only)
     now = datetime.utcnow()
     requests_24h_result = await session.execute(
         select(func.count(ProcessingLog.id)).where(
+            ProcessingLog.owner_id == owner_id,
+            ProcessingLog.api_key_id.isnot(None),
             ProcessingLog.processed_at >= now - timedelta(hours=24)
         )
     )
     requests_24h = requests_24h_result.scalar() or 0
     
-    # Requests last 7d
+    # Requests last 7d (API key only)
     requests_7d_result = await session.execute(
         select(func.count(ProcessingLog.id)).where(
+            ProcessingLog.owner_id == owner_id,
+            ProcessingLog.api_key_id.isnot(None),
             ProcessingLog.processed_at >= now - timedelta(days=7)
         )
     )
     requests_7d = requests_7d_result.scalar() or 0
     
-    # Tokens used last 30d (placeholder - need to add tokens_used to ProcessingLog)
+    # Tokens used last 30d (placeholder)
     tokens_used_30d = 0
     
     return DashboardStats(
@@ -132,6 +147,7 @@ async def get_memories_over_time(
             FROM memories
             WHERE owner_id = :owner_id
               AND is_active = true
+              AND api_key_id IS NOT NULL
               AND created_at >= now() - make_interval(days => :days)
             GROUP BY day
             ORDER BY day
@@ -150,17 +166,20 @@ async def get_requests_over_time(
     session: AsyncSession = Depends(get_db)
 ):
     """Get requests per day for the last N days"""
+    owner_id = str(user.id)
     result = await session.execute(
         text("""
             SELECT 
                 date_trunc('day', processed_at)::date AS day,
                 COUNT(*) AS count
             FROM processing_logs
-            WHERE processed_at >= now() - make_interval(days => :days)
+            WHERE owner_id = :owner_id
+              AND api_key_id IS NOT NULL
+              AND processed_at >= now() - make_interval(days => :days)
             GROUP BY day
             ORDER BY day
         """),
-        {"days": days}
+        {"owner_id": owner_id, "days": days}
     )
     
     rows = result.fetchall()
@@ -184,9 +203,12 @@ async def get_end_users_stats(
                 eu.created_at,
                 COUNT(m.id) AS memory_count
             FROM end_users eu
-            LEFT JOIN memories m ON m.end_user_id = eu.id AND m.is_active = true
+            LEFT JOIN memories m ON m.end_user_id = eu.id 
+                AND m.is_active = true 
+                AND m.api_key_id IS NOT NULL
             WHERE eu.owner_id = :owner_id
             GROUP BY eu.id, eu.external_user_id, eu.created_at
+            HAVING COUNT(m.id) > 0
             ORDER BY memory_count DESC
             LIMIT :limit
         """),
@@ -217,6 +239,7 @@ async def get_sources_by_type(
             SELECT type, COUNT(*) AS count
             FROM sources
             WHERE owner_id = :owner_id
+              AND api_key_id IS NOT NULL
             GROUP BY type
             ORDER BY count DESC
         """),
@@ -244,9 +267,14 @@ async def get_processing_logs(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db)
 ):
-    """Get processing logs for requests page"""
+    """Get processing logs for requests page (API key scoped)"""
+    owner_id = str(user.id)
     result = await session.execute(
         select(ProcessingLog)
+        .where(
+            ProcessingLog.owner_id == owner_id,
+            ProcessingLog.api_key_id.isnot(None)
+        )
         .order_by(ProcessingLog.processed_at.desc())
         .limit(limit)
         .offset(offset)
@@ -274,9 +302,13 @@ async def get_logs_count(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db)
 ):
-    """Get total count of processing logs"""
+    """Get total count of processing logs (API key scoped)"""
+    owner_id = str(user.id)
     result = await session.execute(
-        select(func.count(ProcessingLog.id))
+        select(func.count(ProcessingLog.id)).where(
+            ProcessingLog.owner_id == owner_id,
+            ProcessingLog.api_key_id.isnot(None)
+        )
     )
     total = result.scalar() or 0
     return LogsCount(total=total)
