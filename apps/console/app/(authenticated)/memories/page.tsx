@@ -237,100 +237,125 @@ export default function MemoriesPage() {
 
                         {/* List */}
                         <div className="flex-1 overflow-y-auto px-8 py-6 space-y-1 [&::-webkit-scrollbar]:hidden">
-                            {filteredMemories.map((memory) => (
-                                <div
-                                    key={memory.id}
-                                    className={`group flex items-start justify-between py-3 px-4 rounded-2xl transition-all duration-200 ${editingId === memory.id ? "bg-neutral-50 shadow-sm ring-1 ring-neutral-100" : "hover:bg-neutral-50"
-                                        }`}
-                                >
-                                    <div className="flex-1 pr-8">
-                                        {editingId === memory.id ? (
-                                            <div className="space-y-3">
-                                                <p className="text-[15px] text-neutral-700 leading-relaxed">
-                                                    {memory.content}
-                                                </p>
-                                                <div>
-                                                    <label className="text-[11px] font-medium text-neutral-500 uppercase tracking-wider mb-1.5 block">Tags (comma-separated)</label>
-                                                    <input
-                                                        type="text"
-                                                        value={editTags}
-                                                        onChange={(e) => setEditTags(e.target.value)}
-                                                        placeholder="e.g. important, work, personal"
-                                                        className="w-full px-3 py-2 text-sm text-neutral-700 bg-white border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-neutral-900/5 focus:border-neutral-300 transition-all"
-                                                        autoFocus
-                                                    />
-                                                </div>
-                                                <div className="flex items-center gap-2">
-                                                    <button
-                                                        onClick={() => handleEditSave(memory.id)}
-                                                        disabled={savingId === memory.id}
-                                                        className="px-3 py-1.5 bg-neutral-900 text-white text-xs font-medium rounded-lg hover:bg-neutral-800 transition-colors disabled:opacity-50 flex items-center gap-1.5"
-                                                    >
-                                                        {savingId === memory.id ? (
-                                                            <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                                        ) : (
-                                                            <Check className="w-3.5 h-3.5" />
-                                                        )}
-                                                        Save Tags
-                                                    </button>
-                                                    <button
-                                                        onClick={() => setEditingId(null)}
-                                                        disabled={savingId === memory.id}
-                                                        className="px-3 py-1.5 bg-white border border-neutral-200 text-neutral-600 text-xs font-medium rounded-lg hover:bg-neutral-50 transition-colors disabled:opacity-50 flex items-center gap-1.5"
-                                                    >
-                                                        <X className="w-3.5 h-3.5" />
-                                                        Cancel
-                                                    </button>
-                                                </div>
+                            {loading ? (
+                                Array.from({ length: 5 }).map((_, i) => (
+                                    <div key={i} className="py-3 px-4 rounded-2xl">
+                                        <div className="space-y-3">
+                                            <div className="h-4 bg-neutral-100 rounded-lg w-3/4 animate-pulse" />
+                                            <div className="h-4 bg-neutral-100 rounded-lg w-full animate-pulse" />
+                                            <div className="h-4 bg-neutral-100 rounded-lg w-5/6 animate-pulse" />
+                                            <div className="flex items-center gap-4 mt-2">
+                                                <div className="h-3 bg-neutral-100 rounded w-32 animate-pulse" />
+                                                <div className="h-3 bg-neutral-100 rounded w-24 animate-pulse" />
                                             </div>
-                                        ) : (
-                                            <>
-                                                <p className="text-[15px] text-neutral-700 leading-relaxed">
-                                                    {memory.content}
-                                                </p>
-                                                <div className="flex items-center gap-4 mt-2">
-                                                    <span className="text-[11px] text-neutral-400 flex items-center gap-1.5">
-                                                        <Clock className="w-3 h-3" />
-                                                        {new Date(memory.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
-                                                    </span>
-                                                    {memory.sector && (
-                                                        <span className="text-[11px] text-neutral-400 flex items-center gap-1.5">
-                                                            <Tag className="w-3 h-3" />
-                                                            {memory.sector}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </>
-                                        )}
-                                    </div>
-
-                                    {!editingId && (
-                                        <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <button
-                                                onClick={() => handleEditStart(memory)}
-                                                className="p-2 text-neutral-400 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors"
-                                                title="Edit memory"
-                                            >
-                                                <Pencil className="w-4 h-4" />
-                                            </button>
-                                            <button
-                                                onClick={() => handleDelete(memory.id)}
-                                                disabled={deletingId === memory.id}
-                                                className="p-2 text-neutral-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                                title="Delete memory"
-                                            >
-                                                {deletingId === memory.id ? (
-                                                    <div className="w-4 h-4 border-2 border-neutral-300 border-t-neutral-600 rounded-full animate-spin" />
-                                                ) : (
-                                                    <Trash2 className="w-4 h-4" />
-                                                )}
-                                            </button>
                                         </div>
-                                    )}
+                                    </div>
+                                ))
+                            ) : filteredMemories.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center py-20">
+                                    <div className="w-12 h-12 bg-neutral-50 rounded-2xl flex items-center justify-center mb-4 text-neutral-200">
+                                        <Users className="w-6 h-6" />
+                                    </div>
+                                    <p className="text-sm text-neutral-400">No memories found for this user</p>
                                 </div>
-                            ))}
+                            ) : (
+                                <>
+                                    {filteredMemories.map((memory) => (
+                                        <div
+                                            key={memory.id}
+                                            className={`group flex items-start justify-between py-3 px-4 rounded-2xl transition-all duration-200 ${editingId === memory.id ? "bg-neutral-50 shadow-sm ring-1 ring-neutral-100" : "hover:bg-neutral-50"
+                                                }`}
+                                        >
+                                            <div className="flex-1 pr-8">
+                                                {editingId === memory.id ? (
+                                                    <div className="space-y-3">
+                                                        <p className="text-[15px] text-neutral-700 leading-relaxed">
+                                                            {memory.content}
+                                                        </p>
+                                                        <div>
+                                                            <label className="text-[11px] font-medium text-neutral-500 uppercase tracking-wider mb-1.5 block">Tags (comma-separated)</label>
+                                                            <input
+                                                                type="text"
+                                                                value={editTags}
+                                                                onChange={(e) => setEditTags(e.target.value)}
+                                                                placeholder="e.g. important, work, personal"
+                                                                className="w-full px-3 py-2 text-sm text-neutral-700 bg-white border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-neutral-900/5 focus:border-neutral-300 transition-all"
+                                                                autoFocus
+                                                            />
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <button
+                                                                onClick={() => handleEditSave(memory.id)}
+                                                                disabled={savingId === memory.id}
+                                                                className="px-3 py-1.5 bg-neutral-900 text-white text-xs font-medium rounded-lg hover:bg-neutral-800 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                                                            >
+                                                                {savingId === memory.id ? (
+                                                                    <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                                ) : (
+                                                                    <Check className="w-3.5 h-3.5" />
+                                                                )}
+                                                                Save Tags
+                                                            </button>
+                                                            <button
+                                                                onClick={() => setEditingId(null)}
+                                                                disabled={savingId === memory.id}
+                                                                className="px-3 py-1.5 bg-white border border-neutral-200 text-neutral-600 text-xs font-medium rounded-lg hover:bg-neutral-50 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                                                            >
+                                                                <X className="w-3.5 h-3.5" />
+                                                                Cancel
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <>
+                                                        <p className="text-[15px] text-neutral-700 leading-relaxed">
+                                                            {memory.content}
+                                                        </p>
+                                                        <div className="flex items-center gap-4 mt-2">
+                                                            <span className="text-[11px] text-neutral-400 flex items-center gap-1.5">
+                                                                <Clock className="w-3 h-3" />
+                                                                {new Date(memory.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                                                            </span>
+                                                            {memory.sector && (
+                                                                <span className="text-[11px] text-neutral-400 flex items-center gap-1.5">
+                                                                    <Tag className="w-3 h-3" />
+                                                                    {memory.sector}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </>
+                                                )}
+                                            </div>
 
-                            {memories.length < total && (
+                                            {!editingId && (
+                                                <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <button
+                                                        onClick={() => handleEditStart(memory)}
+                                                        className="p-2 text-neutral-400 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors"
+                                                        title="Edit memory"
+                                                    >
+                                                        <Pencil className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDelete(memory.id)}
+                                                        disabled={deletingId === memory.id}
+                                                        className="p-2 text-neutral-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                                        title="Delete memory"
+                                                    >
+                                                        {deletingId === memory.id ? (
+                                                            <div className="w-4 h-4 border-2 border-neutral-300 border-t-neutral-600 rounded-full animate-spin" />
+                                                        ) : (
+                                                            <Trash2 className="w-4 h-4" />
+                                                        )}
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </>
+                            )}
+
+                            {!loading && memories.length < total && (
                                 <div className="pt-8 flex justify-center pb-12">
                                     <button
                                         onClick={() => loadMemories(true)}
