@@ -25,6 +25,7 @@ engine = create_async_engine(
     # Connection arguments for reliability and performance
     connect_args={
         "command_timeout": settings.DB_QUERY_TIMEOUT,  # Query timeout (default 30s)
+        "statement_cache_size": 0,  # Disable prepared statements for PgBouncer compatibility
         "server_settings": {
             "application_name": "unimemory-api",
             "jit": "off",  # Disable JIT for consistent performance
