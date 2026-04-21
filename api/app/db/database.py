@@ -41,18 +41,29 @@ def _get_connect_args():
 
 # Create async engine with production-ready settings
 # Use NullPool for PgBouncer to avoid connection state issues
-engine = create_async_engine(
-    settings.DATABASE_URL,
-    echo=settings.DEBUG,
-    future=True,
-    pool_pre_ping=True,
-    pool_size=settings.DB_POOL_SIZE if not _is_pgbouncer else 1,
-    max_overflow=settings.DB_MAX_OVERFLOW if not _is_pgbouncer else 0,
-    pool_timeout=settings.DB_POOL_TIMEOUT,
-    pool_recycle=settings.DB_POOL_RECYCLE,
-    poolclass=NullPool if _is_pgbouncer else QueuePool,  # NullPool for PgBouncer
-    connect_args=_get_connect_args()
-)
+if _is_pgbouncer:
+    # NullPool doesn't accept pool size arguments
+    engine = create_async_engine(
+        settings.DATABASE_URL,
+        echo=settings.DEBUG,
+        future=True,
+        poolclass=NullPool,
+        connect_args=_get_connect_args()
+    )
+else:
+    # Direct connection: use QueuePool with full configuration
+    engine = create_async_engine(
+        settings.DATABASE_URL,
+        echo=settings.DEBUG,
+        future=True,
+        pool_pre_ping=True,
+        pool_size=settings.DB_POOL_SIZE,
+        max_overflow=settings.DB_MAX_OVERFLOW,
+        pool_timeout=settings.DB_POOL_TIMEOUT,
+        pool_recycle=settings.DB_POOL_RECYCLE,
+        poolclass=QueuePool,
+        connect_args=_get_connect_args()
+    )
 
 # Create async session factory
 AsyncSessionLocal = async_sessionmaker(
