@@ -23,9 +23,11 @@ engine = create_async_engine(
     pool_recycle=settings.DB_POOL_RECYCLE,
     poolclass=QueuePool,
     # Connection arguments for reliability and performance
+    # CRITICAL: Both cache settings must be 0 for Supabase PgBouncer (transaction mode)
     connect_args={
         "command_timeout": settings.DB_QUERY_TIMEOUT,  # Query timeout (default 30s)
-        "statement_cache_size": 0,  # Disable prepared statements for PgBouncer compatibility
+        "statement_cache_size": 0,  # Disable statement cache for PgBouncer
+        "prepared_statement_cache_size": 0,  # Disable prepared statement cache for PgBouncer
         "server_settings": {
             "application_name": "unimemory-api",
             "jit": "off",  # Disable JIT for consistent performance
