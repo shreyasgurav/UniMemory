@@ -24,8 +24,8 @@ from app.core.extractor import get_extractor, ExtractedMemoryItem
 from app.core.embeddings import get_embedding_service
 from app.core.simhash import compute_simhash, hamming_distance
 from app.core.sector import (
-    classify_sector, get_sector_decay_lambda, calculate_initial_salience, 
-    get_sector_relationship_weight, classify_memory_type, determine_priority
+    classify_sector, calculate_initial_salience, 
+    get_sector_relationship_weight
 )
 from app.core.entities import EntityExtractor
 from app.core.waypoints import create_waypoint_for_memory
@@ -204,7 +204,7 @@ async def store_extracted_memories(
     new_memories_for_waypoints = []
     
     # Phase 1: Deduplicate and classify (no API calls)
-    unique_items = []  # (mem_item, simhash, sector, additional_sectors, decay_lambda, initial_salience, memory_type, priority)
+    unique_items = []  # (mem_item, simhash, sector, additional_sectors, initial_salience)
     
     for mem_item in extracted:
         mem_content = mem_item.content.strip()
@@ -228,13 +228,10 @@ async def store_extracted_memories(
         if is_duplicate:
             continue
         
-        # Classify sector and memory type
+        # Classify sector
         sector, additional_sectors, confidence = classify_sector(mem_content)
-        decay_lambda = get_sector_decay_lambda(sector)
         initial_salience = calculate_initial_salience(sector, additional_sectors)
-        memory_type = classify_memory_type(mem_content, sector)
-        priority = determine_priority(memory_type, initial_salience, sector)
-        unique_items.append((mem_item, simhash, sector, additional_sectors, decay_lambda, initial_salience, memory_type, priority))
+        unique_items.append((mem_item, simhash, sector, additional_sectors, initial_salience))
     
     # Phase 2: Generate all embeddings in parallel
     if not unique_items:
@@ -252,7 +249,7 @@ async def store_extracted_memories(
         embeddings_results = [e] * len(contents_to_embed)
     
     # Phase 3: Create memory objects with embeddings
-    for i, (mem_item, simhash, sector, additional_sectors, decay_lambda, initial_salience, memory_type, priority) in enumerate(unique_items):
+    for i, (mem_item, simhash, sector, additional_sectors, initial_salience) in enumerate(unique_items):
         mem_content = mem_item.content.strip()
         
         # Check embedding result
@@ -271,27 +268,16 @@ async def store_extracted_memories(
             simhash=simhash,
             sector=sector,
             salience=initial_salience,
-            decay_lambda=decay_lambda,
-            segment=0,
             tags=mem_item.tags or [],
             extra_metadata={},
             source_app=app_id,
             user_id=user_id,
-            end_user_id=end_user_id,
             owner_id=owner_id,
+            end_user_id=end_user_id,
             api_key_id=api_key_id,
             project_id=project_id,
             embedding=embedding,
             embedding_model=settings.EMBEDDING_MODEL,
-            # New fields
-            memory_type=memory_type,
-            priority=priority,
-            recall_count=0,
-            last_recalled_at=None,
-            coactivation_score=0.0,
-            valid_from=datetime.utcnow(),
-            valid_to=None,
-            # Standard fields
             is_active=True,
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow(),
@@ -562,7 +548,7 @@ async def _process_text_background(
                     memory_ids = []
                     stored_count = 0
                     
-                    for i, (mem_item, simhash, sector, decay_lambda, initial_salience, memory_type, priority) in enumerate(unique_items):
+                    for i, (mem_item, simhash, sector, initial_salience) in enumerate(unique_items):
                         emb_result = embeddings_results[i]
                         if isinstance(emb_result, Exception):
                             logger.error(f"{log_prefix} Embedding failed: {emb_result}")
@@ -576,8 +562,6 @@ async def _process_text_background(
                             simhash=simhash,
                             sector=sector,
                             salience=initial_salience,
-                            decay_lambda=decay_lambda,
-                            segment=0,
                             tags=mem_item.tags or [],
                             extra_metadata={},
                             source_app=app_id,
@@ -588,13 +572,6 @@ async def _process_text_background(
                             project_id=project_id,
                             embedding=embedding,
                             embedding_model=settings.EMBEDDING_MODEL,
-                            memory_type=memory_type,
-                            priority=priority,
-                            recall_count=0,
-                            last_recalled_at=None,
-                            coactivation_score=0.0,
-                            valid_from=datetime.utcnow(),
-                            valid_to=None,
                             is_active=True,
                             created_at=datetime.utcnow(),
                             updated_at=datetime.utcnow(),
@@ -636,11 +613,11 @@ async def _process_text_background(
                         except Exception as e:
                             logger.error(f"{log_prefix} Waypoint task failed: {e}")
         
-        # Step 6: Entity/fact extraction (non-critical, best-effort)
+        # Step 6: Entity extraction (non-critical, best-effort)
+        # Note: Fact extraction removed in schema cleanup (2026-04-24)
         if source_id:
             try:
                 entity_extractor = EntityExtractor()
-                event_time = datetime.utcnow()
                 
                 async with AsyncSessionLocal() as session:
                     extracted_entities = await entity_extractor.extract_entities(content, source_metadata)
@@ -658,14 +635,10 @@ async def _process_text_background(
                             )
                             session.add(entity_source)
                     
-                    extracted_facts = await entity_extractor.extract_facts(content, list(entity_map.values()), event_time)
-                    created_facts = await entity_extractor.resolve_and_store_facts(
-                        session, extracted_facts, entity_map, owner_id, end_user_id, source_id
-                    )
                     await session.commit()
-                    logger.info(f"{log_prefix} Extracted {len(entity_map)} entities and {len(created_facts)} facts")
+                    logger.info(f"{log_prefix} Extracted {len(entity_map)} entities")
             except Exception as e:
-                logger.error(f"{log_prefix} Entity/fact extraction failed (non-fatal): {e}", exc_info=True)
+                logger.error(f"{log_prefix} Entity extraction failed (non-fatal): {e}", exc_info=True)
         
         # Log processing
         async with AsyncSessionLocal() as session:
@@ -780,11 +753,8 @@ async def _process_chat_background(
                         continue
                     
                     sector, additional_sectors, confidence = classify_sector(mem_content)
-                    decay_lambda = get_sector_decay_lambda(sector)
                     initial_salience = calculate_initial_salience(sector, additional_sectors)
-                    memory_type = classify_memory_type(mem_content, sector)
-                    priority = determine_priority(memory_type, initial_salience, sector)
-                    unique_items.append((mem_item, simhash, sector, decay_lambda, initial_salience, memory_type, priority))
+                    unique_items.append((mem_item, simhash, sector, initial_salience))
                 
                 if not unique_items:
                     await session.commit()
@@ -802,7 +772,7 @@ async def _process_chat_background(
                 memory_ids = []
                 stored_count = 0
                 
-                for i, (mem_item, simhash, sector, decay_lambda, initial_salience, memory_type, priority) in enumerate(unique_items):
+                for i, (mem_item, simhash, sector, initial_salience) in enumerate(unique_items):
                     emb_result = embeddings_results[i]
                     if isinstance(emb_result, Exception):
                         logger.error(f"[IngestBG] Embedding failed: {emb_result}")
@@ -816,25 +786,16 @@ async def _process_chat_background(
                         simhash=simhash,
                         sector=sector,
                         salience=initial_salience,
-                        decay_lambda=decay_lambda,
-                        segment=0,
                         tags=mem_item.tags or [],
                         extra_metadata={},
                         source_app=app_id,
                         user_id=user_id,
-                        end_user_id=end_user_id,
                         owner_id=owner_id,
+                        end_user_id=end_user_id,
                         api_key_id=api_key_id,
                         project_id=project_id,
                         embedding=embedding,
                         embedding_model=settings.EMBEDDING_MODEL,
-                        memory_type=memory_type,
-                        priority=priority,
-                        recall_count=0,
-                        last_recalled_at=None,
-                        coactivation_score=0.0,
-                        valid_from=datetime.utcnow(),
-                        valid_to=None,
                         is_active=True,
                         created_at=datetime.utcnow(),
                         updated_at=datetime.utcnow(),
@@ -866,6 +827,7 @@ async def _process_chat_background(
                             total_created = 0
                             for mid in memory_ids[:MAX_WAYPOINTS_PER_INGEST]:
                                 try:
+                                    from app.core.waypoints import create_waypoint_for_memory
                                     count = await create_waypoint_for_memory(wp_session, mid, owner_id)
                                     total_created += count
                                 except Exception as e:
@@ -1189,11 +1151,8 @@ async def _process_document_background(
                         continue
                     
                     sector, additional_sectors, _ = classify_sector(mem_content)
-                    decay_lambda = get_sector_decay_lambda(sector)
                     initial_salience = calculate_initial_salience(sector, additional_sectors)
-                    memory_type = classify_memory_type(mem_content, sector)
-                    priority = determine_priority(memory_type, initial_salience, sector)
-                    unique_items.append((mem_item, simhash, sector, decay_lambda, initial_salience, memory_type, priority))
+                    unique_items.append((mem_item, simhash, sector, initial_salience))
                     simhash_to_memory[simhash] = True
                 
                 if not unique_items:
@@ -1208,7 +1167,7 @@ async def _process_document_background(
                 
                 # Create memories
                 chunk_memory_ids = []
-                for i, (mem_item, simhash, sector, decay_lambda, initial_salience, memory_type, priority) in enumerate(unique_items):
+                for i, (mem_item, simhash, sector, initial_salience) in enumerate(unique_items):
                     emb_result = embeddings_results[i]
                     if isinstance(emb_result, Exception):
                         continue
@@ -1221,23 +1180,16 @@ async def _process_document_background(
                         simhash=simhash,
                         sector=sector,
                         salience=initial_salience,
-                        decay_lambda=decay_lambda,
-                        segment=chunk_idx,
                         tags=mem_item.tags or [],
                         extra_metadata={},
                         source_app=app_id,
                         user_id=user_id,
-                        end_user_id=end_user_id,
                         owner_id=owner_id,
+                        end_user_id=end_user_id,
                         api_key_id=api_key_id,
                         project_id=project_id,
                         embedding=embedding,
                         embedding_model=settings.EMBEDDING_MODEL,
-                        memory_type=memory_type,
-                        priority=priority,
-                        recall_count=0,
-                        coactivation_score=0.0,
-                        valid_from=datetime.utcnow(),
                         is_active=True,
                         created_at=datetime.utcnow(),
                         updated_at=datetime.utcnow(),

@@ -1,16 +1,16 @@
 """
-Entity and Fact extraction for UniMemory
+Entity extraction for UniMemory
+Note: Fact extraction removed in schema cleanup (2026-04-24)
 """
-from typing import List, Dict, Tuple, Optional, Any
+from typing import List, Dict, Optional
 from datetime import datetime
 from pydantic import BaseModel
 import re
-import json
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import uuid
 
-from app.db.models import Entity, Fact, EntitySource, EntityLink
+from app.db.models import Entity, EntitySource
 from app.core.embeddings import get_embedding_service
 from app.config import settings
 import logging
@@ -27,19 +27,8 @@ class ExtractedEntity(BaseModel):
     confidence: float = 1.0
 
 
-class ExtractedFact(BaseModel):
-    """Extracted fact (SPO triple)"""
-    subject: str  # Entity name
-    predicate: str  # Relationship
-    object: str  # Entity name or value
-    fact_text: str  # Human-readable
-    valid_from: Optional[datetime] = None
-    valid_to: Optional[datetime] = None
-    confidence: float = 1.0
-
-
 class EntityExtractor:
-    """Extract entities and facts from content"""
+    """Extract entities from content"""
     
     def __init__(self):
         self.embedding_service = get_embedding_service()
@@ -124,113 +113,6 @@ class EntityExtractor:
         
         return True
     
-    async def extract_facts(self, content: str, entities: List[ExtractedEntity], 
-                           event_time: Optional[datetime] = None) -> List[ExtractedFact]:
-        """
-        Extract facts (relationships) from content.
-        Uses patterns for now, can be upgraded to LLM later.
-        """
-        facts = []
-        entity_names = {e.name.lower(): e.name for e in entities}
-        
-        # Work relationship patterns
-        work_patterns = [
-            r'(?i)(works? at|employed by|joined)\s+(\w+)',
-            r'(?i)(\w+)\s+(CEO|CTO|engineer|developer|manager)\s+at\s+(\w+)',
-        ]
-        
-        for pattern in work_patterns:
-            for match in re.finditer(pattern, content):
-                try:
-                    if 'work' in pattern or 'employ' in pattern or 'join' in pattern:
-                        # Pattern: X works at Y
-                        predicate = "works_at"
-                        # Find subject (person) before the verb
-                        before_text = content[:match.start()][-50:]  # Look back 50 chars
-                        subject = self._find_nearest_entity(before_text, entity_names, "person")
-                        object_text = match.group(2)
-                        
-                        if subject and object_text:
-                            facts.append(ExtractedFact(
-                                subject=subject,
-                                predicate=predicate,
-                                object=object_text,
-                                fact_text=f"{subject} works at {object_text}",
-                                valid_from=event_time or datetime.utcnow(),
-                                confidence=0.7
-                            ))
-                except:
-                    continue
-        
-        # Preference patterns
-        pref_patterns = [
-            r'(?i)(prefer|like|love|enjoy|favorite)\s+(\w+)',
-            r'(?i)(\w+)\s+is\s+my\s+favorite',
-        ]
-        
-        for pattern in pref_patterns:
-            for match in re.finditer(pattern, content):
-                try:
-                    if 'favorite' in pattern and 'is my' in pattern:
-                        object_text = match.group(1)
-                        facts.append(ExtractedFact(
-                            subject="User",
-                            predicate="prefers",
-                            object=object_text,
-                            fact_text=f"User prefers {object_text}",
-                            valid_from=event_time or datetime.utcnow(),
-                            confidence=0.8
-                        ))
-                    elif match.group(2):
-                        object_text = match.group(2)
-                        facts.append(ExtractedFact(
-                            subject="User",
-                            predicate="prefers",
-                            object=object_text,
-                            fact_text=f"User prefers {object_text}",
-                            valid_from=event_time or datetime.utcnow(),
-                            confidence=0.75
-                        ))
-                except:
-                    continue
-        
-        # Knowledge/skill patterns
-        skill_patterns = [
-            r'(?i)(know|understand|learned|learning)\s+(\w+)',
-            r'(?i)(expert|proficient|skilled)\s+in\s+(\w+)',
-        ]
-        
-        for pattern in skill_patterns:
-            for match in re.finditer(pattern, content):
-                try:
-                    skill = match.group(2) if match.lastindex >= 2 else match.group(1)
-                    if skill and len(skill) > 2:
-                        facts.append(ExtractedFact(
-                            subject="User",
-                            predicate="knows",
-                            object=skill,
-                            fact_text=f"User knows {skill}",
-                            valid_from=event_time or datetime.utcnow(),
-                            confidence=0.7
-                        ))
-                except:
-                    continue
-        
-        return facts
-    
-    def _find_nearest_entity(self, text: str, entity_names: Dict[str, str], 
-                            preferred_type: Optional[str] = None) -> Optional[str]:
-        """Find the nearest entity in the text"""
-        for name_lower, name_original in entity_names.items():
-            if name_lower in text.lower():
-                return name_original
-        
-        # If no entity found, check for "I" or "me" (refers to user)
-        if any(word in text.lower() for word in ['i ', 'me ', 'my ']):
-            return "User"
-        
-        return None
-    
     async def resolve_entities(self, session: AsyncSession, extracted: List[ExtractedEntity], 
                               owner_id: str, end_user_id: Optional[str]) -> Dict[str, Entity]:
         """
@@ -291,133 +173,6 @@ class EntityExtractor:
                 entity_map[extracted_entity.name] = new_entity
         
         return entity_map
-    
-    async def resolve_and_store_facts(self, session: AsyncSession, extracted_facts: List[ExtractedFact],
-                                     entity_map: Dict[str, Entity], owner_id: str, 
-                                     end_user_id: Optional[str], source_id: Optional[str]) -> List[Fact]:
-        """
-        Resolve facts and handle temporal conflicts.
-        Returns list of created Fact objects.
-        """
-        created_facts = []
-        embedding_service = get_embedding_service()
-        
-        for extracted_fact in extracted_facts:
-            # Get subject entity
-            subject_entity = entity_map.get(extracted_fact.subject)
-            if not subject_entity:
-                # Create User entity if not exists
-                if extracted_fact.subject == "User":
-                    user_embedding, _ = await embedding_service.embed("User")
-                    subject_entity = Entity(
-                        id=str(uuid.uuid4()),
-                        owner_id=owner_id,
-                        end_user_id=end_user_id,
-                        name="User",
-                        entity_type="person",
-                        summary="The user of this system",
-                        embedding=user_embedding,
-                        aliases=[],
-                        mention_count=1,
-                        first_seen_at=datetime.utcnow(),
-                        last_seen_at=datetime.utcnow(),
-                        is_active=True,
-                        created_at=datetime.utcnow(),
-                        updated_at=datetime.utcnow()
-                    )
-                    session.add(subject_entity)
-                    entity_map["User"] = subject_entity
-                else:
-                    continue  # Skip if subject entity not found
-            
-            # Get object entity (if it's an entity)
-            object_entity = entity_map.get(extracted_fact.object)
-            object_value = None if object_entity else extracted_fact.object
-            
-            # Check for conflicting facts (same subject + predicate)
-            stmt = select(Fact).where(
-                Fact.owner_id == owner_id,
-                Fact.subject_entity_id == subject_entity.id,
-                Fact.predicate == extracted_fact.predicate,
-                Fact.is_valid == True,
-                Fact.valid_to == None  # Currently valid
-            )
-            
-            result = await session.execute(stmt)
-            existing_facts = result.scalars().all()
-            
-            # Invalidate conflicting facts
-            for existing in existing_facts:
-                if object_entity:
-                    # Check if it's actually different
-                    if existing.object_entity_id != object_entity.id:
-                        existing.valid_to = datetime.utcnow()
-                        existing.invalidated_at = datetime.utcnow()
-                        existing.is_valid = False
-                        existing.invalidation_reason = "superseded"
-                elif existing.object_value != object_value:
-                    existing.valid_to = datetime.utcnow()
-                    existing.invalidated_at = datetime.utcnow()
-                    existing.is_valid = False
-                    existing.invalidation_reason = "superseded"
-            
-            # Generate embedding for fact
-            fact_embedding, _ = await embedding_service.embed(extracted_fact.fact_text)
-            
-            # Create new fact
-            new_fact = Fact(
-                id=str(uuid.uuid4()),
-                owner_id=owner_id,
-                end_user_id=end_user_id,
-                subject_entity_id=subject_entity.id,
-                predicate=extracted_fact.predicate,
-                object_entity_id=object_entity.id if object_entity else None,
-                object_value=object_value,
-                fact_text=extracted_fact.fact_text,
-                embedding=fact_embedding,
-                valid_from=extracted_fact.valid_from or datetime.utcnow(),
-                valid_to=extracted_fact.valid_to,
-                created_at=datetime.utcnow(),
-                invalidated_at=None,
-                confidence=extracted_fact.confidence,
-                source_id=source_id,
-                is_valid=True,
-                invalidation_reason=None
-            )
-            session.add(new_fact)
-            created_facts.append(new_fact)
-            
-            # Update entity links if both are entities
-            if object_entity:
-                # Check if link exists
-                stmt = select(EntityLink).where(
-                    EntityLink.owner_id == owner_id,
-                    EntityLink.src_entity_id == subject_entity.id,
-                    EntityLink.dst_entity_id == object_entity.id
-                ).limit(1)
-                
-                result = await session.execute(stmt)
-                existing_link = result.scalar_one_or_none()
-                
-                if existing_link:
-                    existing_link.fact_count += 1
-                    existing_link.updated_at = datetime.utcnow()
-                else:
-                    # Create new link
-                    new_link = EntityLink(
-                        id=str(uuid.uuid4()),
-                        owner_id=owner_id,
-                        src_entity_id=subject_entity.id,
-                        dst_entity_id=object_entity.id,
-                        relationship_type=extracted_fact.predicate,
-                        weight=0.5,
-                        fact_count=1,
-                        created_at=datetime.utcnow(),
-                        updated_at=datetime.utcnow()
-                    )
-                    session.add(new_link)
-        
-        return created_facts
 
 
 def classify_memory_type(content: str, sector: str) -> str:

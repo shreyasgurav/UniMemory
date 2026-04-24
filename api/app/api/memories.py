@@ -254,8 +254,6 @@ async def create_memory(
         simhash=simhash,
         sector=sector,
         salience=0.5,  # Default salience
-        decay_lambda=get_sector_decay_lambda(sector),
-        segment=0,
         tags=request.tags or [],
         extra_metadata=request.metadata or {},
         source_app=request.app_id,
