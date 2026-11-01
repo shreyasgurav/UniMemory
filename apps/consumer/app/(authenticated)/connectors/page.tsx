@@ -75,6 +75,11 @@ export default function ConnectorsPage() {
   const [copied, setCopied] = useState<string | null>(null);
   const [configMode, setConfigMode] = useState<"oneclick" | "manual">("oneclick");
 
+  // MCP Gateway (external app connectors) state
+  const [gatewayAvailable, setGatewayAvailable] = useState<Record<string, boolean>>({});
+  const [gatewayConns, setGatewayConns] = useState<Array<{ provider: string; status: string; account_label?: string }>>([]);
+  const [gatewayBusy, setGatewayBusy] = useState<string | null>(null);
+
   useEffect(() => {
     const checkExtensionStatus = async () => {
       try {
@@ -106,6 +111,69 @@ export default function ConnectorsPage() {
   useEffect(() => {
     fetchOrCreateToken(selectedClient);
   }, []);
+
+  // --- MCP Gateway connectors ---
+  const loadGatewayConnectors = async () => {
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) return;
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/connectors`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setGatewayAvailable(data.available || {});
+        setGatewayConns(data.connections || []);
+      }
+    } catch (e) {
+      console.error("Failed to load connectors:", e);
+    }
+  };
+
+  useEffect(() => {
+    loadGatewayConnectors();
+    // Refresh after returning from an OAuth flow (?connected=gmail&status=...)
+    if (typeof window !== "undefined" && window.location.search.includes("connected=")) {
+      window.history.replaceState({}, "", window.location.pathname);
+      setTimeout(loadGatewayConnectors, 500);
+    }
+  }, []);
+
+  const connectGateway = async (provider: string) => {
+    setGatewayBusy(provider);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) return;
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/connectors/${provider}/connect`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const { authorize_url } = await res.json();
+        window.location.href = authorize_url;
+      } else {
+        console.error("Connect failed", await res.text());
+        setGatewayBusy(null);
+      }
+    } catch (e) {
+      console.error(e);
+      setGatewayBusy(null);
+    }
+  };
+
+  const disconnectGateway = async (provider: string) => {
+    setGatewayBusy(provider);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) return;
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/connectors/${provider}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      await loadGatewayConnectors();
+    } finally {
+      setGatewayBusy(null);
+    }
+  };
 
   const openMcpModal = async (clientId: string) => {
     setSelectedClient(clientId);
@@ -261,6 +329,63 @@ export default function ConnectorsPage() {
               </div>
               <ExternalLink className="w-5 h-5 text-neutral-400 group-hover:text-neutral-600 transition-colors" />
             </a>
+          </div>
+
+          {/* MCP Gateway Section */}
+          <div>
+            <h2 className="text-sm font-medium text-neutral-500 mb-1">MCP Gateway</h2>
+            <p className="text-xs text-neutral-400 mb-3">
+              Connect an app once here. Any AI agent linked to UniMemory can then
+              access it through the gateway tools, without connecting each app separately.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2 max-w-2xl">
+              {[
+                { id: "gmail", name: "Gmail", logo: "https://ssl.gstatic.com/ui/v1/icons/mail/rfr/gmail.ico", desc: "Search and read your email." },
+                { id: "notion", name: "Notion", logo: "https://www.notion.so/images/favicon.ico", desc: "Search and read your workspace." },
+              ].map((appInfo) => {
+                const conn = gatewayConns.find((c) => c.provider === appInfo.id);
+                const available = gatewayAvailable[appInfo.id];
+                const busy = gatewayBusy === appInfo.id;
+                return (
+                  <div key={appInfo.id} className="bg-white rounded-lg p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="relative">
+                        <img src={appInfo.logo} alt={appInfo.name} className="w-9 h-9 rounded" />
+                        {conn && <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-medium text-neutral-900">{appInfo.name}</h3>
+                          {conn && <span className="text-xs text-green-600 font-medium">Connected</span>}
+                        </div>
+                        <p className="text-sm text-neutral-500 truncate">
+                          {conn?.account_label || appInfo.desc}
+                        </p>
+                      </div>
+                    </div>
+                    {!available ? (
+                      <span className="text-xs text-neutral-400">Coming soon</span>
+                    ) : conn ? (
+                      <button
+                        onClick={() => disconnectGateway(appInfo.id)}
+                        disabled={busy}
+                        className="text-sm px-3 py-1.5 rounded-lg border border-neutral-200 text-neutral-600 hover:bg-neutral-50 disabled:opacity-50"
+                      >
+                        {busy ? "..." : "Disconnect"}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => connectGateway(appInfo.id)}
+                        disabled={busy}
+                        className="text-sm px-3 py-1.5 rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 disabled:opacity-50"
+                      >
+                        {busy ? "..." : "Connect"}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
           {/* MCP Section */}

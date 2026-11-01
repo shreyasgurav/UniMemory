@@ -1,0 +1,163 @@
+{
+  "persona": {
+    "name": "Alex Rivera",
+    "end_user_id": "persona-alex",
+    "description": "Synthetic final-year CS student / software engineer. All facts are fictional and authored by us for reproducible evaluation; no real user data is used."
+  },
+  "conversations": [
+    {
+      "id": "conv01_coding_prefs",
+      "category": "preferences",
+      "title": "Coding setup and preferences",
+      "messages": [
+        {"role": "user", "content": "I'm setting up a new laptop. For context, I always code in VS Code with dark mode on, and for machine learning work I strongly prefer Python over everything else."},
+        {"role": "assistant", "content": "Got it. I'll assume VS Code with a dark theme, and Python as your go-to for ML."},
+        {"role": "user", "content": "Right. I also dislike verbose inline comments, I'd rather keep code self-explanatory."}
+      ],
+      "facts": [
+        ["vs code"],
+        ["dark mode"],
+        ["python"],
+        ["dislike", "verbose", "comments"]
+      ]
+    },
+    {
+      "id": "conv02_food_lifestyle",
+      "category": "preferences",
+      "title": "Food and daily routine",
+      "messages": [
+        {"role": "user", "content": "Quick note about me: I'm vegetarian and I'm allergic to peanuts, so keep that in mind for any recipe suggestions."},
+        {"role": "assistant", "content": "Understood, vegetarian and peanut allergy noted."},
+        {"role": "user", "content": "Also every morning I go for a run and then grab an oat milk latte."}
+      ],
+      "facts": [
+        ["vegetarian"],
+        ["peanut"],
+        ["run"],
+        ["oat milk"]
+      ]
+    },
+    {
+      "id": "conv03_unimemory_project",
+      "category": "projects",
+      "title": "UniMemory final-year project",
+      "messages": [
+        {"role": "user", "content": "My final-year project is called UniMemory, a long-term memory layer for AI apps. The backend is built with FastAPI and uses PostgreSQL with the pgvector extension for vector search."},
+        {"role": "assistant", "content": "Nice, FastAPI + Postgres/pgvector is a solid stack for that."},
+        {"role": "user", "content": "The hard deadline for the final evaluation is in November."}
+      ],
+      "facts": [
+        ["unimemory"],
+        ["fastapi"],
+        ["postgres"],
+        ["pgvector"],
+        ["november"]
+      ]
+    },
+    {
+      "id": "conv04_tripsplit_project",
+      "category": "projects",
+      "title": "TripSplit side project",
+      "messages": [
+        {"role": "user", "content": "On the side I'm building an expense-splitting app for friends called TripSplit. It's a React Native app."},
+        {"role": "assistant", "content": "Expense splitting in React Native, sounds handy for group trips."},
+        {"role": "user", "content": "Yeah but I'm currently stuck on the authentication flow."}
+      ],
+      "facts": [
+        ["tripsplit"],
+        ["react native"],
+        ["stuck", "authentication"]
+      ]
+    },
+    {
+      "id": "conv05_personal_home",
+      "category": "personal_facts",
+      "title": "Home and family",
+      "messages": [
+        {"role": "user", "content": "I live in Mumbai now, but I'm originally from Pune. I'm a final-year student at Somaiya."},
+        {"role": "assistant", "content": "Mumbai-based, Pune roots, studying at Somaiya, got it."},
+        {"role": "user", "content": "I have a younger sister named Nisha."}
+      ],
+      "facts": [
+        ["mumbai"],
+        ["pune"],
+        ["somaiya"],
+        ["nisha"]
+      ]
+    },
+    {
+      "id": "conv06_relationship",
+      "category": "personal_facts",
+      "title": "Relationship details",
+      "messages": [
+        {"role": "user", "content": "My girlfriend's name is Maya. Our anniversary is March 12."},
+        {"role": "assistant", "content": "Maya, anniversary on March 12, noted."},
+        {"role": "user", "content": "She loves sunflowers, I always get her those."}
+      ],
+      "facts": [
+        ["maya"],
+        ["march", "12"],
+        ["sunflower"]
+      ]
+    },
+    {
+      "id": "conv07_goa_trip",
+      "category": "events",
+      "title": "Goa trip",
+      "messages": [
+        {"role": "user", "content": "I'm planning a trip to Goa from December 20 to 26 with my college friends."},
+        {"role": "assistant", "content": "Goa, Dec 20-26, with college friends, sounds fun."},
+        {"role": "user", "content": "Need to book the flights soon."}
+      ],
+      "facts": [
+        ["goa"],
+        ["december", "20"],
+        ["college friends"]
+      ]
+    },
+    {
+      "id": "conv08_pycon_talk",
+      "category": "events",
+      "title": "PyCon talk",
+      "messages": [
+        {"role": "user", "content": "I'm giving a talk at PyCon in October about vector search for memory systems."},
+        {"role": "assistant", "content": "A PyCon talk on vector search, that's a great topic."},
+        {"role": "user", "content": "I still need to finish the slides."}
+      ],
+      "facts": [
+        ["pycon"],
+        ["october"],
+        ["vector search"]
+      ]
+    },
+    {
+      "id": "conv09_learning",
+      "category": "preferences",
+      "title": "Learning goals",
+      "messages": [
+        {"role": "user", "content": "Next I want to learn Rust, I keep hearing good things about it."},
+        {"role": "assistant", "content": "Rust is a great next step, especially coming from Python."},
+        {"role": "user", "content": "Right now I'm reading Designing Data-Intensive Applications."}
+      ],
+      "facts": [
+        ["rust"],
+        ["designing data-intensive applications"]
+      ]
+    },
+    {
+      "id": "conv10_misc_personal",
+      "category": "personal_facts",
+      "title": "Pet and commute",
+      "messages": [
+        {"role": "user", "content": "I have a cat named Pixel who wakes me up at 6am every day."},
+        {"role": "assistant", "content": "Pixel the cat, 6am wake-up, noted."},
+        {"role": "user", "content": "I drive a blue Honda City to campus."}
+      ],
+      "facts": [
+        ["pixel"],
+        ["6am"],
+        ["honda"]
+      ]
+    }
+  ]
+}

@@ -18,6 +18,7 @@ import asyncio
 from app.db.database import get_db
 from app.db.models import MCPToken, User, Memory, Source, MemorySource, MCPActivity
 from app.core.auth import get_current_user
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -642,6 +643,44 @@ MCP_TOOLS = [
         }
     }
 ]
+
+# ---- MCP Gateway tools (external connectors: Gmail, Notion, ...) ----
+# Only advertised when at least one connector is configured on the server.
+CONNECTOR_TOOLS = [
+    {
+        "name": "list_connectors",
+        "description": "List the external apps (e.g. gmail) the user has connected to UniMemory, so you know which apps you can query via connector_search / connector_fetch.",
+        "inputSchema": {"type": "object", "properties": {}, "required": []}
+    },
+    {
+        "name": "connector_search",
+        "description": "Search a connected external app through UniMemory. For gmail, 'query' uses Gmail search syntax (e.g. 'from:alice project'). Returns lightweight hits with ids; use connector_fetch to read full content.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "app": {"type": "string", "enum": ["gmail"], "description": "Which connected app to search."},
+                "query": {"type": "string", "description": "Search query."},
+                "limit": {"type": "number", "description": "Max results (default 10)."}
+            },
+            "required": ["app", "query"]
+        }
+    },
+    {
+        "name": "connector_fetch",
+        "description": "Fetch the full content of one item from a connected app (e.g. a Gmail message) by the id returned from connector_search.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "app": {"type": "string", "enum": ["gmail"], "description": "Which connected app."},
+                "id": {"type": "string", "description": "Item id from connector_search."}
+            },
+            "required": ["app", "id"]
+        }
+    }
+]
+
+if settings.connectors_enabled:
+    MCP_TOOLS = MCP_TOOLS + CONNECTOR_TOOLS
 
 
 # =============================================================================
@@ -1577,6 +1616,35 @@ async def execute_tool(
             ]
         }
     
+    elif tool_name == "list_connectors":
+        from app.core import connector_service
+        conns = await connector_service.list_user_connectors(session, str(user.id))
+        return {
+            "connected": conns,
+            "available": [p for p, on in (("gmail", settings.gmail_connector_enabled),
+                                          ("notion", settings.notion_connector_enabled)) if on],
+            "hint": "If an app you need is not connected, ask the user to connect it in the UniMemory dashboard.",
+        }
+
+    elif tool_name == "connector_search":
+        from app.core import connector_service
+        app_name = (args.get("app") or "").lower()
+        query = args.get("query", "")
+        limit = int(args.get("limit", 10) or 10)
+        if app_name == "gmail":
+            return await connector_service.gmail_search(session, str(user.id), query, limit)
+        return {"error": f"Unsupported app: {app_name}"}
+
+    elif tool_name == "connector_fetch":
+        from app.core import connector_service
+        app_name = (args.get("app") or "").lower()
+        item_id = args.get("id", "")
+        if not item_id:
+            return {"error": "id is required"}
+        if app_name == "gmail":
+            return await connector_service.gmail_fetch(session, str(user.id), item_id)
+        return {"error": f"Unsupported app: {app_name}"}
+
     else:
         return {"error": f"Unknown tool: {tool_name}"}
 

@@ -2,6 +2,7 @@
 UniMemory Python SDK client
 """
 
+import os
 import requests
 from typing import Any, Dict, List, Optional
 
@@ -32,7 +33,7 @@ class UniMemoryError(Exception):
 
 class UniMemory:
     """
-    UniMemory client.
+    UniMemory client v2.
 
     Core API:    add / list / get / update / delete / search
     Ingest API:  ingest_text / ingest_chat / ingest_document
@@ -40,10 +41,13 @@ class UniMemory:
 
     DEFAULT_BASE_URL = "https://unimemory.up.railway.app/api/v1"
 
-    def __init__(self, api_key: str, base_url: Optional[str] = None):
-        if not api_key:
-            raise UniMemoryError("API key is required")
-        self.api_key = api_key
+    def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
+        resolved_key = api_key or os.environ.get("UNIMEMORY_API_KEY")
+        if not resolved_key:
+            raise UniMemoryError(
+                "API key is required. Pass api_key= or set the UNIMEMORY_API_KEY environment variable."
+            )
+        self.api_key = resolved_key
         self.base_url = (base_url or self.DEFAULT_BASE_URL).rstrip("/")
         self._session = requests.Session()
         self._session.headers.update({

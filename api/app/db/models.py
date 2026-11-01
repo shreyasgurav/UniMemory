@@ -369,6 +369,37 @@ class MCPToken(Base):
         return f"<MCPToken(id={self.id}, name={self.name}, client={self.client_type})>"
 
 
+class ConnectorConnection(Base):
+    """OAuth connection to a third-party app (Gmail, Notion, ...) that the
+    MCP Gateway proxies to. Tokens are stored encrypted at rest."""
+    __tablename__ = "connector_connections"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    provider = Column(String(30), nullable=False, index=True)  # gmail, notion
+    status = Column(String(20), default="connected")           # connected, error
+    account_label = Column(String(255))                        # email / workspace name
+    scopes = Column(Text)                                      # space-separated
+
+    # Encrypted token material (never stored or logged in plaintext)
+    access_token_enc = Column(Text)
+    refresh_token_enc = Column(Text)
+    token_expiry = Column(DateTime(timezone=True))
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    user = relationship("User")
+
+    __table_args__ = (
+        Index("idx_connector_user_provider", "user_id", "provider", unique=True),
+    )
+
+    def __repr__(self):
+        return f"<ConnectorConnection(user={self.user_id}, provider={self.provider})>"
+
+
 class MCPActivity(Base):
     """Log of MCP tool calls for activity feed"""
     __tablename__ = "mcp_activity"

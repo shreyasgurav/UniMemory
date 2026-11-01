@@ -220,7 +220,9 @@ async def hybrid_search(
     limit: int = 10,
     user_id: Optional[str] = None,
     min_salience: float = 0.0,
-    filters: Optional[Dict[str, Any]] = None
+    filters: Optional[Dict[str, Any]] = None,
+    scoring_mode: str = "hybrid",
+    reinforce: bool = True
 ) -> List[Dict[str, Any]]:
     """
     Perform hybrid search (OpenMemory HSG-style)
@@ -232,6 +234,15 @@ async def hybrid_search(
         user_id: Filter by user ID (optional)
         min_salience: Minimum salience threshold
         filters: Additional filters
+        scoring_mode: EVAL-ONLY. "hybrid" (default, production behavior) ranks
+            with the full weighted score plus waypoint expansion. "lexical"
+            = boosted similarity + token overlap + tag match only. "cosine"
+            ranks purely by vector cosine similarity (ablation baseline).
+            Both skip waypoint expansion. Production callers never set this.
+        reinforce: EVAL-ONLY. When True (default, production behavior) retrieved
+            memories are reinforced in the background (salience/recall/waypoint
+            boosts). Set False in evaluation to keep retrieval deterministic and
+            avoid mutating state across repeated queries.
     
     Returns:
         List of {
@@ -331,8 +342,11 @@ async def hybrid_search(
     high_confidence = avg_similarity >= 0.5
     
     # Step 5: Waypoint expansion (ONLY if low confidence AND few results)
+    # EVAL-ONLY: cosine ablation baseline skips graph expansion entirely.
     waypoint_expansion = {}
-    if not high_confidence and len(candidate_ids) < limit and candidate_ids:
+    if scoring_mode in ("cosine", "lexical"):
+        pass
+    elif not high_confidence and len(candidate_ids) < limit and candidate_ids:
         waypoint_expansion = await expand_via_waypoints(
             session, candidate_ids[:5], max_expansion=limit
         )
@@ -357,7 +371,36 @@ async def hybrid_search(
     # Step 6: Score all candidates (using already-loaded data)
     query_tokens = canonical_token_set(core_query)
     scored_results = []
-    
+
+    # EVAL-ONLY: "lexical" = boosted similarity + token overlap + tag match
+    # (no sector multiplier, waypoint or recency), to attribute gains.
+    if scoring_mode == "lexical":
+        for mem_id, mem in candidates.items():
+            tag_match = 0.0
+            if mem.tags and query_tokens:
+                tags_lower = [str(t).lower() for t in mem.tags]
+                tag_match = min(1.0, sum(1.0 for t in query_tokens if t in tags_lower) / max(1, len(mem.tags)))
+            raw = (
+                SCORING_WEIGHTS["similarity"] * boosted_sim(similarity_map.get(mem_id, 0.0))
+                + SCORING_WEIGHTS["overlap"] * compute_token_overlap(core_query, mem.content)
+                + SCORING_WEIGHTS["tag_match"] * tag_match
+            )
+            scored_results.append({"memory": mem, "score": raw, "path": [mem_id], "debug": None})
+        scored_results.sort(key=lambda x: x["score"], reverse=True)
+        return scored_results[:limit]
+
+    # EVAL-ONLY: pure cosine baseline ranks by raw vector similarity only.
+    if scoring_mode == "cosine":
+        for mem_id, mem in candidates.items():
+            scored_results.append({
+                "memory": mem,
+                "score": similarity_map.get(mem_id, 0.0),
+                "path": [mem_id],
+                "debug": None,
+            })
+        scored_results.sort(key=lambda x: x["score"], reverse=True)
+        return scored_results[:limit]
+
     for mem_id, mem in candidates.items():
         similarity = similarity_map.get(mem_id, 0.0)
         
@@ -426,8 +469,10 @@ async def hybrid_search(
     
     # Step 8: Reinforce retrieved memories in background (non-blocking)
     # Extract IDs so background task can use its own session
+    # EVAL-ONLY: reinforcement is skipped when reinforce=False to keep
+    # repeated evaluation queries deterministic and side-effect free.
     result_memory_ids = [r["memory"].id for r in top_results]
-    if result_memory_ids:
+    if reinforce and result_memory_ids:
         import asyncio as _asyncio
         _asyncio.create_task(_reinforce_background(result_memory_ids))
     

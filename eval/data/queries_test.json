@@ -1,0 +1,89 @@
+{
+  "description": "Held-out TEST query set. Report results on this set only. Do NOT tune scoring weights after seeing these results. answer_keywords is a list of fact groups; a retrieved item or answer is relevant if it fully matches ANY group.",
+  "queries": [
+    {
+      "id": "t01", "category": "preferences",
+      "query": "What programming language does Alex prefer for machine learning?",
+      "paraphrase": "Which language does Alex like to use for ML work?",
+      "relevant_conversation_ids": ["conv01_coding_prefs"],
+      "answer_keywords": [["python"]]
+    },
+    {
+      "id": "t02", "category": "preferences",
+      "query": "Is Alex allergic to anything?",
+      "paraphrase": "Does Alex have any food allergies I should avoid?",
+      "relevant_conversation_ids": ["conv02_food_lifestyle"],
+      "answer_keywords": [["peanut"]]
+    },
+    {
+      "id": "t03", "category": "projects",
+      "query": "What database does the UniMemory project use?",
+      "paraphrase": "Which data store is behind Alex's UniMemory backend?",
+      "relevant_conversation_ids": ["conv03_unimemory_project"],
+      "answer_keywords": [["postgres"], ["pgvector"]]
+    },
+    {
+      "id": "t04", "category": "personal_facts",
+      "query": "What is the name of Alex's sister?",
+      "paraphrase": "Does Alex have a sibling, and what is their name?",
+      "relevant_conversation_ids": ["conv05_personal_home"],
+      "answer_keywords": [["nisha"]]
+    },
+    {
+      "id": "t05", "category": "personal_facts",
+      "query": "When is Alex's anniversary with Maya?",
+      "paraphrase": "What date does Alex celebrate the relationship anniversary?",
+      "relevant_conversation_ids": ["conv06_relationship"],
+      "answer_keywords": [["march", "12"]]
+    },
+    {
+      "id": "t06", "category": "events",
+      "query": "Where is Alex going in December?",
+      "paraphrase": "What are Alex's travel plans for the winter holidays?",
+      "relevant_conversation_ids": ["conv07_goa_trip"],
+      "answer_keywords": [["goa"]]
+    },
+    {
+      "id": "t07", "category": "events",
+      "query": "What conference is Alex speaking at?",
+      "paraphrase": "Where is Alex giving a talk?",
+      "relevant_conversation_ids": ["conv08_pycon_talk"],
+      "answer_keywords": [["pycon"]]
+    },
+    {
+      "id": "t08", "category": "preferences",
+      "query": "What book is Alex currently reading?",
+      "paraphrase": "Which book is on Alex's reading list right now?",
+      "relevant_conversation_ids": ["conv09_learning"],
+      "answer_keywords": [["data-intensive"]]
+    },
+    {
+      "id": "t09", "category": "personal_facts",
+      "query": "What car does Alex drive?",
+      "paraphrase": "What vehicle does Alex take to campus?",
+      "relevant_conversation_ids": ["conv10_misc_personal"],
+      "answer_keywords": [["honda"]]
+    },
+    {
+      "id": "t10", "category": "projects",
+      "query": "What is Alex's side project called?",
+      "paraphrase": "Name the app Alex builds outside the main project.",
+      "relevant_conversation_ids": ["conv04_tripsplit_project"],
+      "answer_keywords": [["tripsplit"]]
+    },
+    {
+      "id": "t11", "category": "personal_facts",
+      "query": "What city does Alex live in?",
+      "paraphrase": "Where is Alex currently based?",
+      "relevant_conversation_ids": ["conv05_personal_home"],
+      "answer_keywords": [["mumbai"]]
+    },
+    {
+      "id": "t12", "category": "personal_facts",
+      "query": "What is the name of Alex's cat?",
+      "paraphrase": "Does Alex have a pet, and what is it called?",
+      "relevant_conversation_ids": ["conv10_misc_personal"],
+      "answer_keywords": [["pixel"]]
+    }
+  ]
+}

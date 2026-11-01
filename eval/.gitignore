@@ -1,0 +1,8 @@
+# Eval secrets and outputs
+.eval_key
+.env
+results/*.csv
+results/*.json
+__pycache__/
+*.pyc
+.venv/

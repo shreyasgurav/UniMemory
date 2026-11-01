@@ -2,8 +2,8 @@ from setuptools import setup, find_packages
 
 setup(
     name="unimemory",
-    version="1.0.0",
-    description="UniMemory SDK — The memory layer for AI applications",
+    version="2.0.0",
+    description="UniMemory SDK - The memory layer for your AI apps.",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
     author="UniMemory",

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Trash2, X, Loader2, Workflow, ChevronDown, Plus, FolderOpen } from "lucide-react";
 import { auth } from "@/lib/firebase";
 import MemoryGraph from "@/components/MemoryGraph";
+import NewMemoryModal from "@/components/shared/NewMemoryModal";
 
 interface Project {
   id: string;
@@ -67,6 +68,9 @@ export default function MemoriesPage() {
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
   const [creatingProject, setCreatingProject] = useState(false);
+  
+  // New Memory Modal state
+  const [showNewMemoryModal, setShowNewMemoryModal] = useState(false);
 
   const loadData = useCallback(async (projectId?: string) => {
     setLoading(true);
@@ -361,14 +365,24 @@ export default function MemoriesPage() {
             )}
           </div>
         </div>
-
-        <button
-          onClick={() => setShowGraph(true)}
-          className="flex items-center gap-2 px-3 py-2 rounded-xl bg-neutral-900 text-white text-sm font-medium hover:bg-neutral-800 transition-all"
-        >
-          <Workflow className="w-4 h-4 text-white/90" />
-          <span>Memory Graph</span>
-        </button>
+        
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowNewMemoryModal(true)}
+            className="p-2 rounded-xl text-neutral-500 hover:text-neutral-900 hover:bg-neutral-200 transition-all"
+            title="Add New Memory"
+          >
+            <Plus className="w-5 h-5" />
+          </button>
+          
+          <button
+            onClick={() => setShowGraph(true)}
+            className="flex items-center gap-2 px-3 py-2 rounded-xl bg-neutral-900 text-white text-sm font-medium hover:bg-neutral-800 transition-all"
+          >
+            <Workflow className="w-4 h-4 text-white/90" />
+            <span>Memory Graph</span>
+          </button>
+        </div>
       </div>
 
       {/* Content */}
@@ -715,6 +729,16 @@ export default function MemoriesPage() {
           onClick={() => setShowProjectDropdown(false)}
         />
       )}
+
+      {/* New Memory Modal */}
+      <NewMemoryModal 
+        user={auth.currentUser} 
+        isOpen={showNewMemoryModal} 
+        onClose={() => setShowNewMemoryModal(false)}
+        onSuccess={() => {
+          loadData(selectedProject?.id);
+        }}
+      />
     </div>
   );
 }

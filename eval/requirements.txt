@@ -1,0 +1,8 @@
+# Evaluation harness dependencies (separate from the API).
+# Install into the SAME environment as api/ so setup_test_user.py and
+# reset_test_data.py can import the app's DB models.
+httpx==0.27.2
+openai>=1.40.0
+numpy>=1.26.0
+python-dotenv==1.0.0
+tiktoken>=0.7.0

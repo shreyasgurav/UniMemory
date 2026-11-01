@@ -11,6 +11,7 @@ from app.db.database import get_db
 from app.core.search import hybrid_search
 from app.db.models import Memory
 from app.core.auth import validate_api_key
+from app.config import settings
 
 router = APIRouter()
 
@@ -26,6 +27,11 @@ class SearchRequest(BaseModel):
     user_id: Optional[str] = None
     min_salience: Optional[float] = 0.0
     project_id: Optional[str] = None  # Filter search to a specific project
+    # EVAL-ONLY knobs. Omitted by all production/SDK callers, so defaults
+    # preserve the exact production behavior. Used by eval/ ablation harness.
+    # Rejected with 403 unless the server runs with EVAL_MODE=true.
+    scoring_mode: Optional[str] = None  # None/"hybrid" (prod) | "lexical" | "cosine"
+    reinforce: Optional[bool] = None    # None -> True (prod); False in eval
 
 
 class PublicSearchResult(BaseModel):
@@ -66,6 +72,12 @@ async def search_memories(
     
     if not request.query or not request.query.strip():
         raise HTTPException(status_code=400, detail="Query cannot be empty")
+
+    if request.scoring_mode is not None or request.reinforce is not None:
+        if not settings.EVAL_MODE:
+            raise HTTPException(status_code=403, detail="Eval overrides disabled")
+        if request.scoring_mode not in (None, "hybrid", "lexical", "cosine"):
+            raise HTTPException(status_code=400, detail="Invalid scoring_mode")
     
     filters: Dict[str, Any] = {
         "debug": False,  # Never expose debug info in public API
@@ -81,7 +93,9 @@ async def search_memories(
             limit=request.limit or 10,
             user_id=request.user_id,
             min_salience=request.min_salience or 0.0,
-            filters=filters
+            filters=filters,
+            scoring_mode=request.scoring_mode or "hybrid",
+            reinforce=True if request.reinforce is None else request.reinforce
         )
         
         # Convert to public response format (no internal details)

@@ -43,6 +43,18 @@ class Settings(BaseSettings):
     OPENAI_TIMEOUT: int = 60  # Increased for 15-memory extraction from long chats
     OPENAI_MAX_RETRIES: int = 2  # Keep retries low to avoid long waits
     
+    # MCP Gateway connectors (Gmail, Notion, ...). Inert until configured.
+    GOOGLE_CLIENT_ID: Optional[str] = None
+    GOOGLE_CLIENT_SECRET: Optional[str] = None
+    NOTION_CLIENT_ID: Optional[str] = None
+    NOTION_CLIENT_SECRET: Optional[str] = None
+    # Fernet key (urlsafe base64, 32 bytes) used to encrypt provider tokens at rest.
+    CONNECTOR_ENC_KEY: Optional[str] = None
+    # Public base URL of THIS api (used to build OAuth redirect URIs).
+    CONNECTOR_REDIRECT_BASE: str = "https://unimemory.up.railway.app"
+    # Where to send the user's browser back after a connect flow.
+    CONSUMER_APP_URL: str = "https://app.unimemory.app"
+
     # Auth
     SECRET_KEY: str = "your-secret-key-change-in-production"
     ALGORITHM: str = "HS256"
@@ -62,6 +74,10 @@ class Settings(BaseSettings):
     MAX_CONTENT_LENGTH: int = 50000  # Max input content length (chars)
     MAX_MEMORIES_PER_REQUEST: int = 15  # Max memories extracted per request
     
+    # Evaluation harness only. When False (default) /search rejects the
+    # scoring_mode / reinforce overrides, so production behavior is fixed.
+    EVAL_MODE: bool = False
+
     # Search
     DEFAULT_SEARCH_LIMIT: int = 10
     MAX_SEARCH_LIMIT: int = 100  # Hard limit on search results
@@ -86,6 +102,20 @@ class Settings(BaseSettings):
     @property
     def is_development(self) -> bool:
         return self.ENVIRONMENT == "development"
+
+    @property
+    def gmail_connector_enabled(self) -> bool:
+        return bool(self.GOOGLE_CLIENT_ID and self.GOOGLE_CLIENT_SECRET
+                    and self.CONNECTOR_ENC_KEY)
+
+    @property
+    def notion_connector_enabled(self) -> bool:
+        return bool(self.NOTION_CLIENT_ID and self.NOTION_CLIENT_SECRET
+                    and self.CONNECTOR_ENC_KEY)
+
+    @property
+    def connectors_enabled(self) -> bool:
+        return self.gmail_connector_enabled or self.notion_connector_enabled
 
 
 settings = Settings()

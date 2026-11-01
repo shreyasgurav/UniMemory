@@ -1,0 +1,47 @@
+{
+  "description": "DEV query set. Use this for any sanity-checking or tuning. Keep it separate from the TEST set.",
+  "queries": [
+    {
+      "id": "d01", "category": "preferences",
+      "query": "What code editor does Alex use?",
+      "paraphrase": "Which IDE is Alex's main editor?",
+      "relevant_conversation_ids": ["conv01_coding_prefs"],
+      "answer_keywords": [["vs code"], ["vscode"]]
+    },
+    {
+      "id": "d02", "category": "preferences",
+      "query": "What does Alex drink in the morning?",
+      "paraphrase": "What is Alex's usual morning beverage?",
+      "relevant_conversation_ids": ["conv02_food_lifestyle"],
+      "answer_keywords": [["oat milk"]]
+    },
+    {
+      "id": "d03", "category": "projects",
+      "query": "What web framework is UniMemory's backend built with?",
+      "paraphrase": "Which backend framework powers UniMemory?",
+      "relevant_conversation_ids": ["conv03_unimemory_project"],
+      "answer_keywords": [["fastapi"]]
+    },
+    {
+      "id": "d04", "category": "personal_facts",
+      "query": "What flower does Maya like?",
+      "paraphrase": "Which flowers does Alex buy for Maya?",
+      "relevant_conversation_ids": ["conv06_relationship"],
+      "answer_keywords": [["sunflower"]]
+    },
+    {
+      "id": "d05", "category": "preferences",
+      "query": "What language does Alex want to learn next?",
+      "paraphrase": "Which programming language is Alex planning to pick up?",
+      "relevant_conversation_ids": ["conv09_learning"],
+      "answer_keywords": [["rust"]]
+    },
+    {
+      "id": "d06", "category": "personal_facts",
+      "query": "Which college does Alex attend?",
+      "paraphrase": "Where is Alex studying?",
+      "relevant_conversation_ids": ["conv05_personal_home"],
+      "answer_keywords": [["somaiya"]]
+    }
+  ]
+}
