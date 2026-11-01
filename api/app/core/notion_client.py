@@ -12,7 +12,7 @@ import httpx
 
 from app.config import settings
 
-AUTH_URL = "https://api.notion.com/oauth/authorize"
+AUTH_URL = "https://api.notion.com/v1/oauth/authorize"
 TOKEN_URL = "https://api.notion.com/v1/oauth/token"
 API_BASE = "https://api.notion.com/v1"
 NOTION_VERSION = "2022-06-28"
