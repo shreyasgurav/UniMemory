@@ -4,7 +4,7 @@ MCP Gateway tools. We call the normal Gmail REST API (generally available),
 not the preview Gmail MCP server.
 """
 import base64
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -73,7 +73,7 @@ async def get_profile_email(access_token: str) -> Optional[str]:
 
 
 def expiry_from_response(tok: Dict[str, Any]) -> datetime:
-    return datetime.utcnow() + timedelta(seconds=int(tok.get("expires_in", 3600)) - 60)
+    return datetime.now(timezone.utc) + timedelta(seconds=int(tok.get("expires_in", 3600)) - 60)
 
 
 async def search_messages(access_token: str, query: str, limit: int = 10) -> List[Dict[str, Any]]:

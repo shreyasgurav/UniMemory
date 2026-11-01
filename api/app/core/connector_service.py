@@ -2,7 +2,7 @@
 Shared connector logic used by both the consumer REST endpoints and the MCP
 Gateway tools: load connections, keep access tokens fresh, and run provider ops.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import select
@@ -42,7 +42,12 @@ async def list_user_connectors(session: AsyncSession, user_id: str) -> List[Dict
 async def _valid_gmail_token(session: AsyncSession, conn: ConnectorConnection) -> str:
     """Return a non-expired access token, refreshing and persisting if needed."""
     access = crypto.decrypt(conn.access_token_enc) if conn.access_token_enc else ""
-    expired = (not conn.token_expiry) or conn.token_expiry <= datetime.utcnow()
+    now = datetime.now(timezone.utc)
+    expiry = conn.token_expiry
+    # Normalise: if the stored value somehow has no tzinfo, treat it as UTC.
+    if expiry is not None and expiry.tzinfo is None:
+        expiry = expiry.replace(tzinfo=timezone.utc)
+    expired = (expiry is None) or expiry <= now
     if access and not expired:
         return access
 
