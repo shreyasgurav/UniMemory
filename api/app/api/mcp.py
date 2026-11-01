@@ -654,11 +654,11 @@ CONNECTOR_TOOLS = [
     },
     {
         "name": "connector_search",
-        "description": "Search a connected external app through UniMemory. For gmail, 'query' uses Gmail search syntax (e.g. 'from:alice project'). Returns lightweight hits with ids; use connector_fetch to read full content.",
+        "description": "Search a connected external app through UniMemory. For gmail, 'query' uses Gmail search syntax (e.g. 'from:alice project'). For notion, 'query' is a plain text search. Returns lightweight hits with ids; use connector_fetch to read full content.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "app": {"type": "string", "enum": ["gmail"], "description": "Which connected app to search."},
+                "app": {"type": "string", "enum": ["gmail", "notion"], "description": "Which connected app to search. gmail: uses Gmail search syntax. notion: plain text query."},
                 "query": {"type": "string", "description": "Search query."},
                 "limit": {"type": "number", "description": "Max results (default 10)."}
             },
@@ -671,7 +671,7 @@ CONNECTOR_TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "app": {"type": "string", "enum": ["gmail"], "description": "Which connected app."},
+                "app": {"type": "string", "enum": ["gmail", "notion"], "description": "Which connected app."},
                 "id": {"type": "string", "description": "Item id from connector_search."}
             },
             "required": ["app", "id"]
@@ -1633,6 +1633,8 @@ async def execute_tool(
         limit = int(args.get("limit", 10) or 10)
         if app_name == "gmail":
             return await connector_service.gmail_search(session, str(user.id), query, limit)
+        if app_name == "notion":
+            return await connector_service.notion_search(session, str(user.id), query, limit)
         return {"error": f"Unsupported app: {app_name}"}
 
     elif tool_name == "connector_fetch":
@@ -1643,6 +1645,8 @@ async def execute_tool(
             return {"error": "id is required"}
         if app_name == "gmail":
             return await connector_service.gmail_fetch(session, str(user.id), item_id)
+        if app_name == "notion":
+            return await connector_service.notion_fetch(session, str(user.id), item_id)
         return {"error": f"Unsupported app: {app_name}"}
 
     else:

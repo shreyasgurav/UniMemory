@@ -17,7 +17,7 @@ from app.db.database import get_db
 from app.db.models import User, ConnectorConnection
 from app.core.auth import get_current_user
 from app.core import connector_crypto as crypto
-from app.core import connector_state, gmail_client, connector_service
+from app.core import connector_state, gmail_client, notion_client, connector_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/connectors", tags=["connectors"])
@@ -109,3 +109,57 @@ async def disconnect(
     )
     await session.commit()
     return {"success": True, "provider": provider}
+
+@router.get("/notion/connect")
+async def notion_connect(
+    user: User = Depends(get_current_user),
+):
+    """Return the Notion authorize URL for the dashboard to open."""
+    if not settings.notion_connector_enabled:
+        raise HTTPException(status_code=503, detail="Notion connector not configured")
+    state = connector_state.make_state(str(user.id), "notion")
+    return {"authorize_url": notion_client.authorize_url(state)}
+
+
+@router.get("/notion/callback")
+async def notion_callback(
+    code: str = Query(None),
+    state: str = Query(None),
+    error: str = Query(None),
+    session: AsyncSession = Depends(get_db),
+):
+    """OAuth redirect target — browser-driven, auth comes from signed state."""
+    dest = f"{settings.CONSUMER_APP_URL}/connectors"
+    if error or not code or not state:
+        return RedirectResponse(f"{dest}?connected=notion&status=denied")
+    try:
+        user_id = connector_state.read_state(state, "notion")
+        tok = await notion_client.exchange_code(code)
+        access = tok.get("access_token", "")
+        workspace_name = tok.get("workspace_name") or await notion_client.get_workspace_name(access)
+
+        existing = await connector_service.get_connection(session, user_id, "notion")
+        if existing:
+            existing.access_token_enc = crypto.encrypt(access)
+            existing.refresh_token_enc = None  # Notion tokens don't expire
+            existing.token_expiry = None
+            existing.account_label = workspace_name or existing.account_label
+            existing.scopes = "read_content"
+            existing.status = "connected"
+        else:
+            session.add(ConnectorConnection(
+                user_id=user_id,
+                provider="notion",
+                status="connected",
+                account_label=workspace_name,
+                scopes="read_content",
+                access_token_enc=crypto.encrypt(access),
+                refresh_token_enc=None,
+                token_expiry=None,
+            ))
+        await session.commit()
+        return RedirectResponse(f"{dest}?connected=notion&status=success")
+    except Exception as e:
+        logger.error(f"[Connectors] Notion callback failed: {e}")
+        return RedirectResponse(f"{dest}?connected=notion&status=error")
+
