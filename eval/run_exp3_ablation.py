@@ -42,6 +42,7 @@ def main() -> None:
                 for k in (1, 3, 5):
                     row[f"{mode}_hit@{k}"] = metrics.hit_at_k(texts, fg, k)
                 row[f"{mode}_mrr"] = round(metrics.reciprocal_rank(texts, fg), 3)
+                row[f"{mode}_top5"] = " || ".join(texts)  # audit trail (not scored)
             rows.append(row)
             print(f"{q['id']} [{phrasing}] " + " ".join(
                 f"{m} h@1={row[m + '_hit@1']}" for m in MODES))

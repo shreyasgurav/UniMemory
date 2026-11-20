@@ -22,9 +22,15 @@ import config
 from lib import metrics, openai_utils
 from lib.client import UniMemoryClient
 
+# The persona is named Alex, and stored memories refer to the person as "User".
+# Without stating that they are the same person the model refuses even when the
+# retrieved memory contains the answer (found in the dev pass: retrieval was
+# correct but ON-condition answers were "I don't have that information").
+# The same system prompt is used for BOTH conditions (OFF and ON).
 SYSTEM = (
-    "You are a helpful personal assistant. Answer the user's question about "
-    "themselves concisely in one sentence. If you do not have the information, "
+    "You are a helpful personal assistant talking to Alex. Answer Alex's question "
+    "about themselves concisely in one sentence. Any notes about 'the user' are "
+    "about Alex. If you do not have the information, "
     "say: 'I don't have that information.'"
 )
 
@@ -69,6 +75,7 @@ def main() -> None:
             "id": q["id"], "category": q["category"], "query": q["query"],
             "off_answer": off_ans, "off_auto_score": metrics.answer_score(off_ans, fg),
             "on_answer": on_ans, "on_auto_score": metrics.answer_score(on_ans, fg),
+            "retrieved_top5": " || ".join(mem_texts),  # audit trail (not scored)
         })
         blind += [(q, "OFF", off_ans), (q, "ON", on_ans)]
         print(f"{q['id']} auto OFF={rows[-1]['off_auto_score']} ON={rows[-1]['on_auto_score']}")
