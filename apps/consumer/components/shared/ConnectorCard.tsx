@@ -38,43 +38,50 @@ export default function ConnectorCard({
   const inactive = status === "loading" || status === "unavailable" || status === "error";
 
   return (
-    <div className="bg-white rounded-xl border border-neutral-200 p-5 flex flex-col" aria-busy={busy}>
-      <div className="flex items-start justify-between">
-        <div className="w-11 h-11 rounded-xl border border-neutral-100 bg-white flex items-center justify-center">
-          <img src={logo} alt="" className="w-6 h-6 object-contain" />
+    <div
+      className="flex items-center gap-4 bg-white rounded-xl px-4 py-3.5"
+      aria-busy={busy}
+    >
+      <div className="w-10 h-10 shrink-0 rounded-lg bg-neutral-50 flex items-center justify-center">
+        <img src={logo} alt="" className="w-5 h-5 object-contain" />
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <h3 className="text-[15px] font-semibold text-neutral-900 leading-tight">{name}</h3>
+          <span
+            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium leading-4 ${badge.pill}`}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`} />
+            {badge.text}
+          </span>
         </div>
-        <span
-          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${badge.pill}`}
+        <p className="mt-0.5 text-[13px] text-neutral-500 truncate" title={subtitle}>
+          {subtitle}
+        </p>
+      </div>
+
+      {connected ? (
+        <button
+          onClick={onDisconnect}
+          disabled={busy}
+          className="shrink-0 h-9 px-4 rounded-lg bg-red-50 text-sm font-medium text-red-600 hover:bg-red-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`} />
-          {badge.text}
-        </span>
-      </div>
-
-      <h3 className="mt-4 text-base font-semibold text-neutral-900">{name}</h3>
-      <p className="mt-0.5 text-sm text-neutral-500 truncate" title={subtitle}>
-        {subtitle}
-      </p>
-
-      <div className="mt-5">
-        {connected ? (
-          <button
-            onClick={onDisconnect}
-            disabled={busy}
-            className="w-full h-10 rounded-lg border border-neutral-200 bg-white text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {busy ? "Disconnecting..." : "Disconnect"}
-          </button>
-        ) : (
-          <button
-            onClick={onConnect}
-            disabled={busy || inactive}
-            className="w-full h-10 rounded-lg bg-neutral-900 text-sm font-medium text-white hover:bg-neutral-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {busy ? "Connecting..." : "Connect"}
-          </button>
-        )}
-      </div>
+          {busy ? "Disconnecting..." : "Disconnect"}
+        </button>
+      ) : (
+        <button
+          onClick={onConnect}
+          disabled={busy || inactive}
+          className={`shrink-0 h-9 px-4 rounded-lg text-sm font-medium transition-colors disabled:cursor-not-allowed ${
+            inactive || busy
+              ? "bg-neutral-100 text-neutral-400"
+              : "bg-green-50 text-green-700 hover:bg-green-100"
+          }`}
+        >
+          {busy ? "Connecting..." : "Connect"}
+        </button>
+      )}
     </div>
   );
 }
