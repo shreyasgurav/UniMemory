@@ -158,6 +158,383 @@
         ["6am"],
         ["honda"]
       ]
+    },
+    {
+      "id": "dist01_friend_editor",
+      "category": "preferences",
+      "title": "Helping a friend set up his editor",
+      "messages": [
+        {"role": "user", "content": "My friend Rohan asked me to help set up his laptop. He uses IntelliJ IDEA with the light theme for his Java coursework."},
+        {"role": "assistant", "content": "Sure, IntelliJ with a light theme for Rohan's Java work, noted."},
+        {"role": "user", "content": "He also wants the Vim keybindings plugin turned on."}
+      ],
+      "facts": [
+        ["rohan"],
+        ["intellij"],
+        ["java"]
+      ]
+    },
+    {
+      "id": "dist02_terminal_setup",
+      "category": "preferences",
+      "title": "Terminal and keyboard setup",
+      "messages": [
+        {"role": "user", "content": "For the terminal I use iTerm2 with zsh and tmux, and I keep a split pane open for logs."},
+        {"role": "assistant", "content": "iTerm2, zsh and tmux with a log pane, got it."},
+        {"role": "user", "content": "My keyboard is a mechanical one with brown switches, I can't type on laptop keys for long."}
+      ],
+      "facts": [
+        ["iterm2"],
+        ["tmux"],
+        ["brown switches"]
+      ]
+    },
+    {
+      "id": "dist03_past_languages",
+      "category": "preferences",
+      "title": "Languages used before",
+      "messages": [
+        {"role": "user", "content": "During my internship I wrote Kotlin for an Android app, and honestly it felt clunky to me."},
+        {"role": "assistant", "content": "Kotlin for Android at the internship, and not a favourite, noted."},
+        {"role": "user", "content": "At a hackathon I used Go for a small CLI tool because it compiles to a single binary."}
+      ],
+      "facts": [
+        ["kotlin"],
+        ["go", "cli"]
+      ]
+    },
+    {
+      "id": "dist04_cousin_diet",
+      "category": "preferences",
+      "title": "Cooking for a cousin",
+      "messages": [
+        {"role": "user", "content": "My cousin Kabir is visiting this weekend. He is vegan and allergic to shellfish, so I need to plan meals carefully."},
+        {"role": "assistant", "content": "Vegan and a shellfish allergy for Kabir, I'll keep that in mind."},
+        {"role": "user", "content": "I'm thinking dal, jeera rice and a big salad for him."}
+      ],
+      "facts": [
+        ["kabir"],
+        ["vegan"],
+        ["shellfish"]
+      ]
+    },
+    {
+      "id": "dist05_evening_drinks",
+      "category": "preferences",
+      "title": "Evening and weekend drinks",
+      "messages": [
+        {"role": "user", "content": "In the evening I usually have a cup of masala chai while studying."},
+        {"role": "assistant", "content": "Masala chai in the evenings, noted."},
+        {"role": "user", "content": "On weekends I switch to cold coffee from the cafe near the station."}
+      ],
+      "facts": [
+        ["masala chai"],
+        ["cold coffee"]
+      ]
+    },
+    {
+      "id": "dist06_hackathon_app",
+      "category": "projects",
+      "title": "Hackathon parking app",
+      "messages": [
+        {"role": "user", "content": "Last year at a hackathon our team built ParkPal, an app to find free parking spots. We used Flask and MongoDB because it was quick to set up."},
+        {"role": "assistant", "content": "ParkPal with Flask and MongoDB, nice hackathon build."},
+        {"role": "user", "content": "We came second, but nobody maintains it anymore."}
+      ],
+      "facts": [
+        ["parkpal"],
+        ["flask"],
+        ["mongodb"]
+      ]
+    },
+    {
+      "id": "dist07_internship_stack",
+      "category": "projects",
+      "title": "Summer internship work",
+      "messages": [
+        {"role": "user", "content": "At my summer internship at a fintech startup I built internal dashboards in Django with a MySQL database."},
+        {"role": "assistant", "content": "Django and MySQL dashboards at a fintech, got it."},
+        {"role": "user", "content": "The team also used Redis for caching session data."}
+      ],
+      "facts": [
+        ["django"],
+        ["mysql"],
+        ["redis"]
+      ]
+    },
+    {
+      "id": "dist08_friend_project",
+      "category": "projects",
+      "title": "Priya's final-year project",
+      "messages": [
+        {"role": "user", "content": "My classmate Priya's final-year project is CropSense, a crop disease detector. Her backend is Express with a MongoDB database."},
+        {"role": "assistant", "content": "CropSense by Priya, Express plus MongoDB, noted."},
+        {"role": "user", "content": "I'm helping her review the model accuracy numbers before her demo."}
+      ],
+      "facts": [
+        ["priya"],
+        ["cropsense"],
+        ["express"]
+      ]
+    },
+    {
+      "id": "dist09_portfolio",
+      "category": "projects",
+      "title": "Portfolio site and old extension",
+      "messages": [
+        {"role": "user", "content": "My personal portfolio site is built with Next.js and deployed on Vercel."},
+        {"role": "assistant", "content": "Next.js portfolio on Vercel, got it."},
+        {"role": "user", "content": "I also once started a Chrome extension called TabNap to auto-close idle tabs, but I abandoned it."}
+      ],
+      "facts": [
+        ["next js"],
+        ["vercel"],
+        ["tabnap"]
+      ]
+    },
+    {
+      "id": "dist10_project_admin",
+      "category": "projects",
+      "title": "UniMemory team logistics",
+      "messages": [
+        {"role": "user", "content": "For UniMemory our mentor is Prof. Kulkarni, and the team is three people including me."},
+        {"role": "assistant", "content": "Prof. Kulkarni as mentor, a team of three, noted."},
+        {"role": "user", "content": "We still have to record the demo video and print the report."}
+      ],
+      "facts": [
+        ["kulkarni"],
+        ["demo video"]
+      ]
+    },
+    {
+      "id": "dist11_friends_colleges",
+      "category": "personal_facts",
+      "title": "Where friends study",
+      "messages": [
+        {"role": "user", "content": "My friend Rohan studies at VJTI and my school friend Arjun is doing his masters at IIT Bombay."},
+        {"role": "assistant", "content": "Rohan at VJTI and Arjun at IIT Bombay, noted."},
+        {"role": "user", "content": "Priya is in my class though, same batch."}
+      ],
+      "facts": [
+        ["vjti"],
+        ["iit bombay"]
+      ]
+    },
+    {
+      "id": "dist12_parents",
+      "category": "personal_facts",
+      "title": "Parents and grandparents",
+      "messages": [
+        {"role": "user", "content": "My dad is a civil engineer and my mom teaches chemistry at a junior college."},
+        {"role": "assistant", "content": "Civil engineer dad and chemistry teacher mom, got it."},
+        {"role": "user", "content": "My grandparents live in Nashik and my older cousin Kabir lives with them."}
+      ],
+      "facts": [
+        ["civil engineer"],
+        ["chemistry"],
+        ["nashik"]
+      ]
+    },
+    {
+      "id": "dist13_roommate_dog",
+      "category": "personal_facts",
+      "title": "Roommate's dog",
+      "messages": [
+        {"role": "user", "content": "My roommate has a golden retriever named Bruno, and I dog-sit him when he travels."},
+        {"role": "assistant", "content": "Bruno the golden retriever, and you dog-sit sometimes, noted."},
+        {"role": "user", "content": "Bruno is scared of thunderstorms, so I keep the curtains closed."}
+      ],
+      "facts": [
+        ["bruno"],
+        ["golden retriever"]
+      ]
+    },
+    {
+      "id": "dist14_family_car",
+      "category": "personal_facts",
+      "title": "Family car",
+      "messages": [
+        {"role": "user", "content": "My dad drives a white Maruti Swift, and that's the car I learned to drive in."},
+        {"role": "assistant", "content": "A white Maruti Swift, your learner car, got it."},
+        {"role": "user", "content": "Back in school I rode a red Hero bicycle everywhere."}
+      ],
+      "facts": [
+        ["maruti swift"],
+        ["bicycle"]
+      ]
+    },
+    {
+      "id": "dist15_weekend_visits",
+      "category": "personal_facts",
+      "title": "Weekend visits",
+      "messages": [
+        {"role": "user", "content": "Once a month I take the train to Nashik to see my grandparents."},
+        {"role": "assistant", "content": "Monthly train trips to Nashik, noted."},
+        {"role": "user", "content": "Sometimes on the way back we stop at Lonavala for chikki."}
+      ],
+      "facts": [
+        ["nashik"],
+        ["lonavala"]
+      ]
+    },
+    {
+      "id": "dist16_friend_relationship",
+      "category": "personal_facts",
+      "title": "Rohan's relationship",
+      "messages": [
+        {"role": "user", "content": "Rohan has been dating Tara for two years. Their anniversary is July 4."},
+        {"role": "assistant", "content": "Rohan and Tara, anniversary on July 4, noted."},
+        {"role": "user", "content": "Tara loves orchids, so he asked me where to buy them."}
+      ],
+      "facts": [
+        ["tara"],
+        ["july", "4"],
+        ["orchids"]
+      ]
+    },
+    {
+      "id": "dist17_about_maya",
+      "category": "personal_facts",
+      "title": "About Maya",
+      "messages": [
+        {"role": "user", "content": "Maya works as a UX designer at a design agency, and she loves Studio Ghibli films."},
+        {"role": "assistant", "content": "Maya is a UX designer and a Ghibli fan, got it."},
+        {"role": "user", "content": "Her birthday is on August 30, I want to plan something early this time."}
+      ],
+      "facts": [
+        ["ux designer"],
+        ["ghibli"],
+        ["august", "30"]
+      ]
+    },
+    {
+      "id": "dist18_manali_trip",
+      "category": "events",
+      "title": "Past family trip",
+      "messages": [
+        {"role": "user", "content": "Last May I went to Manali with my family and we did a short trek to Jogini Falls."},
+        {"role": "assistant", "content": "Manali last May with family, including Jogini Falls, nice."},
+        {"role": "user", "content": "It was freezing at night even in summer."}
+      ],
+      "facts": [
+        ["manali"],
+        ["may"],
+        ["jogini"]
+      ]
+    },
+    {
+      "id": "dist19_priya_trip",
+      "category": "events",
+      "title": "Priya's holiday plans",
+      "messages": [
+        {"role": "user", "content": "Priya is going to Kerala with her family for the winter break and asked me for houseboat suggestions."},
+        {"role": "assistant", "content": "Priya's Kerala trip with family, I can suggest houseboats in Alleppey."},
+        {"role": "user", "content": "I'm not going on that one, just helping her plan."}
+      ],
+      "facts": [
+        ["priya"],
+        ["kerala"]
+      ]
+    },
+    {
+      "id": "dist20_meetups",
+      "category": "events",
+      "title": "Meetups to attend",
+      "messages": [
+        {"role": "user", "content": "Next month I'm attending a local React meetup and the GDG DevFest, just as part of the audience."},
+        {"role": "assistant", "content": "React meetup and GDG DevFest as an attendee, noted."},
+        {"role": "user", "content": "I mostly want to network and maybe find an internship lead."}
+      ],
+      "facts": [
+        ["react meetup"],
+        ["devfest"]
+      ]
+    },
+    {
+      "id": "dist21_docker_workshop",
+      "category": "events",
+      "title": "Docker workshop",
+      "messages": [
+        {"role": "user", "content": "A senior from our college ran a Docker workshop last Saturday and I attended it."},
+        {"role": "assistant", "content": "You attended a Docker workshop run by a senior, got it."},
+        {"role": "user", "content": "I finally understood multi-stage builds."}
+      ],
+      "facts": [
+        ["docker"],
+        ["workshop"]
+      ]
+    },
+    {
+      "id": "dist22_past_books",
+      "category": "preferences",
+      "title": "Books finished and planned",
+      "messages": [
+        {"role": "user", "content": "I finished Clean Code last month but didn't enjoy it much."},
+        {"role": "assistant", "content": "Clean Code done, not a favourite, noted."},
+        {"role": "user", "content": "Maya recommended Atomic Habits, so that's on my someday list."}
+      ],
+      "facts": [
+        ["clean code"],
+        ["atomic habits"]
+      ]
+    },
+    {
+      "id": "dist23_courses_podcasts",
+      "category": "preferences",
+      "title": "Courses and podcasts",
+      "messages": [
+        {"role": "user", "content": "Last year I completed Andrew Ng's machine learning course on Coursera."},
+        {"role": "assistant", "content": "Andrew Ng's ML course on Coursera, nice."},
+        {"role": "user", "content": "These days I listen to the Lex Fridman podcast while running."}
+      ],
+      "facts": [
+        ["andrew ng"],
+        ["coursera"],
+        ["lex fridman"]
+      ]
+    },
+    {
+      "id": "dist24_hobbies",
+      "category": "preferences",
+      "title": "Music and sport",
+      "messages": [
+        {"role": "user", "content": "I play acoustic guitar in my free time and I'm a big Prateek Kuhad fan."},
+        {"role": "assistant", "content": "Acoustic guitar and Prateek Kuhad, got it."},
+        {"role": "user", "content": "On Sundays I play badminton with Rohan at the club near my place."}
+      ],
+      "facts": [
+        ["guitar"],
+        ["prateek kuhad"],
+        ["badminton"]
+      ]
+    },
+    {
+      "id": "dist25_exams",
+      "category": "events",
+      "title": "Exam schedule",
+      "messages": [
+        {"role": "user", "content": "My semester exams start in the first week of May, and the internal viva is a week before that."},
+        {"role": "assistant", "content": "Semester exams in early May with the viva a week earlier, noted."},
+        {"role": "user", "content": "I need to finish the cloud computing assignments first."}
+      ],
+      "facts": [
+        ["exams"],
+        ["viva"]
+      ]
+    },
+    {
+      "id": "dist26_devices",
+      "category": "personal_facts",
+      "title": "Devices",
+      "messages": [
+        {"role": "user", "content": "I use a MacBook Air M2 for everything, and my phone is an iPhone 13."},
+        {"role": "assistant", "content": "MacBook Air M2 and iPhone 13, got it."},
+        {"role": "user", "content": "I also have an old Kindle that I barely use."}
+      ],
+      "facts": [
+        ["macbook air"],
+        ["iphone 13"]
+      ]
     }
   ]
 }

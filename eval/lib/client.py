@@ -68,8 +68,8 @@ class UniMemoryClient:
 
     # --- listing / counting -------------------------------------------------
     def list_memories(self, end_user: Optional[str] = None,
-                      limit: int = 100) -> List[Dict[str, Any]]:
-        params = {"limit": limit}
+                      limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
+        params = {"limit": limit, "offset": offset}
         if end_user:
             params["user_id"] = end_user
         r = self._http.get(f"{self.base_url}/memories",
@@ -78,7 +78,15 @@ class UniMemoryClient:
         return r.json().get("memories", [])
 
     def memory_count(self, end_user: Optional[str] = None) -> int:
-        return len(self.list_memories(end_user=end_user, limit=100))
+        # The API caps `limit` at MAX_SEARCH_LIMIT (100), so page through;
+        # a single call would saturate at 100 on the expanded corpus.
+        total, offset, page = 0, 0, 100
+        while True:
+            batch = self.list_memories(end_user=end_user, limit=page, offset=offset)
+            total += len(batch)
+            if len(batch) < page:
+                return total
+            offset += page
 
     def wait_for_memories(self, end_user: str, settle_seconds: int,
                           poll: float = 3.0) -> int:

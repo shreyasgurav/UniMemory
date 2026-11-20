@@ -79,6 +79,9 @@ def main() -> None:
             "raw_hit@5": metrics.hit_at_k(r_texts, fg, 5),
             "raw_mrr": round(metrics.reciprocal_rank(r_texts, fg), 3),
             "raw_tokens": sum(metrics.count_tokens(t) for t in r_texts),
+            # audit trail (not scored)
+            "structured_top5": " || ".join(s_texts),
+            "raw_top5": " || ".join(r_texts),
         }
         rows.append(row)
         print(f"{q['id']} struct h@3={row['structured_hit@3']} "
