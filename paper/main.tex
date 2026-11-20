@@ -26,6 +26,9 @@
   opt/.style={dashed}
 }
 
+% Red marker for content still to be supplied; remove all uses before submission.
+\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
+
 \renewcommand{\ttdefault}{cmtt} % use CM typewriter (avoids missing Courier TFM)
 \lstset{basicstyle=\ttfamily\footnotesize,breaklines=true,
         frame=single,columns=fullflexible,aboveskip=8pt}
@@ -39,7 +42,7 @@ Long-Term Memory Infrastructure for AI Applications}
 \IEEEauthorblockA{Group 2 (roll nos.\ 16014223078, 16014223062, 16014223084, 16014223059)\\
 Department of Information Technology, B.Tech.\ AI \& Data Science\\
 K~J~Somaiya School of Engineering, Somaiya Vidyavihar University, Mumbai, India\\
-Guide: Mr.\ Sunil Shelke \quad External guide: Mr.\ Kunal Parekh, CPO, Osmos\\
+Guide: Prof.\ Sunil Shelke \quad External guide: Mr.\ Kunal Parekh, CPO, Osmos\\
 Code: \url{https://github.com/shreyasgurav/UniMemory}}}
 
 \maketitle
@@ -56,14 +59,19 @@ language SDKs, a Model Context Protocol (MCP) server, and a browser extension.
 We describe the ingestion pipeline and a hybrid retrieval mechanism that
 re-ranks a vector-search candidate pool using lexical overlap, tag matching and
 sector-aware similarity. We built a reproducible evaluation harness over a
-synthetic persona corpus. Preliminary results on a development set (6 queries,
-12 exact and paraphrased instances, 31 extracted memories) show that hybrid
-re-ranking raises hit@1 from 6/12 (cosine only) to 9/12, that extracted memories
-match raw-chat retrieval (hit@1 5/6 for both) while injecting fewer context
-tokens (55 vs.\ 87 per query), and, as a sanity check, that an automated keyword
-rubric scores answers 0.00 without memory and 1.67 with it (maximum 2). These
-pilot results are indicative only; the final held-out evaluation, latency and
-deduplication measurements are in progress and are not reported here.
+synthetic persona corpus of 36 conversations (117 extracted memories) and report
+a held-out test of 12 queries, each in an exact and a paraphrased phrasing.
+Memory augmentation raised an automated keyword rubric from 0.00 to 1.33
+(maximum 2); the four failures trace to extraction errors rather than to ranking.
+Extracted memories reached the same hit@3 as raw-chat retrieval (11/12) while
+injecting about 40\% fewer context tokens (50.5 vs.\ 84.8 per query), but ranked
+the answer lower (hit@1 5/12 vs.\ 9/12). Hybrid re-ranking did \emph{not}
+outperform pure cosine similarity on the test set (MRR 0.719 for both; hit@1
+14/24 vs.\ 15/24), contrary to a smaller pilot, so we make no claim that it
+helps. Against a local API and a remote database, search latency averaged
+1.8\,s (cold) and 1.5\,s (warm), and SimHash deduplication collapsed exact but
+not spelling-variant duplicates. The study is small and uses a single synthetic
+persona; differences of one or two instances are not statistically meaningful.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -182,8 +190,8 @@ UniMemory              & \checkmark & \checkmark & \checkmark$^{a}$ & recency$^{
 \bottomrule
 \end{tabular}\\[2pt]
 {\scriptsize $^{a}$Waypoint edges are stored and used for visualization; graph
-expansion at retrieval time rarely triggers. $^{b}$Recency score only, not
-exercised in our evaluation.}
+expansion at retrieval time did not trigger on our evaluation corpus.
+$^{b}$Recency score only, not exercised in our evaluation.}
 \end{table}
 
 % ============================================================ 3 SYSTEM DESIGN
@@ -431,12 +439,19 @@ improve over lexical-only and pure-cosine scoring? (RQ4) what is the latency and
 cost?
 
 \subsection{Dataset}
-We author a fictional persona (``Alex'') of ten short conversations across four
-categories---preferences, projects, personal facts and events---each annotated
-with ground-truth facts. Queries are split into a held-out \emph{test} set
+We author a fictional persona (``Alex'') of ten short core conversations across
+four categories---preferences, projects, personal facts and events---each
+annotated with ground-truth facts, and add 26 topically close
+\emph{distractor} conversations (other editors and languages, other colleges and
+trips, other databases and frameworks, other anniversaries, cars and pets) that
+contain none of the answers; a script verified that no distractor contains any
+answer keyword. The 36 conversations were ingested through the full pipeline and
+yielded 117 memories. Queries are split into a held-out \emph{test} set
 (12 queries) and a \emph{dev} set (6 queries); scoring weights were never tuned
 against the test set. Each query includes an exact phrasing and a paraphrase.
 The corpus is synthetic and released with the harness for reproducibility.
+Extraction by an LLM is not deterministic, so a re-ingestion yields a slightly
+different memory set (an earlier ingestion produced 115 memories).
 
 \subsection{Protocol and Isolation}
 All experiments run against a dedicated test user whose only data is the persona
@@ -445,14 +460,21 @@ flag to disable asynchronous reinforcement, keeping repeated queries
 deterministic; a second eval-only flag selects the scoring mode for the
 ablation. Both flags are rejected by the server unless it is started in an
 explicit evaluation mode, and neither changes production defaults. The dev set
-is used for debugging and for the preliminary results reported here; the
-held-out test set is run once, after the corpus is frozen.
+is used only for debugging; the corpus was frozen before any experiment, and the
+held-out test set was run once per experiment. Two harness defects were fixed on
+dev data alone, before the test run: the E1 generation prompt (below) and the
+memory counter used while waiting for background extraction, which stopped at the
+API page limit of 100.
 
 \subsection{Conditions and Metrics}
 \textbf{E1 (RQ1)} generates an answer with \texttt{gpt-4o-mini} with and without
 the top-$k$ retrieved memories; answers are scored on a 0/1/2 rubric (0 generic
 / wrong, 1 partial, 2 correct and personalized) and also saved for manual
-rating. \textbf{E2 (RQ2)} compares retrieval over extracted memories against a
+rating. The same system prompt is used for both conditions and states that the
+person asking is Alex and that any notes about ``the user'' concern Alex; without
+this, the model refused to answer even when the retrieved memory contained the
+answer, because extracted memories say ``User'' while queries say ``Alex''.
+\textbf{E2 (RQ2)} compares retrieval over extracted memories against a
 raw-chat baseline that chunks and embeds the original conversations with the
 \emph{same} embedding model; we report hit@$k$, MRR and context tokens injected.
 \textbf{E3 (RQ3)} compares three scoring modes on exact and paraphrased queries
@@ -464,32 +486,32 @@ baseline is slightly stronger than plain vector search on the raw query; this is
 conservative for the hybrid scorer. Graph expansion, recency and coactivation are
 not exercised by this corpus (all memories are created minutes apart, recall
 counters are not persisted) and no result is attributed to them. \textbf{E4 (RQ4)} reports search
-latency (mean/p50/p95 over 30 runs; latency against the Railway deployment
-includes network time) and deduplication outcomes for exact, near- and
-non-duplicate inputs. Relevance is keyword-grounded against the ground-truth
-facts; E1 answers are additionally verified manually.
+latency, cold (36 distinct queries, embedding not cached) and warm (30 repeats of
+one query, embedding cached), as mean, median and 95th percentile, and
+deduplication outcomes for exact, near- and non-duplicate inputs. Latency was
+measured against a \emph{local} API process and a \emph{remote} Supabase
+database, so it includes the network time from the test machine to the database
+and is not production latency. Relevance is keyword-grounded against the
+ground-truth facts (and audited: no retrieved text matched a keyword only as a
+substring of a longer word); a blind human score of the E1 answers is being
+collected.
 
 % ============================================================ 6 RESULTS
 \section{Results}\label{sec:results}
-\subsection{Preliminary Results (Development Set)}
-The results below are a \emph{pilot} on the development query set: 6 queries
-(12 instances counting exact and paraphrased phrasings) over 31 memories
-extracted from the synthetic persona. They validate the method and the
-evaluation harness; they are not the final evaluation, which runs once on the
-held-out test set after the corpus is expanded. With this sample size, a
-difference of a few instances is indicative, not statistically established.
+All results are from the held-out test set: 12 queries, or 24 retrieval
+instances counting the exact and paraphrased phrasings, over the frozen corpus of
+36 conversations and 117 memories, run once per experiment. With so few queries a
+difference of one or two instances is noise, so we report counts alongside rates.
 
-\textbf{Memory on vs.\ off (E1).} Table~\ref{tab:e1} reports an
-\emph{automated keyword rubric} (0--2), a sanity check rather than the blind
-human-scored evaluation, which is pending. A stateless model cannot know
-invented facts, so a score of 0.00 without memory is expected. With memory, one
-personal-fact query (``Which college does Alex attend?'') scored 0: retrieval
-ranked the correct memory (``final-year student at Somaiya'') first, but the
-model did not map it to the question, a generation limitation rather than a
-retrieval failure.
+\subsection{Memory On vs.\ Off (E1)}
+Table~\ref{tab:e1} reports the \emph{automated keyword rubric} (0--2), a proxy
+for the blind human score. A stateless model cannot know invented facts, so 0.00
+without memory is expected (every such answer was a refusal). With the top five
+memories injected the mean rose to 1.33; 8 of 12 queries were answered fully
+correctly and 4 failed.
 
 \begin{table}[t]
-\caption{E1 (dev, automated keyword rubric, max 2): mean score.}
+\caption{E1 (test, automated keyword rubric, max 2): mean score.}
 \label{tab:e1}
 \centering\footnotesize
 \begin{tabular}{@{}lcc@{}}
@@ -497,25 +519,44 @@ retrieval failure.
 Category (queries) & Memory off & Memory on \\
 \midrule
 Preferences (3)    & 0.00 & 2.00 \\
-Projects (1)       & 0.00 & 2.00 \\
-Personal facts (2) & 0.00 & 1.00 \\
-Events (0)         & -- & -- \\
+Projects (2)       & 0.00 & 1.00 \\
+Personal facts (5) & 0.00 & 0.80 \\
+Events (2)         & 0.00 & 2.00 \\
 \midrule
-\textbf{Overall (6)} & 0.00 & 1.67 \\
+\textbf{Overall (12)} & 0.00 & 1.33 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\textbf{Structured memories vs.\ raw-chat RAG (E2).} Table~\ref{tab:e2} shows
-that, on this small corpus, retrieval quality was identical: both conditions
-placed a relevant item first for 5 of 6 queries and within the top three for
-all 6. The measured difference is context size: the five retrieved extracted
-memories averaged 55.2 tokens per query versus 86.8 for the five retrieved raw
-message chunks. We therefore do not claim that structured memories retrieve
-\emph{better}, only that they use less context here.
+\textbf{Failure analysis.} The four failures are caused mainly by extraction
+quality, not by ranking. (i)~\emph{Database query.} The memory recording that the
+project uses PostgreSQL with pgvector does not name the project, so the five
+retrieved memories were four others that mention it plus an unrelated memory about
+MySQL from a distractor conversation, and the model confidently answered MySQL.
+Extraction had dropped the project name (a coreference loss). (ii)~\emph{Sister's
+name, anniversary date, cat's name.} The answer was retrieved at rank 2, 1 and 1,
+yet the model replied that it lacked the information. In all three the retrieved
+set also contained wrongly extracted memories of the form ``User's name is Maya''
+or ``User's name is Rohan'' (the extractor attributed a partner's or friend's name
+to the user), which conflict with the persona. We hypothesise that this conflict
+caused the refusals but did not test it in isolation. In addition, none of the 117
+memories contains the persona's name, since all say ``User''. \todo{insert blind
+human scores for the 24 answers once scored}
+
+\subsection{Structured Memories vs.\ Raw-Chat RAG (E2)}
+Table~\ref{tab:e2} shows that both conditions placed a relevant item within the
+top three for 11 of 12 queries, each missing a different one: structured
+retrieval missed the database query for the naming reason above, and raw-chat
+retrieval missed the query about the city. Structured retrieval, however,
+\emph{ranks the answer lower}: hit@1 5/12 versus 9/12 and MRR 0.639 versus
+0.833. The measured advantage is context size: 50.5 tokens per query versus 84.8,
+about 40\% fewer. We therefore claim similar recall at a lower token cost, not
+better retrieval. A plausible reason, which we did not isolate, is that atomic
+memories drop context words (such as the project name) that the query contains,
+whereas raw message chunks keep them.
 
 \begin{table}[t]
-\caption{E2 (dev): retrieval quality (hits out of 6 queries) and mean tokens
+\caption{E2 (test): retrieval quality (hits out of 12 queries) and mean tokens
 injected per query (top-5 items).}
 \label{tab:e2}
 \centering\footnotesize
@@ -523,45 +564,100 @@ injected per query (top-5 items).}
 \toprule
 Condition & hit@1 & hit@3 & hit@5 & MRR & tokens \\
 \midrule
-Raw-chat RAG & 5/6 & 6/6 & 6/6 & 0.917 & 86.8 \\
-Structured   & 5/6 & 6/6 & 6/6 & 0.917 & 55.2 \\
+Raw-chat RAG & 9/12 & 11/12 & 11/12 & 0.833 & 84.8 \\
+Structured   & 5/12 & 11/12 & 11/12 & 0.639 & 50.5 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\textbf{Scoring ablation (E3).} Table~\ref{tab:e3} compares the three scoring
-modes. Hybrid and lexical scoring produced identical rankings on every query,
-consistent with recency, graph and coactivation signals not contributing in this
-setting; the gain over cosine is therefore attributable to token overlap, tag
-matching and the similarity boost. Over all 12 instances hit@1 rose from 6/12
-(cosine) to 9/12, and MRR from 0.715 to 0.861. The gap is concentrated in
-paraphrased queries (hit@1 2/6 vs.\ 4/6). Because paraphrases were written by
-the same author as the corpus, they may share vocabulary with the source facts,
-which can favor lexical signals.
+\subsection{Scoring Ablation (E3)}
+Table~\ref{tab:e3} compares the three scoring modes. \textbf{Hybrid re-ranking did
+not outperform pure cosine similarity.} Overall MRR is identical (0.719); hybrid
+is one instance behind at hit@1 (14/24 versus 15/24) and one instance ahead at
+hit@3 and hit@5. On exact phrasings, lexical and hybrid scoring are worse than
+cosine at hit@1 (5/12 versus 7/12) but recover by hit@3; on paraphrases hybrid is
+nominally best (9/12 versus 8/12). Every gap is one or two instances and none is
+meaningful at this sample size. The database query is missed in the top five by
+all three modes.
+
+An earlier pilot on a 31-memory corpus had suggested a clear hybrid advantage
+(hit@1 9/12 versus 6/12). On the dev queries over the expanded corpus the gap had
+already shrunk (7/12 versus 6/12, MRR 0.660 versus 0.625), and on the test set it
+disappeared. We therefore make no claim that hybrid re-ranking improves
+retrieval. In this evaluation the waypoint and coactivation terms contribute
+nothing (graph expansion never triggers and coactivation is zero), so hybrid
+differs from the lexical mode only through the sector multiplier and a
+near-constant recency term.
 
 \begin{table}[t]
-\caption{E3 (dev): scoring-mode ablation, hits out of 6 per phrasing.}
+\caption{E3 (test): scoring-mode ablation. Counts are hits out of 12 per
+phrasing and out of 24 overall.}
 \label{tab:e3}
 \centering\footnotesize
 \begin{tabular}{@{}llcccc@{}}
 \toprule
 Phrasing & Mode & hit@1 & hit@3 & hit@5 & MRR \\
 \midrule
-Exact      & cosine  & 4/6 & 6/6 & 6/6 & 0.833 \\
-Exact      & lexical & 5/6 & 6/6 & 6/6 & 0.917 \\
-Exact      & hybrid  & 5/6 & 6/6 & 6/6 & 0.917 \\
-Paraphrase & cosine  & 2/6 & 5/6 & 6/6 & 0.597 \\
-Paraphrase & lexical & 4/6 & 6/6 & 6/6 & 0.805 \\
-Paraphrase & hybrid  & 4/6 & 6/6 & 6/6 & 0.805 \\
+Exact (12)      & cosine  & 7/12 & 10/12 & 10/12 & 0.680 \\
+Exact           & lexical & 5/12 & 11/12 & 11/12 & 0.625 \\
+Exact           & hybrid  & 5/12 & 11/12 & 11/12 & 0.639 \\
+\midrule
+Paraphrase (12) & cosine  & 8/12 & 10/12 & 11/12 & 0.757 \\
+Paraphrase      & lexical & 8/12 & 10/12 & 11/12 & 0.753 \\
+Paraphrase      & hybrid  & 9/12 & 10/12 & 11/12 & 0.799 \\
+\midrule
+All (24)        & cosine  & 15/24 & 20/24 & 21/24 & 0.719 \\
+All             & lexical & 13/24 & 21/24 & 22/24 & 0.689 \\
+All             & hybrid  & 14/24 & 21/24 & 22/24 & 0.719 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\subsection{Pending Measurements}
-The following are not yet measured and are therefore not reported: final
-held-out test-set results for E1--E3 (with blind human scoring for E1 and a
-corpus expanded with distractor conversations); search latency, cold and warm;
-and deduplication outcomes. They will be added to the final version.
+\subsection{Latency and Deduplication (E4)}
+Table~\ref{tab:e4} reports search latency against a local API process and a
+remote Supabase database, with production-default search (asynchronous
+reinforcement enabled). These are not production figures. Caching the query
+embedding lowered the mean by only about 330\,ms (19\%), and the warm 95th
+percentile is above the cold one, so the embedding call is not the dominant cost;
+we suspect database round trips over the network but did not profile this.
+
+\begin{table}[t]
+\caption{E4: search latency (ms), local API with remote database.}
+\label{tab:e4}
+\centering\footnotesize
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+Condition & $n$ & mean & p50 & p95 & max \\
+\midrule
+Cold (distinct queries) & 36 & 1781 & 1675 & 2028 & 5042 \\
+Warm (cached embedding) & 30 & 1450 & 1344 & 2299 & 3364 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+For deduplication (Table~\ref{tab:dedup}), an exact repeat was collapsed into the
+existing memory, whereas a spelling variant (``favourite colour'' versus
+``favorite color'') was stored as a new memory. SimHash with a Hamming threshold
+of 3 is therefore a lexical, not a semantic, duplicate detector.
+
+\begin{table}[t]
+\caption{E4: deduplication outcomes (SimHash, Hamming $\le 3$).}
+\label{tab:dedup}
+\centering\footnotesize
+\begin{tabular}{@{}lc@{}}
+\toprule
+Input relative to an existing memory & Collapsed? \\
+\midrule
+Exact duplicate & yes \\
+Near duplicate (spelling variant) & no \\
+Distinct fact & no \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Not Yet Measured}
+The blind human score for E1, latency against the deployed Railway service, and
+multi-user load are not reported.
 
 % ============================================================ 7 CASE STUDY
 \section{Cross-Tool Case Study}\label{sec:casestudy}
@@ -572,33 +668,51 @@ be added to the final version.
 
 % ============================================================ 8 DISCUSSION
 \section{Discussion and Limitations}\label{sec:discussion}
-The pilot suggests that, over a small corpus, hybrid re-ranking improves
-top-ranked precision relative to pure cosine similarity, mainly through lexical
-signals, and that extracted memories can carry the same information in fewer
-tokens than raw chat. It does not show that structured memories retrieve more
-accurately, and it does not test the graph, recency or coactivation components.
-Limitations: a single synthetic persona and very small query set, with corpus,
-queries and paraphrases written by the same author; retrieval is already
-near-saturated at hit@5 on 31 memories, so harder distractor corpora are
-needed; a single LLM; hand-tuned (not learned) scoring weights; a worthiness
-gate that fails open on timeout; keyword-grounded relevance; re-ranking limited
-to the vector-search pool; coactivation inactive in the deployed schema; no
-multi-user load testing; and no head-to-head benchmark against Mem0.
+The held-out results support one claim and withhold two. Memory augmentation
+clearly helps over a stateless model on this corpus (rubric 0.00 to 1.33), and
+extracted memories reach the same hit@3 as raw chat chunks with about 40\% fewer
+tokens. They do not rank the answer better than raw chunks (hit@1 5/12 versus
+9/12), and hybrid re-ranking did not beat pure cosine similarity, contrary to what
+a smaller pilot suggested. The dominant source of error was extraction quality:
+dropped subject names and mis-attributed names, which retrieval cannot repair
+because scoring only re-ranks the vector-search pool.
+
+\textbf{A defect found during evaluation.} The ingestion endpoints called the
+waypoint-creation routine with incorrect arguments, so no waypoint edges were
+created through the ingest path (the MCP save path was unaffected). The corrected
+build is the one evaluated here. Because graph expansion never triggers on this
+corpus, the fix did not change any reported retrieval result. Separately, entity
+extraction runs only on the text-ingestion path, so the chat ingestion used in
+the evaluation produced no entities.
+
+\textbf{Limitations.} A single synthetic persona and only 12 test queries, with
+the corpus, queries and paraphrases written by the same group; differences of one
+or two instances are noise. Relevance is keyword-grounded, a single LLM is used
+for extraction and generation, and the scoring weights are hand-tuned rather than
+learned. The worthiness gate fails open on timeout, deduplication is lexical,
+re-ranking is limited to the vector-search pool, and coactivation is inactive in
+the deployed schema. Latency was measured against a local API and a remote
+database, not the deployed service, and there is no multi-user load test and no
+head-to-head benchmark against Mem0. The blind human score for E1 is pending.
 
 % ============================================================ 9 CONCLUSION
 \section{Conclusion and Future Work}\label{sec:conclusion}
 UniMemory is a deployed, reusable long-term memory layer with an end-to-end
-pipeline, SDKs, an MCP server, a browser extension and two dashboards. A pilot
-evaluation indicates that lexical re-ranking improves over pure vector
-similarity and that extracted memories reduce injected context, pending
-confirmation on a held-out test set. Future work includes a harder distractor
-corpus, blind human scoring, latency and deduplication measurements, making the
-coactivation signal functional by persisting recall statistics, evaluating graph
-expansion, learned scoring weights, a Mem0 baseline on the same corpus, and
-evaluation with real users.
+pipeline, SDKs, an MCP server, a browser extension and two dashboards. On a
+held-out test over a 36-conversation synthetic corpus, memory augmentation raised
+an automated answer rubric from 0.00 to 1.33 out of 2, and extracted memories
+matched raw-chat recall at about 40\% lower token cost, although they ranked the
+answer lower. Hybrid re-ranking did not outperform pure cosine similarity, so the
+benefit of the added scoring signals remains unproven. Most failures came from
+extraction quality. Future work includes extraction that preserves subject names
+and does not mis-attribute names, blind human scoring, a larger and more varied
+query set, latency measured against the deployed service, making the coactivation
+signal functional by persisting recall statistics, evaluating graph expansion,
+semantic deduplication, learned scoring weights, a Mem0 baseline on the same
+corpus, and evaluation with real users.
 
 \section*{Acknowledgment}
-The authors thank their internal guide, Mr.\ Sunil Shelke, and their external
+The authors thank their internal guide, Prof.\ Sunil Shelke, and their external
 guide, Mr.\ Kunal Parekh (CPO, Osmos), for their guidance throughout this
 project.
 
