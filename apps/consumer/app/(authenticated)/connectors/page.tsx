@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { ExternalLink, X, Copy, Check } from "lucide-react";
 import { auth } from "@/lib/firebase";
+import ConnectorCard from "@/components/shared/ConnectorCard";
 
 declare global {
   interface Window {
@@ -25,6 +26,11 @@ interface MCPToken {
 }
 
 const MCP_URL = "https://unimemory.up.railway.app/api/v1/mcp";
+
+const GATEWAY_APPS = [
+  { id: "gmail", name: "Gmail", logo: "https://ssl.gstatic.com/ui/v1/icons/mail/rfr/gmail.ico", desc: "Search and read your email." },
+  { id: "notion", name: "Notion", logo: "https://www.notion.so/images/favicon.ico", desc: "Search and read your workspace." },
+];
 
 const MCP_CLIENTS = [
   { 
@@ -79,6 +85,8 @@ export default function ConnectorsPage() {
   const [gatewayAvailable, setGatewayAvailable] = useState<Record<string, boolean>>({});
   const [gatewayConns, setGatewayConns] = useState<Array<{ provider: string; status: string; account_label?: string }>>([]);
   const [gatewayBusy, setGatewayBusy] = useState<string | null>(null);
+  const [gatewayLoaded, setGatewayLoaded] = useState(false);
+  const [gatewayError, setGatewayError] = useState(false);
 
   useEffect(() => {
     const checkExtensionStatus = async () => {
@@ -116,17 +124,20 @@ export default function ConnectorsPage() {
   const loadGatewayConnectors = async () => {
     try {
       const token = await auth.currentUser?.getIdToken();
-      if (!token) return;
+      if (!token) throw new Error("not signed in");
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/connectors`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (res.ok) {
-        const data = await res.json();
-        setGatewayAvailable(data.available || {});
-        setGatewayConns(data.connections || []);
-      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setGatewayAvailable(data.available || {});
+      setGatewayConns(data.connections || []);
+      setGatewayError(false);
     } catch (e) {
       console.error("Failed to load connectors:", e);
+      setGatewayError(true);
+    } finally {
+      setGatewayLoaded(true);
     }
   };
 
@@ -143,7 +154,10 @@ export default function ConnectorsPage() {
     setGatewayBusy(provider);
     try {
       const token = await auth.currentUser?.getIdToken();
-      if (!token) return;
+      if (!token) {
+        setGatewayBusy(null);
+        return;
+      }
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/connectors/${provider}/connect`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -161,6 +175,8 @@ export default function ConnectorsPage() {
   };
 
   const disconnectGateway = async (provider: string) => {
+    const label = GATEWAY_APPS.find((a) => a.id === provider)?.name ?? provider;
+    if (!window.confirm(`Disconnect ${label}? UniMemory will delete the stored access token.`)) return;
     setGatewayBusy(provider);
     try {
       const token = await auth.currentUser?.getIdToken();
@@ -338,51 +354,38 @@ export default function ConnectorsPage() {
               Connect an app once here. Any AI agent linked to UniMemory can then
               access it through the gateway tools, without connecting each app separately.
             </p>
-            <div className="grid gap-3 sm:grid-cols-2 max-w-2xl">
-              {[
-                { id: "gmail", name: "Gmail", logo: "https://ssl.gstatic.com/ui/v1/icons/mail/rfr/gmail.ico", desc: "Search and read your email." },
-                { id: "notion", name: "Notion", logo: "https://www.notion.so/images/favicon.ico", desc: "Search and read your workspace." },
-              ].map((appInfo) => {
+            {gatewayError && (
+              <p className="text-xs text-red-600 mb-3">
+                Couldn&apos;t load connector status.{" "}
+                <button onClick={loadGatewayConnectors} className="underline underline-offset-2 hover:text-red-700">
+                  Retry
+                </button>
+              </p>
+            )}
+            <div className="grid gap-4 sm:grid-cols-2">
+              {GATEWAY_APPS.map((appInfo) => {
                 const conn = gatewayConns.find((c) => c.provider === appInfo.id);
-                const available = gatewayAvailable[appInfo.id];
-                const busy = gatewayBusy === appInfo.id;
+                const status = !gatewayLoaded
+                  ? "loading"
+                  : gatewayError && !conn
+                  ? "error"
+                  : conn
+                  ? "connected"
+                  : gatewayAvailable[appInfo.id]
+                  ? "disconnected"
+                  : "unavailable";
                 return (
-                  <div key={appInfo.id} className="bg-white rounded-lg p-4 flex items-center justify-between">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="relative">
-                        <img src={appInfo.logo} alt={appInfo.name} className="w-9 h-9 rounded" />
-                        {conn && <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-medium text-neutral-900">{appInfo.name}</h3>
-                          {conn && <span className="text-xs text-green-600 font-medium">Connected</span>}
-                        </div>
-                        <p className="text-sm text-neutral-500 truncate">
-                          {conn?.account_label || appInfo.desc}
-                        </p>
-                      </div>
-                    </div>
-                    {!available ? (
-                      <span className="text-xs text-neutral-400">Coming soon</span>
-                    ) : conn ? (
-                      <button
-                        onClick={() => disconnectGateway(appInfo.id)}
-                        disabled={busy}
-                        className="text-sm px-3 py-1.5 rounded-lg border border-neutral-200 text-neutral-600 hover:bg-neutral-50 disabled:opacity-50"
-                      >
-                        {busy ? "..." : "Disconnect"}
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => connectGateway(appInfo.id)}
-                        disabled={busy}
-                        className="text-sm px-3 py-1.5 rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 disabled:opacity-50"
-                      >
-                        {busy ? "..." : "Connect"}
-                      </button>
-                    )}
-                  </div>
+                  <ConnectorCard
+                    key={appInfo.id}
+                    name={appInfo.name}
+                    logo={appInfo.logo}
+                    description={appInfo.desc}
+                    status={status}
+                    accountLabel={conn?.account_label}
+                    busy={gatewayBusy === appInfo.id}
+                    onConnect={() => connectGateway(appInfo.id)}
+                    onDisconnect={() => disconnectGateway(appInfo.id)}
+                  />
                 );
               })}
             </div>
